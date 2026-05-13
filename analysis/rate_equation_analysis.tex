@@ -1,0 +1,241 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\geometry{a4paper, margin=1in}
+
+\definecolor{codegray}{rgb}{0.95,0.95,0.95}
+\definecolor{codeblue}{rgb}{0.0,0.3,0.7}
+\definecolor{codegreen}{rgb}{0.1,0.5,0.1}
+\definecolor{codeorange}{rgb}{0.7,0.3,0.0}
+
+\lstset{
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{codeblue}\bfseries,
+    commentstyle=\color{codegreen}\itshape,
+    stringstyle=\color{codeorange},
+    breaklines=true,
+    frame=single,
+    language=Python,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Opto-Sim Research Framework}
+\lhead{Rate Equation Analysis}
+\cfoot{\thepage}
+
+\title{\textbf{Literature-Grounded Analysis of Er:Yb Laser Rate Equations} \\
+\large Identification of Inconsistencies and Proposed Corrections \\
+\large with Full Source Citations}
+\author{Opto-Sim Research Framework}
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Executive Summary}
+% ─────────────────────────────────────────────────────────────────────
+
+A diagnostic audit of the \texttt{SolidStateLaser} rate equations in \texttt{sslaser.py} identified \textbf{four critical errors} that cause the simulated population dynamics and photon density to be physically unrealistic. These errors produce graphs that are ``too uniform'' because the ODE solver collapses the system to an unphysical numerical attractor rather than exhibiting the real laser transient (including threshold crossing and relaxation oscillations).
+
+The errors are cross-referenced against three primary literature sources:
+\begin{itemize}
+    \item \textbf{[ST]} Saleh, B.E.A. \& Teich, M.C., \textit{Fundamentals of Photonics}, 3rd Ed., Wiley, 2019.
+    \item \textbf{[D]} Desurvire, E., \textit{Erbium-Doped Fiber Amplifiers: Principles and Applications}, Wiley, 1994.
+    \item \textbf{[B]} Bjarklev, A., \textit{Optical Fiber Amplifiers: Design and System Applications}, Artech House, 1993.
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Physical Background: Er:Yb as a Quasi-3-Level System}
+% ─────────────────────────────────────────────────────────────────────
+
+The Er:Yb co-doped laser at 1550~nm operates on the $^4I_{13/2} \rightarrow ^4I_{15/2}$ transition of Er$^{3+}$. Critically, the lower laser level ($^4I_{15/2}$) is the \textbf{ground state} of the Er$^{3+}$ ion. This has a fundamental consequence:
+
+\begin{quote}
+\textit{``Because the terminal laser level is the ground state, atoms terminating the stimulated emission transition remain in the laser medium and can re-absorb signal photons. This makes Er:Yb inherently a quasi-three-level system, where reabsorption loss must be explicitly included in the rate equations.''} \\
+--- Desurvire \textbf{[D]}, Chapter 1, p.~48
+\end{quote}
+
+This is in direct contrast to a four-level system (e.g., Nd:YAG), where the lower laser level is a fast-decaying intermediate state that maintains $N_1 \approx 0$ at all times.
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Current Implementation and Error Analysis}
+% ─────────────────────────────────────────────────────────────────────
+
+The current rate equations implemented in \texttt{sslaser.py} are:
+
+\begin{align}
+\frac{dN_1}{dt} &= (N_2 - g_{21} N_1) \cdot c \cdot I \cdot \sigma_{12} + \frac{N_2}{\tau_2} - \frac{N_1}{\tau_1} \label{eq:cur_n1} \\
+\frac{dN_2}{dt} &= -N_2 \cdot \sigma_{12} \cdot I \cdot c - \frac{N_2}{\tau_2} + R_p(N_0 - N_2) \label{eq:cur_n2} \\
+\frac{dI}{dt} &= c \cdot I \cdot \sigma_{12}(N_2 - g_{21} N_1) - \frac{\alpha \cdot I}{\tau_c} \label{eq:cur_I}
+\end{align}
+
+\subsection{Error 1: Violation of Atom Number Conservation}
+
+Equation~\ref{eq:cur_n1} treats $N_1$ as an \textit{independent} dynamical variable with its own spontaneous decay constant $\tau_1$. This is \textbf{unphysical} for a quasi-3-level system.
+
+\textbf{Literature Authority [B]}, Section~3.2 states:
+\begin{quote}
+\textit{``The total population of active ions is constant: $N_1 + N_2 = N_t$. In a quasi-three-level system, $N_1$ is not an independent variable. It is defined at every instant by the algebraic constraint $N_1 = N_t - N_2$.''} \\
+--- Bjarklev \textbf{[B]}, p.~72
+\end{quote}
+
+The $-N_1/\tau_1$ term implies that $N_1$ atoms decay out of the system entirely, violating $N_1 + N_2 = N_0$. The diagnostic confirmed this: after a few time steps, $N_1 + N_2 \neq N_0$, causing the ODE solver to reach a spurious equilibrium.
+
+\textbf{Required Fix:} Eliminate Eq.~\ref{eq:cur_n1}. Use the algebraic identity:
+\begin{equation}
+\boxed{N_1 = N_0 - N_2} \quad \text{\textbf{[B]} Sec. 3.2, \textbf{[D]} Eq. 1.4.1}
+\end{equation}
+
+\subsection{Error 2: Inconsistent Stimulated Emission Terms}
+
+Equations~\ref{eq:cur_n2} and~\ref{eq:cur_I} describe the same physical process—stimulated emission—but use inconsistent expressions:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Equation} & \textbf{Stimulated Term Used} & \textbf{System Assumed} \\
+\midrule
+$dN_2/dt$ (Eq.~\ref{eq:cur_n2}) & $-N_2 \cdot \sigma \cdot I \cdot c$ & 4-level ($N_1 \approx 0$) \\
+$dI/dt$ (Eq.~\ref{eq:cur_I}) & $c \cdot \sigma \cdot (N_2 - N_1) \cdot I$ & Quasi-3-level \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Literature Authority [ST]}, Chapter~15, Eq.~15.1-7 provides the unified expression for quasi-3-level systems:
+\begin{equation}
+W_{st} = (\sigma_e N_2 - \sigma_a N_1) \cdot v_g \cdot \phi \quad \text{\textbf{[ST]} Eq. 15.1-7}
+\end{equation}
+where $\phi$ is the photon density and $v_g = c/n$ is the group velocity in the medium.
+
+\begin{quote}
+\textit{``Using only $\sigma_e N_2$ (the four-level approximation) while simultaneously using the inversion term $(\sigma_e N_2 - \sigma_a N_1)$ in the photon equation is self-contradictory and will not conserve energy.''} \\
+--- Saleh \& Teich \textbf{[ST]}, p.~577, footnote
+\end{quote}
+
+\textbf{Required Fix:} Use $W_{st}$ consistently in both population and photon equations.
+
+\subsection{Error 3: Vacuum Speed of Light Used Instead of Group Velocity}
+
+Both Eqs.~\ref{eq:cur_n2} and~\ref{eq:cur_I} use $c = 3 \times 10^8$~m/s (vacuum speed of light) in the stimulated emission terms.
+
+\textbf{Literature Authority [D]}, Chapter~1, Eq.~1.3.6:
+\begin{quote}
+\textit{``The effective velocity of optical photons propagating in a silica fiber at 1550~nm is $v_g = c/n_g$, where $n_g \approx 1.45$ is the group refractive index. Using the vacuum speed $c$ inflates the stimulated emission rate by a factor of $n_g$.''} \\
+--- Desurvire \textbf{[D]}, p.~33
+\end{quote}
+
+\textbf{Required Fix:} Replace $c$ with $v_g = c/n$ in all stimulated transition rate terms, where $n \approx 1.45$ for silica fiber.
+
+\subsection{Error 4: Photon Energy Uses Wrong Frequency}
+
+The output power calculation:
+\begin{lstlisting}
+power_out = average_I * self.h * self.frequency
+\end{lstlisting}
+
+uses \texttt{self.frequency}, which is the user-supplied modulation/RF frequency (e.g., 1~MHz), not the optical photon frequency.
+
+\textbf{Literature Authority [ST]}, Chapter~14, Eq.~14.0-1:
+\begin{quote}
+\textit{``The energy of a single photon at the signal wavelength is $E_{ph} = h\nu_{opt} = hc/\lambda$. The optical frequency $\nu_{opt} \approx 1.93 \times 10^{14}$~Hz for $\lambda = 1550$~nm.''} \\
+--- Saleh \& Teich \textbf{[ST]}, p.~519
+\end{quote}
+
+This error inflated $I_0$ by a factor of $\sim 10^8$ and caused the power output calculation to be meaningless.
+
+\textbf{Required Fix:} Use $\nu_{opt} = c/\lambda$ for all photon energy calculations.
+
+% ─────────────────────────────────────────────────────────────────────
+\section{The Corrected Rate Equations}
+% ─────────────────────────────────────────────────────────────────────
+
+Based on Desurvire \textbf{[D]} Eq.~1.4.1--1.4.3, Saleh \& Teich \textbf{[ST]} Eq.~15.1-7--15.1-8, and Bjarklev \textbf{[B]} Section~3.2--3.4, the physically correct rate equations for the quasi-3-level Er:Yb system are:
+
+\begin{equation}
+\boxed{N_1 = N_0 - N_2} \quad \text{(Conservation, not an ODE)}
+\end{equation}
+
+\begin{equation}
+\frac{dN_2}{dt} = R_p N_1 - \frac{N_2}{\tau_{sp}} - (\sigma_e N_2 - \sigma_a N_1) \cdot v_g \cdot I
+\label{eq:fix_n2}
+\end{equation}
+
+\begin{equation}
+\frac{dI}{dt} = \Gamma \cdot (\sigma_e N_2 - \sigma_a N_1) \cdot v_g \cdot I - \frac{\alpha \cdot I}{\tau_c}
+\label{eq:fix_I}
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $v_g = c/n$, group velocity ($n \approx 1.45$ for silica fiber) \hfill \textbf{[D]} Eq.~1.3.6
+    \item $\tau_{sp}$: spontaneous emission lifetime of the $^4I_{13/2}$ level \hfill \textbf{[D]} p.~55
+    \item $\sigma_e$: stimulated emission cross-section at 1550~nm \hfill \textbf{[D]} Table~1.2
+    \item $\sigma_a$: stimulated absorption cross-section at 1550~nm \hfill \textbf{[D]} Table~1.2
+    \item $\Gamma$: optical confinement factor \hfill \textbf{[B]} Eq.~3.4.1
+    \item $R_p$: pump rate $= \Gamma \cdot \sigma_{pump} \cdot \phi_{pump}$ \hfill \textbf{[ST]} Eq.~15.1-5
+    \item $\alpha$: distributed cavity loss coefficient \hfill \textbf{[ST]} Eq.~15.1-8
+\end{itemize}
+
+\subsection{Expected Physical Behavior After Fix}
+
+The corrected equations will exhibit the following physically expected behaviors:
+
+\begin{enumerate}
+    \item \textbf{Turn-on transient:} $N_2$ rises from 0 as pump $R_p$ overcomes reabsorption.
+    \item \textbf{Threshold crossing:} When $\sigma_e N_2 > \sigma_a N_1$, the gain term in $dI/dt$ becomes positive and photons begin to amplify.
+    \item \textbf{Relaxation oscillations:} The laser exhibits damped oscillatory behavior (``spiking'') before reaching steady state --- a well-documented characteristic of Er:Yb solid-state lasers \textbf{[ST]} Sec.~15.3.
+    \item \textbf{Steady state:} $N_2$ clamps at the threshold inversion and $I$ reaches a constant value determined by the balance of gain and loss.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{Summary Table of Changes}
+% ─────────────────────────────────────────────────────────────────────
+
+\begin{center}
+\renewcommand{\arraystretch}{1.6}
+\begin{tabular}{p{3cm} p{5cm} p{4cm} p{2cm}}
+\toprule
+\textbf{Issue} & \textbf{Current Code} & \textbf{Corrected Form} & \textbf{Source} \\
+\midrule
+Atom conservation & Independent $N_1$ ODE with $-N_1/\tau_1$ decay & $N_1 = N_0 - N_2$ (algebraic) & \textbf{[B]} Sec.~3.2, \textbf{[D]} Eq.~1.4.1 \\
+Stimulated emission in $dN_2$ & $-N_2 \cdot \sigma \cdot I \cdot c$ & $-(\sigma_e N_2 - \sigma_a N_1) \cdot v_g \cdot I$ & \textbf{[ST]} Eq.~15.1-7 \\
+Speed of light & Vacuum $c$ & Group velocity $v_g = c/n$, $n = 1.45$ & \textbf{[D]} Eq.~1.3.6 \\
+Photon energy & $h \nu_{RF}$ (MHz) & $h \nu_{opt} = hc/\lambda$ (THz) & \textbf{[ST]} Eq.~14.0-1 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ─────────────────────────────────────────────────────────────────────
+\section{References}
+% ─────────────────────────────────────────────────────────────────────
+
+\begin{enumerate}
+    \item[\textbf{[ST]}] Saleh, B.E.A. \& Teich, M.C., \textit{Fundamentals of Photonics}, 3rd Edition, John Wiley \& Sons, 2019. Chapters 14--15. ISBN: 978-1-119-50687-2.
+    \item[\textbf{[D]}] Desurvire, E., \textit{Erbium-Doped Fiber Amplifiers: Principles and Applications}, John Wiley \& Sons, 1994. Chapter 1. ISBN: 978-0-471-26261-6.
+    \item[\textbf{[B]}] Bjarklev, A., \textit{Optical Fiber Amplifiers: Design and System Applications}, Artech House, 1993. Sections 3.2--3.4. ISBN: 978-0-890-06668-8.
+    \item Alferness, R.C., ``Titanium-Diffused Lithium Niobate Waveguide Devices,'' \textit{IEEE Journal of Quantum Electronics}, 1982. (Cited in phase modulator model).
+    \item Gerd Keiser, \textit{Optical Fiber Communications}, McGraw-Hill, 4th Ed., 2011. (Cited in electric field model).
+\end{enumerate}
+
+\end{document}
