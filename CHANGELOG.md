@@ -285,3 +285,29 @@ New physics-informed continuous-wave laser model for QKD simulation:
 **Other improvements:**
 - Added `_rin_dt_min = 1/(10·f_RO)` to decouple RIN time resolution from optical-time sampling. When `dt` is < `_rin_dt_min`, RIN is generated at the coarser rate and interpolated, preventing FFT artifacts at extreme sample rates (~10¹⁷ Hz for optical periods).
 - Single-sample `get_electric_field(t, over_period=False)` now uses `_sample_rin` for the RIN value instead of `np.random.normal(0, sqrt(RIN_lin * 1e9))` which had a hardcoded 1 GHz bandwidth.
+
+---
+
+## 2026-06-04 — Laser characterisation script with eye diagrams
+
+### Session: 15:00–15:15 UTC+5
+
+**Created `analysis/laser_characterization.py`** — comprehensive verification suite for the CWLaser:
+
+| Feature | Method | Verification |
+|---|---|---|
+| **Power convention** | `mean(|E|²)` vs `_power_w` | Bar chart showing error < 1% |
+| **Optical linewidth** | Complex-envelope PSD via Welch, Lorentzian fit (curve_fit) | FWHM from fit vs specified Δν |
+| **Phase noise** | Structure function `D_φ(τ) = ⟨[φ(t+τ)-φ(t)]²⟩` | Slope `2π·Δν` for Wiener process (Henry [1]) |
+| **RIN spectrum** | Welch PSD of `δP(t)` vs Coldren Eq 5.3.38 | Resonance peak at `f_RO`, DC level at `RIN_0` |
+| **Polarisation** | Stokes parameters via `compute_stokes_parameters()`; Poincaré sphere via existing `poincare()` | ψ, χ match laser settings |
+| **Eye diagram (NRZ-OOK)** | PRBS → intensity modulation → RIN + phase noise → direct detection | Eye closure at increasing bitrates |
+
+**Output files:**
+| File | Content |
+|---|---|
+| `analysis/laser_characterization.png` | 8-panel dashboard |
+| `analysis/poincare_sphere.png` | Poincaré sphere (via `stokes.py:poincare()`) |
+| `analysis/eye_diagrams.png` | 5/10/25 Gbaud eyes side-by-side |
+
+**Note on OOK modulation:** A phase modulator alone cannot produce OOK (amplitude modulation). The script uses an idealised intensity-modulator model (`E_mod = E_cw · wfm`). Real OOK requires direct laser current modulation or a Mach-Zehnder modulator.

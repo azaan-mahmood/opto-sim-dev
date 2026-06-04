@@ -54,6 +54,9 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 ## Generated Graphs
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
 - `analysis/qber_vs_bitrate.png`: 0% at 215 MHz → 35% at 10 GHz
+- `analysis/laser_characterization.png`: 8-panel CWLaser dashboard
+- `analysis/poincare_sphere.png`: Poincaré sphere from Stokes parameters
+- `analysis/eye_diagrams.png`: NRZ-OOK eye diagrams at 5/10/25 Gbaud
 
 ## Files Changed (recent sessions)
 | File | Change |
@@ -66,3 +69,4 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 | `main.py` | Updated cable/stokes calls |
 | `src/viewers/stokes.py` | Normalized S0=1.0, returns `[S0,S1,S2,S3], [psi,chi]` |
 | `CHANGELOG.md` | Full audit trail with line ranges and timestamps |
+| `analysis/laser_characterization.py` | CWLaser verification suite: power, linewidth, phase noise, RIN spectrum, Stokes, eye diagrams |
