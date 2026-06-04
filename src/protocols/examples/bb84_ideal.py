@@ -29,7 +29,7 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
 
     detector = apd(
         wavelength=1550e-9, quantum_efficiency=0.9, gain=10, excess_noise_factor=10,
-        load_resistance=50, temperature=25, frequency=40
+        load_resistance=50, temperature=25
     )
     alice_laser = SolidStateLaser(
         wavelength=1550e-9,
@@ -68,7 +68,10 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
 
         # Generate photon with Alice's encoding
         E = alice_laser.get_electric_field(normalize=False, over_period=True)
-        pout = alice_laser.power_out
+        # Calibrate the field so that mean(|E|²) = optical power in Watts
+        power_W = alice_laser.power_out * 1e-3
+        field_power = np.mean(np.abs(E)**2)
+        E = E * np.sqrt(power_W / field_power)
 
         # Apply Alice Phase Modulation
         E = optics.polarizer(E, '45')  # Initial polarization
@@ -78,8 +81,8 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
             polarimeter(E, title=f"Bit Number {num_bits},Alice Bit/Basis = {alice_bit} / {alice_basis}")
 
         # Channel transmission (QC). Dispersion = True
-        E, _ = cable(
-            fiber_length=fiber_length, E=E, dispersion=True, pin=pout,
+        E = cable(
+            fiber_length=fiber_length, E=E, dispersion=True,
             attenuation_factor=0.182, temperature=25, num_bends=10
         )
 
@@ -92,20 +95,21 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
 
         # Apply Bob Phase Modulation
         E = pm_bob.modulate(E_field=E, V=phase_bob)  # Bob's phase shift
-        # Measurement
+        # Measurement: PBS splits into two spatial modes
         Ex, Ey = optics.pbs(E)
-        photons_x = detector.output(E=Ex, area=1, bandwidth=1e6)
-        photons_y = detector.output(E=Ey, area=1, bandwidth=1e6)
-        ratio = abs((photons_x - photons_y) / (photons_x + photons_y))
-        # Determine Bob's bit
-        if ratio > 0.001:
-            if photons_x > photons_y:
-                bob_bit = 0
-            elif photons_y > photons_x:
-                bob_bit = 1
+
+        # Noisy photocurrent from each detector (power derived from field)
+        I_x = detector.output(E=Ex, bandwidth=1e6)
+        I_y = detector.output(E=Ey, bandwidth=1e6)
+
+        # Differential detection: ensure signal exceeds noise floor,
+        # then compare photocurrents to determine the bit.
+        noise_floor = detector.calculate_noise(0, 1e6)
+        threshold = 3 * noise_floor
+
+        if I_x > threshold or I_y > threshold:
+            bob_bit = 0 if I_x > I_y else 1
         else:
-            # If photon counts are equal, this might suggest a +45 or -45 polarization state
-            # randomly assign a bit
             bob_bit = random.randint(0, 1)
 
         if show_pol:

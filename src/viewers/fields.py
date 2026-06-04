@@ -1,3 +1,11 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# --- LITERATURE SOURCES ---
+# [1] Hecht, E., "Optics", 4th ed., Addison-Wesley, 2002, Ch. 8.
+#     Electric field representation of polarized light.
+
+
 def plot_field(E, frequency, title)->None:
     Ex = np.real(E[:, 0])
     Ey = np.real(E[:, 1])

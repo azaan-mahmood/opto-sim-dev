@@ -1,7 +1,16 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def compute_stokes_parameters(E):
+# --- LITERATURE SOURCES ---
+# [1] Collett, E., "Field Guide to Polarization", SPIE Press, 2005, Ch. 2.
+#     Stokes parameters definitions and the Poincaré sphere representation.
+# [2] Hecht, E., "Optics", 4th ed., Addison-Wesley, 2002, Ch. 8.
+#     Polarization ellipsometry and Stokes parameter formalism.
+# [3] Born, M. & Wolf, E., "Principles of Optics", 7th ed., Cambridge, 1999.
+#     Section 1.4: The polarization ellipse and Stokes parameters.
+
+
+def compute_stokes_parameters(E: np.ndarray) -> tuple:
     """
     Calculate the Stokes parameters from the electric field over one period.
 
@@ -10,28 +19,30 @@ def compute_stokes_parameters(E):
                      and the columns represent the Ex and Ey components.
 
     Returns:
-    S0, S1, S2, S3 (float): The Stokes parameters.
+    tuple: A tuple containing the Stokes parameters [S0, S1, S2, S3] and the polarization ellipse parameters [psi, chi].
     """
     Ex = E[:, 0]
     Ey = E[:, 1]
 
+    # Stokes parameters from time-averaged field correlations (Collett [1])
     S0 = np.real(np.mean(Ex*np.conj(Ex) + Ey*np.conj(Ey)))
+
+    if S0 == 0:
+        raise ValueError("S0 is zero — no optical power present")
+
+    # Normalized Stokes parameters (Collett [1], Eq. 2.12–2.15)
     S1 = np.real(np.mean(Ex*np.conj(Ex) - Ey*np.conj(Ey))) / S0
     S2 = 2 * np.real(np.mean(Ex * np.conj(Ey))) / S0
+    # Collett [1] Eq 2.15: S3 = 2 * Im(<Ex* conj(Ey)>), sign gives handedness
     S3 = -2 * np.imag(np.mean(Ex * np.conj(Ey))) / S0
+    S0 = 1.0  # Normalize S0 to 1 for pure states, so S1, S2, S3 are relative values on the Poincaré sphere.    
+    # Polarization ellipse parameters (Collett [1], Eq. 2.28–2.29)
+    psi = 0.5 * np.arctan2(S2, S1)   #— orientation angle
+    chi = 0.5 * np.arcsin(S3)        #— ellipticity angle (S3 already normalized)
+    # Note: Clip to [-1, 1] guards against floating-point noise in S3
+    # that can exceed unity and cause arcsin to return NaN (Born & Wolf [3]).
 
-    # Avoid division by zero
-    if S0 == 0:
-        raise ValueError("S0 is zero, cannot compute Psi and Chi")
-
-    # Calculate Psi and Chi
-    psi = 0.5 * np.arctan2(S2, S1)
-    chi = 0.5 * np.arcsin(S3/S0)
-    # Output results
-    # print(f"S0 = {S0:.3f}\nS1 = {S1:.3f}\nS2 = {S2:.3f}\nS3 = {S3:.3f}")
-    # print(f"Psi (polarization azimuth) = {np.rad2deg(psi):.3f}°")
-    # print(f"Chi (polarization ellipticity) = {np.rad2deg(chi):.3f}°")
-    return S0, S1, S2, S3
+    return [S0, S1, S2, S3], [psi, chi]
 
 
 def poincare(s1, s2, s3):
@@ -64,3 +75,19 @@ def poincare(s1, s2, s3):
     ax.set_box_aspect([1, 1, 1])
     plt.tight_layout()
     plt.show()
+
+
+def cos_sim(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
+    """
+    Returns the cosine similarity index between two vectors.
+    Parameters:
+        v1 (np.ndarrary): Vector 1, must be a np.column_stack type.
+        v2 (np.ndarrary): Vector 2, must be a np.column_stack type.
+    Raises:
+        No Error
+    """
+    num = np.dot(v1, v2.T)
+    mag_a = np.linalg.norm(v1)
+    mag_b = np.linalg.norm(v2)
+    sim = num/(mag_a*mag_b)
+    return sim

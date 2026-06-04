@@ -1,10 +1,21 @@
 import numpy as np
-# Gerd Keiser Book Chapter 3
-# Behzad Razavi
-# Thorlabs
+
+# --- LITERATURE SOURCES ---
+# [1] Keiser, G., "Optical Fiber Communications", 5th ed., McGraw-Hill, 2015.
+#     Ch. 3: Fiber attenuation (dB/km), chromatic dispersion, PMD.
+# [2] Hui, R. & O'Sullivan, M., "Fiber-Optic Measurement Techniques",
+#     Academic Press, 2009. Material dispersion coefficients for silica.
+# [3] Keck, D. B. et al., "Waveguide dispersion in single-mode fibers",
+#     IEEE J. Quantum Electron., vol. QE-21, no. 6, 1985.
+# [4] Yuan, L. et al., "Stress-induced birefringence and fabrication of
+#     in-fiber polarization structures", Opt. Express, vol. 27, 2019.
+# [5] Razavi, B., "Design of Integrated Circuits for Optical Communications",
+#     2nd ed., Wiley, 2012. PMD and birefringence effects in fiber links.
+# [6] Agrawal, G. P., "Fiber-Optic Communication Systems", 5th ed., Wiley, 2021.
+#     Ch. 2: Signal degradation in optical fibers.
 
 def cable(fiber_length, E,
-                pin, dispersion=False, attenuation_factor=0.25, temperature=0, num_bends=0, pm_dispersion=0.1e-12):
+                dispersion=False, attenuation_factor=0.25, temperature=0, num_bends=0, pm_dispersion=0.1e-12):
     """
     Transmission through cable, applies dispersion effects on x polarization only
 
@@ -13,13 +24,12 @@ def cable(fiber_length, E,
     fiber_length (float): Length of the Fiber in kilometers
     attenuation_factor (float): Known as alpha, expressed in decibels or dB per km. Default 0.182 dB/km for 1550nm
     E (numpy array): X and Y component of the electric field. Accepts as a 2D numpy column array or matrix
-    pin (float): Incident power as input to the cable
     temperature (float): Temperature in Celsius
     num_bends (int): Number of bends in the cable
     pm_dispersion (float): Defaults to 0.1e-12. Is the polarization mode dispersion of the fiber
 
     Returns:
-    numpy array: Vector containing electric field and optical output power [E, Pout]
+    numpy array: Electric field (carrying power information)
     """
     # Constants and initial parameters
     L = fiber_length * 1000 # converting kilometers to meters
@@ -91,11 +101,12 @@ def cable(fiber_length, E,
         E = apply_pmd(E, pmd_sd)
     else:
         pass
-    # Apply attenuation to the output signals
-    # Calculate the output power
-    pout = pin / (10**(-attenuation_factor * fiber_length / 10))
+    # Attenuation (Keiser [1] Eq 3.6, Agrawal [6] Eq 2.1.4):
+    # Applied directly to the field so that mean(|E_out|²) = att_lin · mean(|E_in|²),
+    # keeping power carried within the field (no separate pin/pout).
+    att_lin = 10 ** (-attenuation_factor * fiber_length / 10)
+    E = E * np.sqrt(att_lin)
 
-    # Return the modified electric field and output power
-    return E, pout
+    return E
 
 

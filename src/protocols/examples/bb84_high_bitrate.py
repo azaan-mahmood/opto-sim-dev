@@ -3,7 +3,7 @@ from src.lasers.sslaser import SolidStateLaser
 from src.opto_eq import cable, optics
 from src.opto_eq.phase_modulator import PhaseModulator
 from src.viewers import fields, polarimeter
-from src.detectors.apd_v2 import APD_v2
+from src.detectors import apd
 import random
 
 
@@ -11,16 +11,15 @@ Vpi = 3.757  # Phase modulator Vpi as defined
 
 def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_pol=False):
     """
-    Simulation for a BB84 protocol using realistic detector noise (APD_v2).
+    Simulation for a BB84 protocol using realistic detector noise.
     """
     # Initialize lists to store Alice's and Bob's data
     alice_bits, alice_bases = [], []
     bob_bits, bob_bases = [], []
 
-    # Using APD_v2
-    detector = APD_v2(
+    detector = apd(
         wavelength=1550e-9, quantum_efficiency=0.9, gain=10, excess_noise_factor=10,
-        load_resistance=50, temperature=25, frequency=40
+        load_resistance=50, temperature=25
     )
     
     alice_laser = SolidStateLaser(
@@ -52,7 +51,10 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_p
 
         # Generate photon with Alice's encoding
         E = alice_laser.get_electric_field(normalize=False, over_period=True)
-        pout = alice_laser.power_out
+        # Calibrate the field so that mean(|E|²) = optical power in Watts
+        power_W = alice_laser.power_out * 1e-3
+        field_power = np.mean(np.abs(E)**2)
+        E = E * np.sqrt(power_W / field_power)
 
         # Apply Alice Phase Modulation
         E = optics.polarizer(E, '45')  # Initial polarization
@@ -63,8 +65,8 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_p
 
         # Channel transmission (QC). We keep dispersion false for testing bitrate cleanly,
         # otherwise PMD dominates the QBER.
-        E, _ = cable(
-            fiber_length=fiber_length, E=E, dispersion=False, pin=pout,
+        E = cable(
+            fiber_length=fiber_length, E=E, dispersion=False,
             attenuation_factor=0.182, temperature=25, num_bends=10
         )
 
@@ -78,30 +80,21 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_p
         # Apply Bob Phase Modulation
         E = pm_bob.modulate(E_field=E, V=phase_bob)  # Bob's phase shift
         
-        # Measurement
+        # Measurement: PBS splits into two spatial modes
         Ex, Ey = optics.pbs(E)
-        
-        # Get actual noisy current from the detector
-        I_x = detector.output(E=Ex, area=1, bandwidth=bandwidth)
-        I_y = detector.output(E=Ey, area=1, bandwidth=bandwidth)
-        
-        # Determine the detector threshold (3 sigma of the zero-photon noise floor)
+
+        # Noisy photocurrent from each detector (power derived from field)
+        I_x = detector.output(E=Ex, bandwidth=bandwidth)
+        I_y = detector.output(E=Ey, bandwidth=bandwidth)
+
+        # Differential detection: ensure signal exceeds noise floor,
+        # then compare photocurrents to determine the bit.
         noise_floor = detector.calculate_noise(0, bandwidth)
         threshold = 3 * noise_floor
-        
-        click_x = I_x > threshold
-        click_y = I_y > threshold
 
-        # Determine Bob's bit based on current threshold
-        if click_x and not click_y:
-            bob_bit = 0
-        elif click_y and not click_x:
-            bob_bit = 1
-        elif click_x and click_y:
-            # Double click -> random assignment
-            bob_bit = random.randint(0, 1)
+        if I_x > threshold or I_y > threshold:
+            bob_bit = 0 if I_x > I_y else 1
         else:
-            # No click -> random assignment (in real life, bits are discarded during sifting)
             bob_bit = random.randint(0, 1)
 
         if show_pol:
