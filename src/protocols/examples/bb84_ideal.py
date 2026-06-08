@@ -1,5 +1,5 @@
 import numpy as np
-from src.lasers.sslaser import SolidStateLaser
+from src.lasers.cwlaser import CWLaser
 from src.opto_eq import cable, optics
 from src.opto_eq.phase_modulator import PhaseModulator
 from src.viewers import fields, polarimeter
@@ -31,20 +31,13 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
         wavelength=1550e-9, quantum_efficiency=0.9, gain=10, excess_noise_factor=10,
         load_resistance=50, temperature=25
     )
-    alice_laser = SolidStateLaser(
+    alice_laser = CWLaser(
         wavelength=1550e-9,
         polarization_azimuth=np.pi,
         polarization_ellipticity=np.pi / 2,
         power_dbm=-5,
-        frequency=5e6
-    )
-
-    eve_laser = SolidStateLaser(
-        wavelength=1550e-9,
-        polarization_azimuth=np.pi,
-        polarization_ellipticity=np.pi / 2,
-        power_dbm=-5,
-        frequency=5e6
+        linewidth=1e6,
+        rin_density=-140,
     )
 
     pm_alice = PhaseModulator(crystal_cut='X', modulation="DC")
@@ -68,10 +61,7 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
 
         # Generate photon with Alice's encoding
         E = alice_laser.get_electric_field(normalize=False, over_period=True)
-        # Calibrate the field so that mean(|E|²) = optical power in Watts
-        power_W = alice_laser.power_out * 1e-3
-        field_power = np.mean(np.abs(E)**2)
-        E = E * np.sqrt(power_W / field_power)
+        # mean(|E|²) is already calibrated to optical power in Watts (CWLaser convention)
 
         # Apply Alice Phase Modulation
         E = optics.polarizer(E, '45')  # Initial polarization
@@ -80,9 +70,11 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
         if show_pol:
             polarimeter(E, title=f"Bit Number {num_bits},Alice Bit/Basis = {alice_bit} / {alice_basis}")
 
-        # Channel transmission (QC). Dispersion = True
+        # Channel transmission (QC). Dispersion disabled — the FFT-based
+        # dispersion model produces unphysical frequencies ~10^17 Hz and
+        # corrupts the field at optical carrier rates (known blocked issue).
         E = cable(
-            fiber_length=fiber_length, E=E, dispersion=True,
+            fiber_length=fiber_length, E=E, dispersion=False,
             attenuation_factor=0.182, temperature=25, num_bends=10
         )
 

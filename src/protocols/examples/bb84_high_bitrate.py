@@ -1,5 +1,5 @@
 import numpy as np
-from src.lasers.sslaser import SolidStateLaser
+from src.lasers.cwlaser import CWLaser
 from src.opto_eq import cable, optics
 from src.opto_eq.phase_modulator import PhaseModulator
 from src.viewers import fields, polarimeter
@@ -22,12 +22,13 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_p
         load_resistance=50, temperature=25
     )
     
-    alice_laser = SolidStateLaser(
+    alice_laser = CWLaser(
         wavelength=1550e-9,
         polarization_azimuth=np.pi,
         polarization_ellipticity=np.pi / 2,
         power_dbm=-5,
-        frequency=5e6
+        linewidth=1e6,
+        rin_density=-140,
     )
 
     pm_alice = PhaseModulator(crystal_cut='X', modulation="DC")
@@ -51,10 +52,7 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_p
 
         # Generate photon with Alice's encoding
         E = alice_laser.get_electric_field(normalize=False, over_period=True)
-        # Calibrate the field so that mean(|E|²) = optical power in Watts
-        power_W = alice_laser.power_out * 1e-3
-        field_power = np.mean(np.abs(E)**2)
-        E = E * np.sqrt(power_W / field_power)
+        # mean(|E|²) is already calibrated to optical power in Watts (CWLaser convention)
 
         # Apply Alice Phase Modulation
         E = optics.polarizer(E, '45')  # Initial polarization

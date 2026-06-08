@@ -18,7 +18,9 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - Frequency-domain implementation (rFFT → shape → irFFT) with coarser internal time resolution when optical sampling is extreme
 - **`sample_field(dt, n_samples)`** — public method returning complex-envelope field (n_samples, 2) with power, phase noise, RIN, and polarisation. Primary API for downstream components.
 - `get_electric_field(dt=1e-12, over_period=False, n_samples=1000, normalize=True)` — backward-compatible, `t`→`dt`, hardcoded 1000→`n_samples` param.
-- Not yet used in BB84 scripts (still uses SolidStateLaser)
+- Now used in BB84 example scripts (replaced SolidStateLaser)
+- BB84 scripts call `get_electric_field(normalize=False, over_period=True)` — power already calibrated, no extra rescaling needed
+- `dispersion=False` in cable(): the FFT dispersion model is blocked (unphysical frequencies), disabled to avoid field corruption
 
 ### APD (`src/detectors/apd.py`)
 - Current-based output: `output(E, bandwidth)` derives `power = mean(|E|²)` from the field
@@ -55,9 +57,9 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - Awaiting replacement with CWLaser once dispersion is fixed.
 
 ### BB84 Scripts
-- `bb84_ideal.py` / `bb84_high_bitrate.py`: use SolidStateLaser with field calibration → cable → PBS → APD
-- QBER is 0% at 1-150 km with dispersion off (correct: differential detection, signal dominates noise)
-- QBER rises from 0% at ~200 MHz to 35% at 10 GHz (100 km): noise scales with √bandwidth, 11% abort threshold at ~4.6 GHz
+- `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser (no power calibration needed) → polarizer → phase modulator → cable (dispersion=False) → PBS → APD
+- QBER is 0% at 1-200 km (correct: differential detection, signal dominates noise)
+- QBER is 0% at all tested bandwidths (1 MHz–5 GHz) at 100 km: CWLaser's -5 dBm with M=10 provides ~3.5 mA signal current, far exceeding the noise floor
 
 ## Generated Graphs
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
@@ -72,8 +74,8 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 | `src/lasers/cwlaser.py` | Relaxation-oscillation RIN model (Coldren Eq 5.3.38), rewritten `_sample_rin()` |
 | `src/opto_eq/fiber.py` | Removed `pin`/`pout`, attenuation on field only |
 | `src/detectors/apd.py` | `output(E, ...)` derives power from field |
-| `src/protocols/examples/bb84_ideal.py` | Field calibration to Watts, new cable/apd signatures |
-| `src/protocols/examples/bb84_high_bitrate.py` | Same |
+| `src/protocols/examples/bb84_ideal.py` | Switched to CWLaser, removed power calibration, dispersion=False |
+| `src/protocols/examples/bb84_high_bitrate.py` | Switched to CWLaser, removed power calibration |
 | `main.py` | Updated cable/stokes calls |
 | `src/viewers/stokes.py` | Normalized S0=1.0, returns `[S0,S1,S2,S3], [psi,chi]` |
 | `CHANGELOG.md` | Full audit trail with line ranges and timestamps |

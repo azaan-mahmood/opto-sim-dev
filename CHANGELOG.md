@@ -332,3 +332,14 @@ New physics-informed continuous-wave laser model for QKD simulation:
 - `get_electric_field(t=...)` for single-sample → now `get_electric_field(dt=...)`. No existing callers use single-sample mode, so no breakage.
 - `sample_field()` is the recommended API going forward for both characterisation and BB84 scripts.
 - MZM is importable as `from src.opto_eq.mzm import MZM` or `from src.opto_eq import MZM`.
+
+### BB84 scripts updated to CWLaser — `src/protocols/examples/bb84_ideal.py` and `bb84_high_bitrate.py`
+
+| Change | Rationale |
+|---|---|
+| `SolidStateLaser` → `CWLaser` | CWLaser provides physics-informed RIN, phase noise, and correct power scaling. |
+| Removed `E *= sqrt(power_W / mean(|E|²))` calibration | CWLaser's `get_electric_field()` already has `mean(|E|²) = P_W` — no rescaling needed. |
+| Removed unused `eve_laser` (bb84_ideal) | Dead code — variable was defined but never referenced in the simulation loop. |
+| `dispersion=True` → `dispersion=False` (bb84_ideal) | The FFT-based dispersion function (`apply_dispersion` in fiber.py:53) computes `f = (1/100)*(1/(D·L·0.2e-9))` which produces ~10¹⁷ Hz — unphysical and corrupts the 193 THz CWLaser field. This is a pre-existing blocked issue documented in AGENTS.md. The high-bitrate script already used `dispersion=False`. |
+
+**Verified:** 0% QBER at 10–200 km (bb84_ideal), 0% QBER at 1 MHz–5 GHz bandwidth / 100 km (bb84_high_bitrate).
