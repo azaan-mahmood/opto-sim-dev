@@ -311,3 +311,24 @@ New physics-informed continuous-wave laser model for QKD simulation:
 | `analysis/eye_diagrams.png` | 5/10/25 Gbaud eyes side-by-side |
 
 **Note on OOK modulation:** A phase modulator alone cannot produce OOK (amplitude modulation). The script uses an idealised intensity-modulator model (`E_mod = E_cw · wfm`). Real OOK requires direct laser current modulation or a Mach-Zehnder modulator.
+
+---
+
+## 2026-06-05 — CWLaser API redesign: `sample_field()`, MZM device model, characterisation rewrite
+
+### Session: 08:30–10:00 UTC+5
+
+**Three interconnected changes:**
+
+| Change | Files | Rationale |
+|---|---|---|
+| `CWLaser.sample_field(dt, n_samples)` | `src/lasers/cwlaser.py` | New public method returning complex-envelope field (n_samples, 2) with all physical effects (power, phase noise, RIN, polarisation). The laser owns the physics — no more ad-hoc noise generation in characterisation scripts. |
+| `get_electric_field` API cleanup | `src/lasers/cwlaser.py` | `t=0` → `dt=1e-12` (descriptive). Hardcoded `1000` → parameter `n_samples=1000`. Backward-compatible for all existing callers that use `over_period=True`. |
+| MZM physical model | `src/opto_eq/mzm.py` (new), `src/opto_eq/__init__.py` | Push-pull MZM: `E_out = E_in·cos(π·V/V_pi)·exp(j·π·V_bias/V_pi)`. Replaces idealised `E·wfm` intensity modulator with a physically correct interferometric model (Agrawal [1] §4.2). |
+| Characterisation rewritten | `analysis/laser_characterization.py` | Removed `_field_complex_envelope` / `_field_series` helpers. All plots now use `laser.sample_field()`. Eye diagrams use `MZM`. Phase noise and RIN measured from full field output (end-to-end verification). Added `matplotlib.use('Agg')` for headless operation. |
+
+**Impact on call sites:**
+- `get_electric_field(dt=..., over_period=True, n_samples=...)` — all existing callers use keyword args `over_period=True, normalize=False` which are unchanged.
+- `get_electric_field(t=...)` for single-sample → now `get_electric_field(dt=...)`. No existing callers use single-sample mode, so no breakage.
+- `sample_field()` is the recommended API going forward for both characterisation and BB84 scripts.
+- MZM is importable as `from src.opto_eq.mzm import MZM` or `from src.opto_eq import MZM`.

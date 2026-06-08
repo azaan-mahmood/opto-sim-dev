@@ -230,18 +230,59 @@ class CWLaser:
         rin = np.fft.irfft(Y, n=n_samples)
         return rin
 
+    def sample_field(self, dt: float, n_samples: int) -> NDArray[np.complex128]:
+        """
+        Generate a sequence of field samples with all physical effects applied.
+
+        Returns the complex envelope (no optical carrier) of the laser field,
+        shape (n_samples, 2) for [Ex, Ey], with:
+          - Power scaled so that mean(|E|^2) = optical power in Watts
+          - Phase noise (Wiener process, Henry [1])
+          - RIN with relaxation-oscillation spectrum (Coldren [2] Eq 5.3.38)
+          - Polarisation state (Jones vector)
+
+        Most downstream components (fibre, modulator, detector) operate on the
+        complex envelope.  To obtain the full optical field including the
+        carrier at omega for visualisation over one period:
+
+            t = np.arange(n_samples) * dt
+            E_full = E * np.exp(1j * self.omega * t)[:, np.newaxis]
+
+        Parameters
+        ----------
+        dt : float
+            Time step between samples in seconds.
+        n_samples : int
+            Number of samples to generate.
+
+        Returns
+        -------
+        numpy.ndarray, shape (n_samples, 2)
+            Complex envelope field [Ex, Ey] at each sample.
+        """
+        phi = self._sample_phase_noise(dt, n_samples)
+        rin = self._sample_rin(dt, n_samples)
+        amp = np.sqrt(np.maximum(self._power_w * (1.0 + rin), 0.0))
+        E_pol = self._polarization_vector()
+        return np.outer(amp * np.exp(1j * phi), E_pol)
+
     def get_electric_field(
-        self, t: float = 0, over_period: bool = False, normalize: bool = True
+        self, dt: float = 1e-12, over_period: bool = False,
+        n_samples: int = 1000, normalize: bool = True
     ) -> NDArray[np.complex128]:
         """
         Generate the electric field vector [Ex, Ey] with phase noise and RIN.
 
         Parameters
         ----------
-        t : float
-            Time in seconds (used only if over_period=False).
+        dt : float
+            Time step in seconds. Used as the phase-noise diffusion step
+            when over_period=False. Ignored when over_period=True (the
+            step is derived from the optical period and n_samples).
         over_period : bool
-            If True, return the field over one optical period (N=1000 samples).
+            If True, return the field over one optical period.
+        n_samples : int
+            Number of samples when over_period=True.
         normalize : bool
             If True, return unit-amplitude field (direction only).
             If False, return field scaled by sqrt(power).
@@ -249,12 +290,11 @@ class CWLaser:
         Returns
         -------
         numpy.ndarray
-            Shape (2,) if over_period=False, or (N, 2) if over_period=True.
+            Shape (2,) if over_period=False, or (n_samples, 2) if over_period=True.
         """
         E_pol = self._polarization_vector()
 
         if over_period:
-            n_samples = 1000
             T = 1.0 / self.frequency
             dt = T / n_samples
             t_arr = np.linspace(0, T, n_samples, endpoint=False)
@@ -272,13 +312,13 @@ class CWLaser:
                     E = E / nrm
             return E
         else:
-            phi = np.sqrt(self._phase_diff_coeff * abs(t) + 1e-30)
-            phi_noise = np.random.normal(0, phi)
+            phi_std = np.sqrt(self._phase_diff_coeff * abs(dt) + 1e-30)
+            phi_noise = np.random.normal(0, phi_std)
 
-            delta_p = self._sample_rin(max(t, 1e-12), 2)[0]
+            delta_p = self._sample_rin(max(dt, 1e-12), 2)[0]
             amp = np.sqrt(max(self._power_w * (1.0 + delta_p), 0))
 
-            E = amp * np.exp(1j * (self.omega * t + phi_noise)) * E_pol
+            E = amp * np.exp(1j * (self.omega * dt + phi_noise)) * E_pol
             if normalize:
                 nrm = np.linalg.norm(E)
                 if nrm > 0:

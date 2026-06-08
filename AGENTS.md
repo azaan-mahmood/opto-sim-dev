@@ -16,6 +16,8 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - Parameters: `wavelength`, `power_dbm`, `linewidth`, `rin_density`, `polarization_azimuth`, `polarization_ellipticity`, `relaxation_frequency` (default 5 GHz), `damping_rate` (default 1.88e10 rad/s)
 - RIN PSD: `S_RIN(f) = RIN_0 · (γ² + 4π²f²) / |(2πf_RO)² - (2πf)² + jγ(2πf)|²`
 - Frequency-domain implementation (rFFT → shape → irFFT) with coarser internal time resolution when optical sampling is extreme
+- **`sample_field(dt, n_samples)`** — public method returning complex-envelope field (n_samples, 2) with power, phase noise, RIN, and polarisation. Primary API for downstream components.
+- `get_electric_field(dt=1e-12, over_period=False, n_samples=1000, normalize=True)` — backward-compatible, `t`→`dt`, hardcoded 1000→`n_samples` param.
 - Not yet used in BB84 scripts (still uses SolidStateLaser)
 
 ### APD (`src/detectors/apd.py`)
@@ -28,6 +30,12 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - `cable()` no longer takes `pin` or returns `pout`
 - Attenuation applied directly to field: `E *= sqrt(10^(-α·L/10))` (Keiser Eq 3.6)
 - Birefringence Jones matrix `[[exp(j·δβ·L/2), 0], [0, 1]]` shifts Ex phase
+
+### Mach-Zehnder Modulator (`src/opto_eq/mzm.py`)
+- Push-pull configuration: `E_out = E_in · cos(π·V/V_pi) · exp(j·π·V_bias/V_pi)`
+- `switching_voltage = V_pi / 2` (voltage for ON→OFF transition)
+- Parameters: `V_pi` (single-arm π voltage, default 5 V), `bias_voltage` (common-mode phase, default 0)
+- Agrawal [1] §4.2: External Modulation and Mach-Zehnder Modulators
 
 ### Stokes viewer (`src/viewers/stokes.py`)
 - `compute_stokes_parameters(E)` returns `[S0,S1,S2,S3], [psi, chi]`
@@ -69,4 +77,7 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 | `main.py` | Updated cable/stokes calls |
 | `src/viewers/stokes.py` | Normalized S0=1.0, returns `[S0,S1,S2,S3], [psi,chi]` |
 | `CHANGELOG.md` | Full audit trail with line ranges and timestamps |
-| `analysis/laser_characterization.py` | CWLaser verification suite: power, linewidth, phase noise, RIN spectrum, Stokes, eye diagrams |
+| `analysis/laser_characterization.py` | Rewritten: uses `laser.sample_field()`, MZM model, no inline noise generation |
+| `src/lasers/cwlaser.py` | Added `sample_field()`, renamed `t`→`dt`, `n_samples` param |
+| `src/opto_eq/mzm.py` | New: physical MZM device model (push-pull) |
+| `src/opto_eq/__init__.py` | Exports MZM |

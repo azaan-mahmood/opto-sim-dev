@@ -1,41 +1,16 @@
+import matplotlib
+matplotlib.use('Agg')
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
-from numpy.fft import fft, fftfreq, rfft, rfftfreq
 import os, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.lasers.cwlaser import CWLaser
 from src.viewers.stokes import compute_stokes_parameters, poincare
+from src.opto_eq.mzm import MZM
 
 OUT = os.path.join(os.path.dirname(__file__))
-
-def _field_complex_envelope(laser, dt, n_samples):
-    r"""
-    Complex-envelope field \tilde{E}(t) with phase noise and RIN.
-
-    E(t) = \sqrt{P_0\,(1+\delta_P(t))}\,
-           \exp\!\bigl(j\,\phi_\text{noise}(t)\bigr)
-
-    sampled at rate 1/dt.  Shape (n_samples,) where the two
-    polarisation components are collapsed onto the Jones vector;
-    for polarisation-resolved work use _field_series instead.
-    """
-    phi = laser._sample_phase_noise(dt, n_samples)
-    rin = laser._sample_rin(dt, n_samples)
-    amp = np.sqrt(np.maximum(laser._power_w * (1.0 + rin), 0.0))
-    return amp * np.exp(1j * phi)
-
-
-def _field_series(laser, dt, n_samples):
-    """Shape (n_samples, 2) full field [Ex, Ey]."""
-    t = np.arange(n_samples) * dt
-    phi = laser._sample_phase_noise(dt, n_samples)
-    rin = laser._sample_rin(dt, n_samples)
-    amp = np.sqrt(np.maximum(laser._power_w * (1.0 + rin), 0.0))
-    carrier = np.exp(1j * (laser.omega * t + phi))
-    Epol = laser._polarization_vector()
-    return np.outer(amp * carrier, Epol)
 
 
 def _lorentzian(f, f0, hwhm, S0):
@@ -47,9 +22,9 @@ def _lorentzian(f, f0, hwhm, S0):
 #  1. Power & field convention
 # --------------------------------------------─
 def plot_power_convention(laser, ax):
-    """Verify mean(|E|^2) = P_W."""
-    E = _field_complex_envelope(laser, 1e-12, 5000)
-    P_meas = np.mean(np.abs(E)**2)
+    """Verify mean(|E|^2) = P_W via laser.sample_field()."""
+    E = laser.sample_field(1e-12, 5000)
+    P_meas = np.mean(np.sum(np.abs(E)**2, axis=1))
     P_exp  = laser._power_w
     err_pc  = 100 * abs(P_meas - P_exp) / P_exp
     ax.bar(['Expected', 'Measured'], [P_exp, P_meas],
@@ -65,7 +40,7 @@ def plot_power_convention(laser, ax):
 # --------------------------------------------─
 def plot_optical_spectrum(laser, ax):
     """
-    Complex-envelope autocorrelation -> FFT -> optical spectrum.
+    Complex-envelope PSD via Welch on the Ex component of sample_field().
     Fit a Lorentzian to extract the FWHM linewidth.
     """
     fs = 200e9
@@ -73,21 +48,15 @@ def plot_optical_spectrum(laser, ax):
     T  = 5e-6
     N  = int(T / dt)
 
-    E = _field_complex_envelope(laser, dt, N)
+    E = laser.sample_field(dt, N)
+    Ex = E[:, 0] - np.mean(E[:, 0])
 
-    # Remove DC offset
-    E = E - np.mean(E)
-
-    # Autocorrelation via Welch-based PSD
-    f, Pxx = signal.welch(E, fs=fs, nperseg=min(N//8, 16384),
+    f, Pxx = signal.welch(Ex, fs=fs, nperseg=min(N//8, 16384),
                           return_onesided=True, scaling='density')
 
-    # PSD is double-sided -> single-sided, already in appropriate units
-    # Fit Lorentzian around the peak
     peak_idx = np.argmax(Pxx)
     f_peak = f[peak_idx]
 
-    # Fit region: within ±1 GHz of peak
     fit_mask = np.abs(f - f_peak) < 1e9
     f_fit = f[fit_mask]
     P_fit = Pxx[fit_mask]
@@ -97,7 +66,6 @@ def plot_optical_spectrum(laser, ax):
                 transform=ax.transAxes, ha='center')
         return
 
-    # Least-squares fit of Lorentzian
     from scipy.optimize import curve_fit
     def lor(f, hwhm, S0):
         return _lorentzian(f, f_peak, hwhm, S0)
@@ -118,7 +86,7 @@ def plot_optical_spectrum(laser, ax):
                 label=f'Lorentzian fit\nFWHM = {fwhm_fit/1e6:.2f} MHz')
 
     ax.axvline(laser.linewidth / 2 * 1e-9, color='grey', ls=':',
-               label=f'Specified ½-Δν = {laser.linewidth/2e6:.2f} MHz')
+               label=f'Specified \u00bd-\u0394\u03bd = {laser.linewidth/2e6:.2f} MHz')
 
     ax.set_xlabel('Frequency offset (GHz)')
     ax.set_ylabel('PSD (a.u.)')
@@ -130,7 +98,7 @@ def plot_optical_spectrum(laser, ax):
 
 
 # --------------------------------------------─
-#  3. RIN spectrum
+#  3. RIN spectrum — extracted from field power
 # --------------------------------------------─
 def theoretical_rin_psd(f, f_RO, gamma, RIN_0):
     """Coldren Eq 5.3.38 normalised to RIN_0 at DC."""
@@ -138,24 +106,26 @@ def theoretical_rin_psd(f, f_RO, gamma, RIN_0):
     omega_R = 2 * np.pi * f_RO
     num     = gamma**2 + omega**2
     den     = (omega_R**2 - omega**2)**2 + (gamma * omega)**2
-    h2      = (num / den) / (gamma**2 / omega_R**4)   # |H|^2 normalised
+    h2      = (num / den) / (gamma**2 / omega_R**4)
     return RIN_0 * h2
 
 
 def plot_rin_spectrum(laser, ax):
-    """Welch PSD of RIN time-series vs. Coldren theory."""
+    """RIN PSD via sample_field() power time-series vs. Coldren theory."""
     fs = 100e9
     dt = 1.0 / fs
     T  = 10e-6
     N  = int(T / dt)
 
-    rin = laser._sample_rin(dt, N)
+    E = laser.sample_field(dt, N)
+    power = np.sum(np.abs(E)**2, axis=1)
+    rin = power / laser._power_w - 1.0
+
     f, Pxx = signal.welch(rin, fs=fs, nperseg=min(N//16, 8192),
                           return_onesided=True, scaling='density')
 
-    ax.plot(f * 1e-9, 10 * np.log10(Pxx), lw=0.8, label='Measured')
+    ax.plot(f * 1e-9, 10 * np.log10(Pxx), lw=0.8, label='Measured (from field)')
 
-    # Theory
     f_th = np.logspace(7, 10, 500)
     RIN_th = theoretical_rin_psd(f_th, laser._relaxation_freq,
                                  laser._damping_rate, laser._rin_linear)
@@ -176,11 +146,12 @@ def plot_rin_spectrum(laser, ax):
 
 
 # --------------------------------------------─
-#  4. Phase noise characterisation
+#  4. Phase noise — extracted from field phase
 # --------------------------------------------─
 def plot_phase_noise(laser, ax):
     """
-    Structure function D_phi(tau) = <[phi(t+tau) - phi(t)]^2>.
+    Structure function D_phi(tau) = <[phi(t+tau) - phi(t)]^2>
+    extracted from the complex envelope via sample_field().
     For a Wiener process D_phi(tau) = 2*pi*linewidth * tau.
     """
     fs = 100e9
@@ -188,9 +159,9 @@ def plot_phase_noise(laser, ax):
     T  = 2e-6
     N  = int(T / dt)
 
-    phi = laser._sample_phase_noise(dt, N)
+    E = laser.sample_field(dt, N)
+    phi = np.unwrap(np.angle(E[:, 0]))
 
-    # Unwrapped phase increments over increasing lags
     max_tau = min(N // 4, 5000)
     lags = np.arange(1, max_tau)
     D    = np.zeros_like(lags, dtype=float)
@@ -201,7 +172,7 @@ def plot_phase_noise(laser, ax):
 
     tau_vals = lags * dt
 
-    ax.plot(tau_vals * 1e9, D, lw=0.8, label='Measured')
+    ax.plot(tau_vals * 1e9, D, lw=0.8, label='Measured (from field)')
     ax.plot(tau_vals * 1e9, 2 * np.pi * laser.linewidth * tau_vals,
             '--k', lw=1.2, label=r'$2\pi \Delta\nu \cdot \tau$')
 
@@ -233,18 +204,16 @@ def plot_stokes_summary(laser, ax):
 
 
 # --------------------------------------------─
-#  6. Eye diagram (NRZ-OOK)
+#  6. Eye diagram (NRZ-OOK) via MZM
 # --------------------------------------------─
 def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
     """
-    NRZ On-Off Keying eye diagram.
+    NRZ On-Off Keying eye diagram generated with a physical MZM model.
 
-    Note: OOK is amplitude modulation. A phase modulator alone cannot
-    produce OOK (it only changes phase, not amplitude).  In practice
-    OOK is generated either by direct laser current modulation or by a
-    Mach-Zehnder modulator (MZM) which converts phase modulation into
-    amplitude modulation via interference.  Here we use the idealised
-    intensity-modulator model: E_mod = E_cw * bit_waveform.
+    The MZM converts the CW laser field into an OOK signal by applying
+    a push-pull voltage swing of 0 V (ON) to V_pi/2 (OFF).  This
+    replaces the idealised intensity-modulator model (E * wfm) used in
+    earlier versions.
 
     Parameters
     ----------
@@ -255,23 +224,19 @@ def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
     dt   = 1.0 / (bitrate * spb)
     Tbit = 1.0 / bitrate
 
-    # PRBS
+    mzm = MZM(V_pi=5.0)
+    V_off = mzm.switching_voltage  # voltage for null
+
     bits = np.random.randint(0, 2, n_bits)
     wfm  = np.repeat(bits, spb).astype(float)
 
-    # Complex envelope with laser noise
-    N   = len(wfm)
-    phi = laser._sample_phase_noise(dt, N)
-    rin = laser._sample_rin(dt, N)
+    N = len(wfm)
+    E_cw = laser.sample_field(dt, N)
 
-    # Modulated field: E_mod = sqrt(P0 * (1+RIN)) * exp(j*phi) * wfm
-    amp = np.sqrt(np.maximum(laser._power_w * (1.0 + rin), 0.0))
-    E_mod = amp * np.exp(1j * phi) * wfm
+    V_signal = np.where(wfm > 0.5, 0.0, V_off)
+    E_mod = mzm.modulate(E_cw, V_signal)
+    I = np.sum(np.abs(E_mod)**2, axis=1)
 
-    # Received intensity (direct detection)
-    I = np.abs(E_mod)**2
-
-    # Reshape into eye: 2-bit period, discard fractional periods
     eye_len = 2 * spb
     n_eyes  = len(I) // eye_len
     if n_eyes < 2:
@@ -280,7 +245,7 @@ def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
     I = I[:n_eyes * eye_len]
     eye = I.reshape(n_eyes, eye_len)
 
-    t_eye = np.arange(eye_len) * dt / Tbit  # normalised to bit period
+    t_eye = np.arange(eye_len) * dt / Tbit
 
     if ax is None:
         fig, ax = plt.subplots()
@@ -290,7 +255,7 @@ def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
     ax.set_xlabel('Time (UI)')
     ax.set_ylabel('Intensity (mW)')
     ax.set_title(title or f'Eye diagram @ {bitrate/1e9:.1f} Gbaud '
-                          f'(RIN = {laser.rin_density:.0f} dB/Hz)')
+                          f'(MZM, RIN = {laser.rin_density:.0f} dB/Hz)')
     ax.set_xlim(0, 2)
     return eye
 
@@ -299,12 +264,11 @@ def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
 #  Main
 # --------------------------------------------─
 def main():
-    # Laser under test — moderate RIN for visible effects in the eye
     laser = CWLaser(
         wavelength=1550e-9,
         power_dbm=0,
-        linewidth=1e6,          # 1 MHz
-        rin_density=-130,        # moderate RIN for visible eye closure
+        linewidth=1e6,
+        rin_density=-130,
         polarization_azimuth=np.pi / 4,
         polarization_ellipticity=0.0,
         relaxation_frequency=5e9,
@@ -314,7 +278,6 @@ def main():
     print(laser)
     print(f"  P_0 = {laser._power_w * 1e3:.4f} mW  ({laser.power_dbm:.0f} dBm)")
 
-    # -- panel --
     fig = plt.figure(figsize=(14, 10))
 
     ax1  = fig.add_subplot(3, 3, 1)
@@ -332,18 +295,17 @@ def main():
     ax5  = fig.add_subplot(3, 3, 5)
     S1, S2, S3 = plot_stokes_summary(laser, ax5)
 
-    # Three eye diagrams at increasing bitrates
     ax6  = fig.add_subplot(3, 3, 6)
     eye_diagram(laser, bitrate=5e9,  n_bits=128, spb=64, ax=ax6,
-                title=f'5 Gbaud eye')
+                title='5 Gbaud eye')
 
     ax7  = fig.add_subplot(3, 3, 7)
     eye_diagram(laser, bitrate=10e9, n_bits=128, spb=32, ax=ax7,
-                title=f'10 Gbaud eye')
+                title='10 Gbaud eye')
 
     ax8  = fig.add_subplot(3, 3, 8)
     eye_diagram(laser, bitrate=25e9, n_bits=128, spb=32, ax=ax8,
-                title=f'25 Gbaud eye')
+                title='25 Gbaud eye')
 
     ax9  = fig.add_subplot(3, 3, 9)
     ax9.axis('off')
@@ -354,14 +316,12 @@ def main():
     print(f'\nSaved -> {path}')
     plt.close()
 
-    # -- Poincare sphere (uses existing function from stokes.py) --
     poincare(S1, S2, S3)
     path3 = os.path.join(OUT, 'poincare_sphere.png')
     plt.gcf().savefig(path3, dpi=150)
     print(f'Saved -> {path3}')
     plt.close()
 
-    # -- eye-only summary figure --
     fig2, axes = plt.subplots(1, 3, figsize=(15, 4))
     for ax, br, lbl in zip(axes,
                            [5e9, 10e9, 25e9],
