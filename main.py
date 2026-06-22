@@ -43,7 +43,10 @@ print(f"Psi (polarization azimuth) = {np.rad2deg(psi):.3f}°")
 print(f"Chi (polarization ellipticity) = {np.rad2deg(chi):.3f}°")
 polarimeter(E, title=f"First PM V = {0:.2f}")
 print(f"------------------Stokes after QC---------------------")
-E = cable(100, E, dispersion=True)
+# NOTE: dispersion=True requires the complex envelope (sample_field()).
+# The over-period field below has only ~5 fs of data — CD on this has
+# no modulation bandwidth to disperse.  Pass a placeholder dt for now.
+E = cable(100, E, dt=1e-12, dispersion=True)
 stokes, polarization = compute_stokes_parameters(E)
 S0, S1, S2, S3 = stokes
 psi, chi = polarization

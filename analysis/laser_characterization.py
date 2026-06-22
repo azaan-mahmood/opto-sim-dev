@@ -211,7 +211,7 @@ def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
     NRZ On-Off Keying eye diagram generated with a physical MZM model.
 
     The MZM converts the CW laser field into an OOK signal by applying
-    a push-pull voltage swing of 0 V (ON) to V_pi/2 (OFF).  This
+    a push-pull voltage swing of 0 V (ON) to V_pi (OFF).  This
     replaces the idealised intensity-modulator model (E * wfm) used in
     earlier versions.
 
@@ -224,7 +224,7 @@ def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
     dt   = 1.0 / (bitrate * spb)
     Tbit = 1.0 / bitrate
 
-    mzm = MZM(V_pi=5.0)
+    mzm = MZM()
     V_off = mzm.switching_voltage  # voltage for null
 
     bits = np.random.randint(0, 2, n_bits)

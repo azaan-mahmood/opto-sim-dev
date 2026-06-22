@@ -12,101 +12,155 @@ import numpy as np
 # [5] Razavi, B., "Design of Integrated Circuits for Optical Communications",
 #     2nd ed., Wiley, 2012. PMD and birefringence effects in fiber links.
 # [6] Agrawal, G. P., "Fiber-Optic Communication Systems", 5th ed., Wiley, 2021.
-#     Ch. 2: Signal degradation in optical fibers.
+#     Ch. 2: Signal degradation in optical fibers (CD, PMD).
+#     Ch. 4: Fiber birefringence and beat length.
 
-def cable(fiber_length, E,
-                dispersion=False, attenuation_factor=0.25, temperature=0, num_bends=0, pm_dispersion=0.1e-12):
+
+def cable(fiber_length, E, dt=None, wavelength=1550e-9,
+          dispersion=False, attenuation_factor=0.182,
+          temperature=25, num_bends=0, pm_dispersion=0.1e-12):
     """
-    Transmission through cable, applies dispersion effects on x polarization only
+    Transmission through an optical fiber.
 
-    Parameters:
-    cable_type (string): PM, SM
-    fiber_length (float): Length of the Fiber in kilometers
-    attenuation_factor (float): Known as alpha, expressed in decibels or dB per km. Default 0.182 dB/km for 1550nm
-    E (numpy array): X and Y component of the electric field. Accepts as a 2D numpy column array or matrix
-    temperature (float): Temperature in Celsius
-    num_bends (int): Number of bends in the cable
-    pm_dispersion (float): Defaults to 0.1e-12. Is the polarization mode dispersion of the fiber
+    Applies, in order:
+      1. Birefringence (beat-length Jones matrix)  — polarisation rotation
+      2. Chromatic dispersion (FFT-based, Agrawal [6] §2.4)
+      3. PMD (frequency-domain DGD)
+      4. Attenuation (Keiser [1] Eq 3.6)
 
-    Returns:
-    numpy array: Electric field (carrying power information)
+    Parameters
+    ----------
+    fiber_length : float
+        Fiber length in kilometres.
+    E : ndarray, shape (N, 2)
+        Complex-envelope optical field [Ex, Ey] at N time samples.
+        **Must be the complex envelope** (no optical carrier) when
+        ``dispersion=True`` — use ``laser.sample_field()`` or
+        ``get_electric_field(over_period=False)``.
+    dt : float or None
+        Sampling interval in seconds.  **Required when dispersion=True**
+        so that the FFT frequency grid can be constructed.
+    wavelength : float
+        Centre wavelength in metres.  Default 1550e-9 (1550 nm).
+    dispersion : bool
+        Apply chromatic dispersion and PMD?  Default False — only
+        birefringence and attenuation are applied.
+    attenuation_factor : float
+        Power attenuation in dB/km (Keiser [1] Eq 3.6).
+        Default 0.182 dB/km (standard SMF-28 at 1550 nm).
+    temperature : float
+        Ambient temperature in °C.  Affects birefringence.
+        Default 25 °C.
+    num_bends : int
+        Number of discrete bends.  Each bend contributes to the
+        stress-induced birefringence (Yuan [4]).
+        Default 0.
+    pm_dispersion : float
+        PMD coefficient in s/sqrt(m).  Default 0.1e-12.
+        The RMS DGD after length L is ``pm_dispersion * sqrt(L)``.
+
+    Returns
+    -------
+    ndarray, shape (N, 2)
+        Transmitted field.
+
+    References
+    ----------
+    ...as listed in the module header.
     """
-    # Constants and initial parameters
-    L = fiber_length * 1000 # converting kilometers to meters
-    T0 = 25  # reference temperature in Celsius
+    L = fiber_length * 1000                # km → m
+    T0 = 25.0                              # reference temperature °C
 
-    birefringence_T0 = 0.87e-5  # base birefringence at T0 silica glass (source: the effect of temperature and pressure on the refractive index of some oxide glasses)
-    temperature_coefficient = -5e-7  # change in birefringence due temperature coefficient gamma, ThorLabs, pure silica glass
-    bend_effect_factor = 2.4e-4  # change in birefringence per bend based on stress (Stress-induced birefringence and fabrication of in-fiber polarization, by Lei Yuan)
+    # --- Physical constants ---
+    c0 = 2.99792458e8                      # speed of light m/s
+    omega0 = 2 * np.pi * c0 / wavelength   # carrier angular frequency
 
-    D_material = 17e-12  # ps/(nm*km) for material dispersion at 1550 nm (Chromatic) Hui2009
-    D_waveguide = -3e-12 # ps/(nm*km) for waveguide dispersion at 1550 nm. Keck 1985 IEEE
-                         # Negative due to self phase modulation dispersion cancellation
+    # --- Birefringence (beat-length model) ---
+    # Δn = n_slow - n_fast, dimensionless.
+    # Base birefringence at T0 for silica glass (source: effect of
+    # temperature and pressure on the refractive index of some oxide
+    # glasses).  Temperature coefficient from ThorLabs, pure silica.
+    # Bend contribution from Yuan [4].
+    birefringence_T0 = 0.87e-5
+    temperature_coefficient = -5e-7
+    bend_effect_factor = 2.4e-4
 
-    wavelength = 1550e-9  # central wavelength in meters
-    pmd_sd = pm_dispersion * np.sqrt(L)
-    del_T = pmd_sd**2
+    birefringence = (
+        birefringence_T0
+        + temperature_coefficient * (temperature - T0)
+        + bend_effect_factor * num_bends
+    )
 
-    # Calculate total chromatic dispersion
-    D_total = D_material + D_waveguide  # ps/(nm*km)
-
-    def apply_dispersion(E, D_total_per_meter, L):
-        beta2 = D_total_per_meter * (wavelength ** 2) / (2 * np.pi * 3e8)  # s^2/m, GVD or group velocity dispersion
-        f = (1/100)*(1/(D_total_per_meter*L*0.2e-9))
-        omega = 2 * np.pi * f
-        # omega = 2 * np.pi * 3e8 / wavelength  # angular frequency
-
-        H = np.array([[np.exp(1j * beta2 * L * omega ** 2/2), 0],  # dispersion transfer function L/2 because of two waves
-                          [0, 1]])
-
-        E_dispersed = np.transpose(H @ np.transpose(E))
-
-        return E_dispersed
-
-    # Function to calculate birefringence change due to temperature
-    def birefringence_temp_change(temp):
-        return birefringence_T0 + (temp - T0) * temperature_coefficient
-
-    # Function to calculate birefringence change due to bends
-    def birefringence_bend_change(num_bends):
-        return num_bends * bend_effect_factor
-
-
-    # # Function to apply attenuation
-    # def apply_attenuation(Ex, Ey, alpha, length):
-    #     attenuation = np.exp((alpha * length / 10))
-    #     return Ex * attenuation, Ey * attenuation
-
-    def apply_pmd(E, pmd_sd):
-        # PMD-induced broadening: model delay as a Gaussian distribution
-        # Apply PMD effect to the signal, assuming the distribution is Gaussian at 0 mean and length of Electric field
-        Ex = E[:, 0]
-        Ey = E[:, 1]
-        delay_const = np.random.normal(0, pmd_sd, Ex.shape)
-        pmd_matrix = np.exp(1j*delay_const)
-
-        E_pmd_x = pmd_matrix * Ex
-        E_pmd = np.column_stack((E_pmd_x, Ey))
-        return E_pmd
-
-    birefringence = birefringence_temp_change(temperature) + birefringence_bend_change(num_bends)
-    delta_beta = del_T * birefringence / 1.55e-6  # Beat Length for 1550 nm wavelength
-    jones = np.array([[np.exp(1j * delta_beta * L / 2), 0],  # Beat Length Formulation
+    # Beat length L_B = λ / Δn  (Keiser [1] §3.4, Agrawal [6] §4.2).
+    # Phase accumulated by Ex over length L:
+    #   Δφ = 2π · L / L_B  =  2π · L · Δn / λ
+    # We keep the L/2 factor in the Jones matrix (beat-length formulation
+    # distinguishing SM vs PM fibre) so we define:
+    #   Δβ = 4π · Δn / λ   →   Δφ = Δβ · L / 2  =  2π · L · Δn / λ
+    delta_beta = 4.0 * np.pi * birefringence / wavelength   # rad/m
+    jones = np.array([[np.exp(1j * delta_beta * L / 2), 0],
                       [0, 1]])
-    # Calculate the Jones matrix for the fiber
-    output_signals = np.transpose(jones @ np.transpose(E))
-    E = output_signals
-    if dispersion is True:
-        E = apply_dispersion(output_signals, D_total, L)
-        E = apply_pmd(E, pmd_sd)
-    else:
-        pass
-    # Attenuation (Keiser [1] Eq 3.6, Agrawal [6] Eq 2.1.4):
-    # Applied directly to the field so that mean(|E_out|²) = att_lin · mean(|E_in|²),
-    # keeping power carried within the field (no separate pin/pout).
-    att_lin = 10 ** (-attenuation_factor * fiber_length / 10)
+    E = np.transpose(jones @ np.transpose(E))
+
+    # --- Chromatic dispersion (Agrawal [6] §2.4.1) ---
+    if dispersion:
+        if dt is None:
+            raise ValueError(
+                "dt (sampling interval) is required when dispersion=True."
+            )
+
+        # Total dispersion parameter (Hui [2] material + Keck [3] waveguide)
+        D_material = 17.0      # ps/(nm·km) material  @ 1550 nm
+        D_waveguide = -3.0     # ps/(nm·km) waveguide @ 1550 nm
+        D_total = D_material + D_waveguide   # ps/(nm·km)
+
+        # Convert ps/(nm·km) → s/m²:
+        #   1 ps/(nm·km) = 1e-12 s / (1e-9 m · 1e3 m) = 1e-6 s/m²
+        D_SI = D_total * 1e-6   # s/m²
+
+        # GVD parameter (Agrawal [6] Eq 2.4.11)
+        #   β₂ = -D · λ² / (2πc)   [s²/m]
+        beta2 = -D_SI * wavelength**2 / (2 * np.pi * c0)
+
+        # Frequency grid (baseband; E is the complex envelope)
+        N = E.shape[0]
+        f = np.fft.fftfreq(N, d=dt)        # Hz, FFT-native order
+        omega = 2.0 * np.pi * f            # rad/s, baseband angular freq
+
+        # Dispersion transfer function (Agrawal [6] Eq 2.4.11):
+        #   H(ω) = exp(-j · β₂ · ω² · L / 2)
+        # ω here is the baseband frequency (deviation from ω₀).
+        H = np.exp(-1j * beta2 * omega**2 * L / 2)
+
+        # Apply in frequency domain to both polarisations (CD is isotropic)
+        E_f = np.fft.fft(E, axis=0)
+        E_f = E_f * H[:, np.newaxis]
+        E = np.fft.ifft(E_f, axis=0)
+
+        # --- PMD (Razavi [5], Agrawal [6] §4.5) ---
+        # DGD follows a Maxwellian distribution with RMS = pmd_sd.
+        # We apply a frequency-dependent phase difference between Ex and Ey
+        # in the Fourier domain:  Δτ is the differential group delay.
+        pmd_sd = pm_dispersion * np.sqrt(L)          # seconds
+        dgd = np.random.rayleigh(pmd_sd * np.sqrt(2.0 / np.pi))  # mean DGD
+        # Maxwellian mean = sqrt(2/π)·σ, so σ = pmd_sd gives
+        # RMS(DGD) = pmd_sd.
+
+        # Frequency-dependent Jones matrix for PMD:
+        #   J_pmd = diag(exp(-j·ω·Δτ/2), exp(+j·ω·Δτ/2))
+        phase_pmd = omega * dgd / 2.0
+        Hx = np.exp(-1j * phase_pmd)
+        Hy = np.exp(+1j * phase_pmd)
+
+        E_f_after_cd = np.fft.fft(E, axis=0)    # re-FFT after CD + IFFT
+        E_f_after_cd[:, 0] *= Hx
+        E_f_after_cd[:, 1] *= Hy
+        E = np.fft.ifft(E_f_after_cd, axis=0)
+
+    # --- Attenuation (Keiser [1] Eq 3.6, Agrawal [6] Eq 2.1.4) ---
+    # Applied directly to the field so that mean(|E_out|²) keeps the
+    # power in the field — no separate pin/pout tracking.
+    att_lin = 10.0 ** (-attenuation_factor * fiber_length / 10.0)
     E = E * np.sqrt(att_lin)
 
     return E
-
-

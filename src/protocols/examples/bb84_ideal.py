@@ -7,9 +7,6 @@ from src.detectors import apd
 import random
 
 
-Vpi = 3.757  # Phase modulator Vpi as defined
-
-
 def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
     """
     Simulation for an ideal BB84, that does not contain Eve.
@@ -42,6 +39,9 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
 
     pm_alice = PhaseModulator(crystal_cut='X', modulation="DC")
     pm_bob = PhaseModulator(crystal_cut='X', modulation="DC")
+    # Use the modulator's own Vpi so that the phase voltages match its
+    # crystal-calculated half-wave voltage.
+    Vpi = pm_alice.Vpi
 
     for _ in range(num_bits):
         # Alice's random choices
@@ -129,3 +129,15 @@ def simulate_bb84(num_bits, fiber_length=100, show_pol = False):
             qber = error_count / sample_size
 
     return [alice_bits, alice_bases, bob_bits, bob_bases, sifted_indices, sifted_alice, sifted_bob, qber]
+
+
+if __name__ == "__main__":
+    alice_bits, alice_bases, bob_bits, bob_bases, sifted_indices, sifted_alice, sifted_bob, qber=simulate_bb84(500, 100)
+    print(f"Alice Bits: {alice_bits}")
+    print(f"Alice Bases: {alice_bases}")
+    print(f"Bob Bits: {bob_bits}")
+    print(f"Bob Bases: {bob_bases}")
+    print(f"Sifted Indices: {sifted_indices}")
+    print(f"Sifted Alice: {sifted_alice}")
+    print(f"Sifted Bob: {sifted_bob}")
+    print(f"QBER: {qber}")

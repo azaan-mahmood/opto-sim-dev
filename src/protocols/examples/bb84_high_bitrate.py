@@ -7,8 +7,6 @@ from src.detectors import apd
 import random
 
 
-Vpi = 3.757  # Phase modulator Vpi as defined
-
 def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_pol=False):
     """
     Simulation for a BB84 protocol using realistic detector noise.
@@ -33,6 +31,7 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9, show_p
 
     pm_alice = PhaseModulator(crystal_cut='X', modulation="DC")
     pm_bob = PhaseModulator(crystal_cut='X', modulation="DC")
+    Vpi = pm_alice.Vpi
 
     for _ in range(num_bits):
         # Alice's random choices

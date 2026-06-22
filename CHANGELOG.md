@@ -343,3 +343,34 @@ New physics-informed continuous-wave laser model for QKD simulation:
 | `dispersion=True` → `dispersion=False` (bb84_ideal) | The FFT-based dispersion function (`apply_dispersion` in fiber.py:53) computes `f = (1/100)*(1/(D·L·0.2e-9))` which produces ~10¹⁷ Hz — unphysical and corrupts the 193 THz CWLaser field. This is a pre-existing blocked issue documented in AGENTS.md. The high-bitrate script already used `dispersion=False`. |
 
 **Verified:** 0% QBER at 10–200 km (bb84_ideal), 0% QBER at 1 MHz–5 GHz bandwidth / 100 km (bb84_high_bitrate).
+
+---
+
+## 2026-06-08 — Physics-based MZM rewrite; Vpi calibration fix in BB84
+
+### Session
+
+| Change | Files | Rationale |
+|---|---|---|
+| MZM rewritten as MZI + PhaseModulator | `src/opto_eq/mzm.py` | MZM now internally uses `PhaseModulator` instances per arm. Y-branch splitter/combiner model with configurable insertion loss and extinction ratio. Supports push-pull (zero chirp) and single-drive (residual chirp) modes. `V_pi` derived from crystal parameters — no more empirical `cos(π·V/V_pi)` with a user-specified V_pi. |
+| Hardcoded `Vpi = 3.757` removed from BB84 scripts | `bb84_ideal.py`, `bb84_high_bitrate.py` | Both scripts now derive V_pi from `pm_alice.Vpi` at runtime. The stale hardcoded value (3.757 V) differed by 3.2 % from the PhaseModulator's crystal-computed Vpi (3.8826 V), causing mismatched-basis QBER to drift to ~38 % instead of 50 %. With the fix: sifted QBER = 0 %, total QBER = 25 %. |
+| Characterisation script updated | `analysis/laser_characterization.py` | `MZM(V_pi=5.0)` → `MZM()` (uses default PhaseModulator). Docstring updated for new switching voltage convention. |
+
+**Verified:** `analysis/laser_characterization.py` runs clean, all three output files generated.
+
+---
+
+## 2026-06-09 — FFT-based chromatic dispersion, birefringence/PMD fixes in fiber.py
+
+### Session
+
+| Change | Files | Rationale |
+|---|---|---|
+| Chromatic dispersion rewritten with FFT | `src/opto_eq/fiber.py` | Old `apply_dispersion()` used `f = (1/100)*(1/(D·L·0.2e-9))` producing ~10¹⁷ Hz. Replaced with `H(Ω) = exp(-j·β₂·Ω²·L/2)` via `np.fft.fftfreq` (Agrawal [6] §2.4). Applied to both Ex/Ey (CD is isotropic). Verified against Gaussian pulse: broadening ratio error < 0.06 % at 0.5–2.0× LD. |
+| Unit fix in GVD calculation | `src/opto_eq/fiber.py` | D stored as `17e-12` (ps/(nm·km)) but β₂ formula needs s/m². Added conversion `D_SI = D × 1e-6`. Previously β₂ was 6 orders too small. |
+| Birefringence Jones matrix fixed | `src/opto_eq/fiber.py` | Removed spurious `del_T = pmd_sd²` factor that zeroed out the beat-length phase (~10⁻¹⁶ rad instead of the correct ~10⁶ rad). Now uses `Δβ = 4π·Δn/λ`, Jones = `diag(exp(j·Δβ·L/2), 1)`, preserving the L/2 beat-length convention (SM vs PM fibre discrimination). |
+| PMD rewritten (frequency-domain) | `src/opto_eq/fiber.py` | Old `apply_pmd()` added random per-sample phase (phase noise, not PMD). Replaced with frequency-domain DGD: Maxwellian-distributed Δτ, Jones matrix `diag(exp(∓j·ω·Δτ/2), exp(±j·ω·Δτ/2))`. |
+| New parameters | `src/opto_eq/fiber.py` | Added `dt` (required for dispersion), `wavelength` (no longer hardcoded). Default `attenuation_factor` changed from 0.25 → 0.182 dB/km (SMF-28 at 1550 nm). |
+| Updated `main.py` | `main.py` | Added `dt=1e-12` to `cable()` call. |
+
+**Verified:** `analysis/laser_characterization.py`, `bb84_ideal.py` (0 % sifted QBER), `bb84_high_bitrate.py` (0 % sifted QBER). Gaussian pulse broadening matches Agrawal theory.

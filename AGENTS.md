@@ -30,23 +30,36 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 
 ### Fiber (`src/opto_eq/fiber.py`)
 - `cable()` no longer takes `pin` or returns `pout`
-- Attenuation applied directly to field: `E *= sqrt(10^(-α·L/10))` (Keiser Eq 3.6)
-- Birefringence Jones matrix `[[exp(j·δβ·L/2), 0], [0, 1]]` shifts Ex phase
+- Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
+- **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
+- **Birefringence**: Beat-length Jones matrix `[[exp(j·Δβ·L/2), 0], [0, 1]]` where `Δβ = 4π·Δn/λ` and Δn depends on temperature and bends (Yuan [4]). Beat length `L_B = λ/Δn` distinguishes SM (long L_B) vs PM (short L_B) fibre.
+- **Chromatic dispersion** (disabled by default): FFT-based, `H(Ω) = exp(-j·β₂·Ω²·L/2)` applied to both Ex and Ey (Agrawal [6] Eq 2.4.11). Requires `dt` (sampling interval) and assumes the field is the complex envelope.
+- **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
+- Parameters: `fiber_length (km)`, `E`, `dt` (required for dispersion), `wavelength` (default 1550e-9), `dispersion`, `attenuation_factor`, `temperature`, `num_bends`, `pm_dispersion`.
 
 ### Mach-Zehnder Modulator (`src/opto_eq/mzm.py`)
-- Push-pull configuration: `E_out = E_in · cos(π·V/V_pi) · exp(j·π·V_bias/V_pi)`
-- `switching_voltage = V_pi / 2` (voltage for ON→OFF transition)
-- Parameters: `V_pi` (single-arm π voltage, default 5 V), `bias_voltage` (common-mode phase, default 0)
-- Agrawal [1] §4.2: External Modulation and Mach-Zehnder Modulators
+- Physics-based MZI built from `PhaseModulator` instances per arm
+- Y-branch splitter/combiner model with insertion loss and extinction ratio
+- Two electrode configurations:
+  - **push-pull** (default): both arms modulated with opposite voltages, zero chirp
+  - **single-drive**: one arm modulated, other is passive reference; residual frequency chirp (Koyama & Iga [2])
+- `V_pi` derived from the internal PhaseModulator's crystal parameters (`pm.Vpi`)
+- `switching_voltage = V_pi` (voltage for ON→OFF); `bias_voltage` shifts operating point (Vb=Vpi/2 → quadrature, 50 % transmission)
+- Transfer function (per polarisation component, X-cut modulates Ey):
+  - push-pull: `E_out ∝ cos(π·(V+V_bias)/(2·V_pi))`
+  - single-drive: `E_out ∝ exp(j·π·(V+V_bias)/(2·V_pi)) · cos(π·(V+V_bias)/(2·V_pi))`
+- References: Agrawal [1] §4.2, Koyama & Iga [2], Weis & Gaylord [3]
 
 ### Stokes viewer (`src/viewers/stokes.py`)
 - `compute_stokes_parameters(E)` returns `[S0,S1,S2,S3], [psi, chi]`
 - S1,S2,S3 normalized by S0; S0 set to 1.0
 - `chi = 0.5·arcsin(S3)` (S3 already normalized, S0=1)
 
-### Chromatic Dispersion (`src/opto_eq/fiber.py:apply_dispersion()`)
-- **BLOCKED**: `f = (1/100)*(1/(D*L*0.2e-9))` produces unphysical frequencies ~10¹⁷ Hz
-- Needs rewrite with proper FFT-based model (deferred to later session)
+### Chromatic Dispersion (`src/opto_eq/fiber.py`)
+- **FIXED**: FFT-based model `H(Ω) = exp(-j·β₂·Ω²·L/2)` via `np.fft.fftfreq` (Agrawal [6] Eq 2.4.11)
+- Verified against Gaussian pulse broadening: ratio error < 0.06 % at z = 0.5–2.0× LD
+- Requires `dt` (sampling interval) — callers must pass this for `dispersion=True`
+- PMD uses frequency-domain DGD (Maxwellian) applied alongside CD
 
 ## Known Issues / Blockers
 
