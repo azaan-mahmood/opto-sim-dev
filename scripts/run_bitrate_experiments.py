@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from src.protocols.examples.bb84_high_bitrate import simulate_bb84_high_bitrate
+from src.protocols.bb84_high_bitrate import simulate_bb84_high_bitrate
 
 def run_qber_vs_bitrate_experiment():
     print("Running QBER vs Bitrate (Bandwidth) Experiment...")

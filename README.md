@@ -53,18 +53,17 @@ All models aim to closely reflect published experimental setups and component be
 ## Sample Use Case
 ### Code
 ```python
-from src.opto_eq import PhaseModulator
-from src.lasers import sslaser as laser
-from src.viewers.stokes import compute_stokes_parameters
-from src.viewers import polarimeter
-source = laser.SolidStateLaser(
-    wavelength=1550e-9,  # Laser wavelength
+from src.channel import PhaseModulator
+from src.lasers import CWLaser
+from src.visualization.stokes import compute_stokes_parameters
+from src.visualization import polarimeter
+source = CWLaser(
+    wavelength=1550e-9,
     polarization_azimuth=np.pi,  # 45° polarization
     polarization_ellipticity=np.pi/4,
-    power_dbm=-5,  # arbitrary power unit
-    frequency=5e6
+    power_dbm=-5.0,
 )
-E_field = source.get_electric_field(normalize=False, over_period=True)
+E_field = source.instantaneous_field(normalize=False, over_period=True)
 S0, S1, S2, S3 = compute_stokes_parameters(E_field)
 print(f"S0 = {S0:.3f}\nS1 = {S1:.3f}\nS2 = {S2:.3f}\nS3 = {S3:.3f}")
 polarimeter(E_field, title=f"Laser Output")

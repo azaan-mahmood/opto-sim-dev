@@ -1,7 +1,7 @@
-from src.lasers import sslaser as laser
-from src.viewers.stokes import compute_stokes_parameters, poincare, cos_sim
-from src.viewers import polarimeter
-from src.opto_eq import polarizer, PhaseModulator, cable
+from src.deprecated import sslaser as laser
+from src.visualization.stokes import compute_stokes_parameters, poincare, cos_sim
+from src.visualization import polarimeter
+from src.channel import polarizer, PhaseModulator, cable
 import numpy as np
 
 source = laser.SolidStateLaser(

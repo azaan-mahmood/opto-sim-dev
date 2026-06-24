@@ -4,17 +4,90 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-06-24 — BB84 migration to `sample_field` + dispersion test
+
+### Session: ~15:30–16:00 UTC+5
+
+**BB84 scripts now use `sample_field()` (not `instantaneous_field`):**
+- `bb84_ideal.py`, `bb84_high_bitrate.py`: `alice_laser.instantaneous_field(normalize=False, over_period=True)` → `alice_laser.sample_field(dt=1e-12, n_samples=1000)`
+- This returns the complex envelope over 1 ns (one bit at 1 Gbaud), unblocking chromatic dispersion and PMD.
+- `--dispersion` CLI flag added to both scripts (default False for backward compatibility).
+- `dt=1e-12` is now passed to `cable()` so that the FFT frequency grid is valid.
+
+**New file — `src/protocols/bb84_test_dispersion.py`:**
+- MZM-carved Gaussian pulses for broadband field generation (5–30 ps σ).
+- Laser initialized Ey-only so X-cut MZM modulates the entire field.
+- MZM biased at V_pi (V=0 → null, V=V_pi → full transmission).
+- Higher laser power (+10 dBm) compensates for low pulsed duty cycle.
+- `dispersion=True` by default (this is the test file's purpose).
+- CLI flags: `--pulse-sigma`, `--short-pulse`, `--no-dispersion`.
+
+**CD/PMD now produces measurable QBER (100 km, seed=42):**
+| Pulse σ | dispersion | QBER |
+|---|---|---|
+| 30 ps | False | 0.00 % |
+| 30 ps | True  | 0.00 % (PMD < pulse width) |
+| 5 ps  | True  | 15.00 % (z/LD ≈ 87, PMD >> pulse) |
+
+## 2026-06-24 — `get_electric_field` → `instantaneous_field`
+
+### Session: ~15:00–15:10 UTC+5
+
+**Rename:**
+- `CWLaser.get_electric_field()` renamed to `CWLaser.instantaneous_field()` to make its purpose unambiguous — returns the full optical field over one ~5 fs period for fast single-bit polarisation/phase validation.
+- `instantaneous_field` docstring explicitly warns: NOT for CD, PMD, or baud-rate physics. Use `sample_field()` instead.
+- `sample_field` docstring updated to note that `instantaneous_field` is available for quick validation.
+
+**All callers updated:**
+- `src/protocols/bb84_ideal.py`, `src/protocols/bb84_high_bitrate.py`
+- `analysis/laser_characterization.py`
+- `tests/test_cwlaser.py`
+- `src/channel/fiber.py` (docstring reference)
+- `AGENTS.md`, `README.md`
+
+**Unchanged (legacy, still uses `get_electric_field`):**
+- `src/deprecated/sslaser.py` — SolidStateLaser's method kept as-is.
+- `main.py`, `main.ipynb`, `scripts/` — all use SolidStateLaser, not CWLaser.
+
+---
+
+## 2026-06-24 — Repository restructure & Tier 0 (testing/reproducibility)
+
+### Session: ~10:30–11:45 UTC+5
+
+**Structural changes:**
+- `src/__init__.py` removed — `src` is now a namespace root, not a package (PEP 420).
+- `src/opto_eq/` → `src/channel/` — clearer name for optical channel components.
+- `src/viewers/` → `src/visualization/` — descriptive name for plotting utilities.
+- `src/protocols/examples/` flattened → `src/protocols/` — BB84 scripts are the main protocols, not examples.
+- `src/lasers/sslaser.py`, `src/lasers/ndyag.py` → `src/deprecated/` — broken/unused lasers, out of sight but kept.
+- `src/lasers/__init__.py` now only exports `CWLaser`.
+- 7 root-level loose scripts moved to `scripts/` (except `main.py`).
+- `opto-sim.rar` deleted.
+
+**Tier 0 — Testing & reproducibility:**
+- `tests/` directory created with `conftest.py` (auto-seeds `random` + `np.random`, `--seed` CLI arg).
+- 48 unit tests across 4 files:
+  - `test_cwlaser.py` (11): power convention, phase noise, RIN scaling, seeded reproducibility.
+  - `test_mzm.py` (13): Vpi, null/peak, quadrature bias, push-pull vs single-drive, insertion loss.
+  - `test_fiber.py` (10): attenuation, birefringence, temperature, CD power conservation.
+  - `test_apd.py` (11): responsivity, noise scaling, detect_photons, thermal floor.
+- `--seed` CLI argument added to `bb84_ideal.py` and `bb84_high_bitrate.py`.
+- `pytest>=8.0` added to `requirements.txt`.
+
+---
+
 ## 2026-06-04 — Physics-informed detector overhaul & bug fixes
 
 ### Session: 11:30–11:45 UTC+5
 
 ---
 
-### 1. `src/opto_eq/fiber.py`
+### 1. `src/channel/fiber.py`
 
 | Item | Detail |
 |---|---|
-| **File** | `src/opto_eq/fiber.py` |
+| **File** | `src/channel/fiber.py` |
 | **Total lines** | 119 (was 101) |
 | **Change type** | Edit |
 
@@ -73,11 +146,11 @@ All timestamps are local time (UTC+5).
 
 ---
 
-### 4. `src/viewers/stokes.py`
+### 4. `src/visualization/stokes.py`
 
 | Item | Detail |
 |---|---|
-| **File** | `src/viewers/stokes.py` |
+| **File** | `src/visualization/stokes.py` |
 | **Total lines** | 77 (was 66) |
 | **Change type** | Edit |
 
@@ -89,11 +162,11 @@ All timestamps are local time (UTC+5).
 
 ---
 
-### 5. `src/viewers/fields.py`
+### 5. `src/visualization/fields.py`
 
 | Item | Detail |
 |---|---|
-| **File** | `src/viewers/fields.py` |
+| **File** | `src/visualization/fields.py` |
 | **Total lines** | 37 (was 29) |
 | **Change type** | Edit |
 
@@ -210,13 +283,13 @@ New physics-informed continuous-wave laser model for QKD simulation:
 
 ### Session: 13:30–13:45 UTC+5
 
-**Design rationale:** The E-field is the single source of truth for both polarization and optical power. Previously, `fiber.py` and `apd.py` tracked power as a separate float (`pin`/`pout`), creating a dichotomy with `opto_eq/` which already derives power from the field. Now, power is always derived from `mean(|E|²)`.
+**Design rationale:** The E-field is the single source of truth for both polarization and optical power. Previously, `fiber.py` and `apd.py` tracked power as a separate float (`pin`/`pout`), creating a dichotomy with `channel/` which already derives power from the field. Now, power is always derived from `mean(|E|²)`.
 
 **Field convention:** `mean(|E|²)` = optical power in **Watts**. The field is calibrated once at laser output in each script (e.g., BB84 scripts scale `E` so that `mean(|E|²) = laser.power_out * 1e-3`).
 
 ---
 
-### 1. `src/opto_eq/fiber.py` — cable() returns field only
+### 1. `src/channel/fiber.py` — cable() returns field only
 
 | Lines | Change |
 |---|---|
@@ -258,7 +331,7 @@ New physics-informed continuous-wave laser model for QKD simulation:
 
 | File | Lines changed | Change type |
 |---|---|---|
-| `src/opto_eq/fiber.py` | 17–18, 105–117 | Edit |
+| `src/channel/fiber.py` | 17–18, 105–117 | Edit |
 | `src/detectors/apd.py` | 83–84 | Edit |
 | `src/protocols/examples/bb84_ideal.py` | 70–72, 82–85, 99–110 | Edit |
 | `src/protocols/examples/bb84_high_bitrate.py` | 53–55, 66–69, 83–90 | Edit |
@@ -324,14 +397,14 @@ New physics-informed continuous-wave laser model for QKD simulation:
 |---|---|---|
 | `CWLaser.sample_field(dt, n_samples)` | `src/lasers/cwlaser.py` | New public method returning complex-envelope field (n_samples, 2) with all physical effects (power, phase noise, RIN, polarisation). The laser owns the physics — no more ad-hoc noise generation in characterisation scripts. |
 | `get_electric_field` API cleanup | `src/lasers/cwlaser.py` | `t=0` → `dt=1e-12` (descriptive). Hardcoded `1000` → parameter `n_samples=1000`. Backward-compatible for all existing callers that use `over_period=True`. |
-| MZM physical model | `src/opto_eq/mzm.py` (new), `src/opto_eq/__init__.py` | Push-pull MZM: `E_out = E_in·cos(π·V/V_pi)·exp(j·π·V_bias/V_pi)`. Replaces idealised `E·wfm` intensity modulator with a physically correct interferometric model (Agrawal [1] §4.2). |
+| MZM physical model | `src/channel/mzm.py` (new), `src/channel/__init__.py` | Push-pull MZM: `E_out = E_in·cos(π·V/V_pi)·exp(j·π·V_bias/V_pi)`. Replaces idealised `E·wfm` intensity modulator with a physically correct interferometric model (Agrawal [1] §4.2). |
 | Characterisation rewritten | `analysis/laser_characterization.py` | Removed `_field_complex_envelope` / `_field_series` helpers. All plots now use `laser.sample_field()`. Eye diagrams use `MZM`. Phase noise and RIN measured from full field output (end-to-end verification). Added `matplotlib.use('Agg')` for headless operation. |
 
 **Impact on call sites:**
 - `get_electric_field(dt=..., over_period=True, n_samples=...)` — all existing callers use keyword args `over_period=True, normalize=False` which are unchanged.
 - `get_electric_field(t=...)` for single-sample → now `get_electric_field(dt=...)`. No existing callers use single-sample mode, so no breakage.
 - `sample_field()` is the recommended API going forward for both characterisation and BB84 scripts.
-- MZM is importable as `from src.opto_eq.mzm import MZM` or `from src.opto_eq import MZM`.
+- MZM is importable as `from src.channel.mzm import MZM` or `from src.channel import MZM`.
 
 ### BB84 scripts updated to CWLaser — `src/protocols/examples/bb84_ideal.py` and `bb84_high_bitrate.py`
 
@@ -352,7 +425,7 @@ New physics-informed continuous-wave laser model for QKD simulation:
 
 | Change | Files | Rationale |
 |---|---|---|
-| MZM rewritten as MZI + PhaseModulator | `src/opto_eq/mzm.py` | MZM now internally uses `PhaseModulator` instances per arm. Y-branch splitter/combiner model with configurable insertion loss and extinction ratio. Supports push-pull (zero chirp) and single-drive (residual chirp) modes. `V_pi` derived from crystal parameters — no more empirical `cos(π·V/V_pi)` with a user-specified V_pi. |
+| MZM rewritten as MZI + PhaseModulator | `src/channel/mzm.py` | MZM now internally uses `PhaseModulator` instances per arm. Y-branch splitter/combiner model with configurable insertion loss and extinction ratio. Supports push-pull (zero chirp) and single-drive (residual chirp) modes. `V_pi` derived from crystal parameters — no more empirical `cos(π·V/V_pi)` with a user-specified V_pi. |
 | Hardcoded `Vpi = 3.757` removed from BB84 scripts | `bb84_ideal.py`, `bb84_high_bitrate.py` | Both scripts now derive V_pi from `pm_alice.Vpi` at runtime. The stale hardcoded value (3.757 V) differed by 3.2 % from the PhaseModulator's crystal-computed Vpi (3.8826 V), causing mismatched-basis QBER to drift to ~38 % instead of 50 %. With the fix: sifted QBER = 0 %, total QBER = 25 %. |
 | Characterisation script updated | `analysis/laser_characterization.py` | `MZM(V_pi=5.0)` → `MZM()` (uses default PhaseModulator). Docstring updated for new switching voltage convention. |
 
@@ -366,11 +439,11 @@ New physics-informed continuous-wave laser model for QKD simulation:
 
 | Change | Files | Rationale |
 |---|---|---|
-| Chromatic dispersion rewritten with FFT | `src/opto_eq/fiber.py` | Old `apply_dispersion()` used `f = (1/100)*(1/(D·L·0.2e-9))` producing ~10¹⁷ Hz. Replaced with `H(Ω) = exp(-j·β₂·Ω²·L/2)` via `np.fft.fftfreq` (Agrawal [6] §2.4). Applied to both Ex/Ey (CD is isotropic). Verified against Gaussian pulse: broadening ratio error < 0.06 % at 0.5–2.0× LD. |
-| Unit fix in GVD calculation | `src/opto_eq/fiber.py` | D stored as `17e-12` (ps/(nm·km)) but β₂ formula needs s/m². Added conversion `D_SI = D × 1e-6`. Previously β₂ was 6 orders too small. |
-| Birefringence Jones matrix fixed | `src/opto_eq/fiber.py` | Removed spurious `del_T = pmd_sd²` factor that zeroed out the beat-length phase (~10⁻¹⁶ rad instead of the correct ~10⁶ rad). Now uses `Δβ = 4π·Δn/λ`, Jones = `diag(exp(j·Δβ·L/2), 1)`, preserving the L/2 beat-length convention (SM vs PM fibre discrimination). |
-| PMD rewritten (frequency-domain) | `src/opto_eq/fiber.py` | Old `apply_pmd()` added random per-sample phase (phase noise, not PMD). Replaced with frequency-domain DGD: Maxwellian-distributed Δτ, Jones matrix `diag(exp(∓j·ω·Δτ/2), exp(±j·ω·Δτ/2))`. |
-| New parameters | `src/opto_eq/fiber.py` | Added `dt` (required for dispersion), `wavelength` (no longer hardcoded). Default `attenuation_factor` changed from 0.25 → 0.182 dB/km (SMF-28 at 1550 nm). |
+| Chromatic dispersion rewritten with FFT | `src/channel/fiber.py` | Old `apply_dispersion()` used `f = (1/100)*(1/(D·L·0.2e-9))` producing ~10¹⁷ Hz. Replaced with `H(Ω) = exp(-j·β₂·Ω²·L/2)` via `np.fft.fftfreq` (Agrawal [6] §2.4). Applied to both Ex/Ey (CD is isotropic). Verified against Gaussian pulse: broadening ratio error < 0.06 % at 0.5–2.0× LD. |
+| Unit fix in GVD calculation | `src/channel/fiber.py` | D stored as `17e-12` (ps/(nm·km)) but β₂ formula needs s/m². Added conversion `D_SI = D × 1e-6`. Previously β₂ was 6 orders too small. |
+| Birefringence Jones matrix fixed | `src/channel/fiber.py` | Removed spurious `del_T = pmd_sd²` factor that zeroed out the beat-length phase (~10⁻¹⁶ rad instead of the correct ~10⁶ rad). Now uses `Δβ = 4π·Δn/λ`, Jones = `diag(exp(j·Δβ·L/2), 1)`, preserving the L/2 beat-length convention (SM vs PM fibre discrimination). |
+| PMD rewritten (frequency-domain) | `src/channel/fiber.py` | Old `apply_pmd()` added random per-sample phase (phase noise, not PMD). Replaced with frequency-domain DGD: Maxwellian-distributed Δτ, Jones matrix `diag(exp(∓j·ω·Δτ/2), exp(±j·ω·Δτ/2))`. |
+| New parameters | `src/channel/fiber.py` | Added `dt` (required for dispersion), `wavelength` (no longer hardcoded). Default `attenuation_factor` changed from 0.25 → 0.182 dB/km (SMF-28 at 1550 nm). |
 | Updated `main.py` | `main.py` | Added `dt=1e-12` to `cable()` call. |
 
 **Verified:** `analysis/laser_characterization.py`, `bb84_ideal.py` (0 % sifted QBER), `bb84_high_bitrate.py` (0 % sifted QBER). Gaussian pulse broadening matches Agrawal theory.

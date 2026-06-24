@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from src.protocols.examples.bb84_ideal import simulate_bb84
+from src.protocols.bb84_ideal import simulate_bb84
 
 def run_qber_vs_distance_experiment():
     print("Running QBER vs Distance Experiment...")

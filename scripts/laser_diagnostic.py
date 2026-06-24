@@ -4,7 +4,7 @@ Prints key values at each step to identify inconsistencies.
 """
 import numpy as np
 from scipy.integrate import solve_ivp
-from src.lasers.sslaser import SolidStateLaser
+from src.deprecated.sslaser import SolidStateLaser
 
 laser = SolidStateLaser(
     wavelength=1550e-9, polarization_azimuth=np.pi,

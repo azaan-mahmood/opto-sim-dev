@@ -232,21 +232,19 @@ class CWLaser:
 
     def sample_field(self, dt: float, n_samples: int) -> NDArray[np.complex128]:
         """
-        Generate a sequence of field samples with all physical effects applied.
+        Primary API — generate field samples with all physical effects.
 
-        Returns the complex envelope (no optical carrier) of the laser field,
-        shape (n_samples, 2) for [Ex, Ey], with:
-          - Power scaled so that mean(|E|^2) = optical power in Watts
-          - Phase noise (Wiener process, Henry [1])
-          - RIN with relaxation-oscillation spectrum (Coldren [2] Eq 5.3.38)
-          - Polarisation state (Jones vector)
+        Returns the complex envelope (no optical carrier), shape (n_samples, 2)
+        for [Ex, Ey], with power, phase noise, RIN, and polarisation.
 
-        Most downstream components (fibre, modulator, detector) operate on the
-        complex envelope.  To obtain the full optical field including the
-        carrier at omega for visualisation over one period:
+        This is the method to use for physics-based simulations involving:
+          - Multi-bit sequences at arbitrary baud rate
+          - Chromatic dispersion (requires complex envelope, not carrier)
+          - PMD
+          - Bit-rate-dependent detector response
 
-            t = np.arange(n_samples) * dt
-            E_full = E * np.exp(1j * self.omega * t)[:, np.newaxis]
+        For quick single-bit polarisation/phase validation (5 fs window with
+        optical carrier), use ``instantaneous_field(over_period=True)`` instead.
 
         Parameters
         ----------
@@ -266,26 +264,36 @@ class CWLaser:
         E_pol = self._polarization_vector()
         return np.outer(amp * np.exp(1j * phi), E_pol)
 
-    def get_electric_field(
+    def instantaneous_field(
         self, dt: float = 1e-12, over_period: bool = False,
         n_samples: int = 1000, normalize: bool = True
     ) -> NDArray[np.complex128]:
         """
-        Generate the electric field vector [Ex, Ey] with phase noise and RIN.
+        Quick validation field — one optical period (~5 fs at 1550 nm).
+
+        Returns the full optical field including the carrier (exp(j·ω·t)) at
+        ultra-high temporal resolution.  Designed for single-bit polarisation
+        and phase encoding checks only.
+
+        NOT suitable for:
+          - High-baud-rate or multi-bit sequences (no modulation bandwidth)
+          - Chromatic dispersion (5 fs FFT grid is unphysical)
+          - PMD
+          - Bit-rate-dependent effects
+
+        For physics-based simulations use ``sample_field(dt, n_samples)``.
 
         Parameters
         ----------
         dt : float
-            Time step in seconds. Used as the phase-noise diffusion step
-            when over_period=False. Ignored when over_period=True (the
-            step is derived from the optical period and n_samples).
+            Ignored when over_period=True (step derived from period/n_samples).
+            Used as phase-noise diffusion step when over_period=False.
         over_period : bool
-            If True, return the field over one optical period.
+            If True, return field over one optical period.
         n_samples : int
-            Number of samples when over_period=True.
+            Number of samples when over_period=True (default 1000).
         normalize : bool
             If True, return unit-amplitude field (direction only).
-            If False, return field scaled by sqrt(power).
 
         Returns
         -------

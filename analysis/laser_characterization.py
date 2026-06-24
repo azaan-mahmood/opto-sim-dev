@@ -7,8 +7,8 @@ import os, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.lasers.cwlaser import CWLaser
-from src.viewers.stokes import compute_stokes_parameters, poincare
-from src.opto_eq.mzm import MZM
+from src.visualization.stokes import compute_stokes_parameters, poincare
+from src.channel.mzm import MZM
 
 OUT = os.path.join(os.path.dirname(__file__))
 
@@ -187,7 +187,7 @@ def plot_phase_noise(laser, ax):
 # --------------------------------------------─
 def plot_stokes_summary(laser, ax):
     """Display Stokes parameters as text."""
-    E = laser.get_electric_field(over_period=True, normalize=False)
+    E = laser.instantaneous_field(over_period=True, normalize=False)
     [S0, S1, S2, S3], [psi, chi] = compute_stokes_parameters(E)
     ax.axis('off')
     text = (f'Stokes parameters:\n'

@@ -1,9 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from src.lasers.sslaser import SolidStateLaser
-from src.opto_eq.phase_modulator import PhaseModulator
-from src.opto_eq import optics
+from src.deprecated.sslaser import SolidStateLaser
+from src.channel.phase_modulator import PhaseModulator
+from src.channel import optics
 
 def compare_dc_rf():
     print("Running DC vs RF Modulation comparison...")

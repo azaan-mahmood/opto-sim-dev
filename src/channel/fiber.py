@@ -36,7 +36,7 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
         Complex-envelope optical field [Ex, Ey] at N time samples.
         **Must be the complex envelope** (no optical carrier) when
         ``dispersion=True`` — use ``laser.sample_field()`` or
-        ``get_electric_field(over_period=False)``.
+        ``laser.sample_field()`` or ``instantaneous_field(over_period=False)``.
     dt : float or None
         Sampling interval in seconds.  **Required when dispersion=True**
         so that the FFT frequency grid can be constructed.

@@ -1,4 +1,27 @@
 # Project Context: opto-sim QKD Simulation
+# CRITICAL RULES - MUST FOLLOW
+
+## Responses
+- Keep responses concise and to the point - unless the user asks for more elaboration
+
+## PLANNING MODE
+
+- Always ask clarifying questions
+- Never assume design, tech stack or features
+- Use deep-dive sub-agents to assist with research where possible
+- All physics based implementations MUST be literature proof and cross-checked. Never assume and hallucinate to prove something
+- If an implementation does not have concrete literature, provide the user with this info concisely but do not remove crucial information 
+- All literature sources must be mentioned
+- Use deep-dive sub-agents to review the different aspects of your plan before presenting to the user where possible
+
+## CHANGE / EDIT MODE
+
+- Use the best model for the task
+- After completing a feature, always run commands like lint, type check and next build to check for code quality
+- After completing a physics-based feature, always double check with the literature
+- When using sub-agents to implement features, act as a co-ordinator only
+- When using sub-agents to implement physics-based features, act as a supervisor
+
 
 ## Goal
 Refactor the QKD simulation codebase with physics-informed models for APD detection, fiber attenuation, and laser sources.
@@ -17,10 +40,9 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - RIN PSD: `S_RIN(f) = RIN_0 · (γ² + 4π²f²) / |(2πf_RO)² - (2πf)² + jγ(2πf)|²`
 - Frequency-domain implementation (rFFT → shape → irFFT) with coarser internal time resolution when optical sampling is extreme
 - **`sample_field(dt, n_samples)`** — public method returning complex-envelope field (n_samples, 2) with power, phase noise, RIN, and polarisation. Primary API for downstream components.
-- `get_electric_field(dt=1e-12, over_period=False, n_samples=1000, normalize=True)` — backward-compatible, `t`→`dt`, hardcoded 1000→`n_samples` param.
-- Now used in BB84 example scripts (replaced SolidStateLaser)
-- BB84 scripts call `get_electric_field(normalize=False, over_period=True)` — power already calibrated, no extra rescaling needed
-- `dispersion=False` in cable(): the FFT dispersion model is blocked (unphysical frequencies), disabled to avoid field corruption
+- `instantaneous_field(dt=1e-12, over_period=False, n_samples=1000, normalize=True)` — single-period (~5 fs) field for fast polarisation/phase validation; NOT for CD/PMD/baud-rate physics.
+- BB84 scripts use `sample_field(dt=1e-12, n_samples=1000)` — complex envelope unlocks CD/PMD.
+- `instantaneous_field` is reserved for quick per-bit polarisation/phase checks.
 
 ### APD (`src/detectors/apd.py`)
 - Current-based output: `output(E, bandwidth)` derives `power = mean(|E|²)` from the field
@@ -28,7 +50,7 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - `detect_photons()` uses `power/(h·ν) · t · η` (Agrawal Eq 4.1.2, Saleh & Teich Eq 17.1-10)
 - No `frequency` parameter — optical frequency derived from `c/λ`
 
-### Fiber (`src/opto_eq/fiber.py`)
+### Fiber (`src/channel/fiber.py`)
 - `cable()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
@@ -37,7 +59,7 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
 - Parameters: `fiber_length (km)`, `E`, `dt` (required for dispersion), `wavelength` (default 1550e-9), `dispersion`, `attenuation_factor`, `temperature`, `num_bends`, `pm_dispersion`.
 
-### Mach-Zehnder Modulator (`src/opto_eq/mzm.py`)
+### Mach-Zehnder Modulator (`src/channel/mzm.py`)
 - Physics-based MZI built from `PhaseModulator` instances per arm
 - Y-branch splitter/combiner model with insertion loss and extinction ratio
 - Two electrode configurations:
@@ -50,12 +72,12 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
   - single-drive: `E_out ∝ exp(j·π·(V+V_bias)/(2·V_pi)) · cos(π·(V+V_bias)/(2·V_pi))`
 - References: Agrawal [1] §4.2, Koyama & Iga [2], Weis & Gaylord [3]
 
-### Stokes viewer (`src/viewers/stokes.py`)
+### Stokes viewer (`src/visualization/stokes.py`)
 - `compute_stokes_parameters(E)` returns `[S0,S1,S2,S3], [psi, chi]`
 - S1,S2,S3 normalized by S0; S0 set to 1.0
 - `chi = 0.5·arcsin(S3)` (S3 already normalized, S0=1)
 
-### Chromatic Dispersion (`src/opto_eq/fiber.py`)
+### Chromatic Dispersion (`src/channel/fiber.py`)
 - **FIXED**: FFT-based model `H(Ω) = exp(-j·β₂·Ω²·L/2)` via `np.fft.fftfreq` (Agrawal [6] Eq 2.4.11)
 - Verified against Gaussian pulse broadening: ratio error < 0.06 % at z = 0.5–2.0× LD
 - Requires `dt` (sampling interval) — callers must pass this for `dispersion=True`
@@ -64,15 +86,17 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 ## Known Issues / Blockers
 
 ### SolidStateLaser (`src/lasers/sslaser.py`)
-- ODE rate equations never produce population inversion because `Rp = 1/τ₂` (transparency threshold). Needs `Rp > 1/τ₂` by at least 2-10×.
+- ODE rate equations never achieve population inversion because `Rp = 1/τ₂` (transparency threshold). Needs `Rp > 1/τ₂` by at least 2-10×.
 - `power_dbm` only sets initial photon density `I_0`, doesn't affect pump — changing it changes none of the dynamics.
 - Electric field units are mW-based (not Watts). BB84 scripts calibrate with `E *= sqrt(power_W / mean(|E|²))` at laser output.
-- Awaiting replacement with CWLaser once dispersion is fixed.
+- Retained in `src/deprecated/` for reference; CWLaser is the active replacement.
 
 ### BB84 Scripts
-- `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser (no power calibration needed) → polarizer → phase modulator → cable (dispersion=False) → PBS → APD
-- QBER is 0% at 1-200 km (correct: differential detection, signal dominates noise)
-- QBER is 0% at all tested bandwidths (1 MHz–5 GHz) at 100 km: CWLaser's -5 dBm with M=10 provides ~3.5 mA signal current, far exceeding the noise floor
+- `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → cable (dispersion flag) → PBS → APD
+- Both accept `--dispersion` CLI flag (default False for backward compatibility in ideal/bitrate scripts)
+- `bb84_test_dispersion.py`: MZM-carved Gaussian pulses (5–30 ps σ) for broadband field generation; dispersion=True by default
+- QBER with CW laser (1 MHz linewidth) is 0% regardless of dispersion flag — near-monochromatic field is CD/PMD-agnostic
+- QBER with 5 ps MZM-carved pulses + dispersion at 100 km: **15.0 %** (z/LD ≈ 87, PMD >> pulse width)
 
 ## Generated Graphs
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
@@ -81,18 +105,97 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - `analysis/poincare_sphere.png`: Poincaré sphere from Stokes parameters
 - `analysis/eye_diagrams.png`: NRZ-OOK eye diagrams at 5/10/25 Gbaud
 
-## Files Changed (recent sessions)
+## Test Suite (Tier 0)
+
+### Running tests
+```bash
+python -m pytest tests/ -v                    # all tests
+python -m pytest tests/ -v --seed=123         # custom RNG seed
+python -m pytest tests/test_cwlaser.py -v     # single file
+```
+
+### Current coverage (48 tests, all passing)
+| File | Tests | What they check |
+|---|---|---|
+| `tests/test_cwlaser.py` | 11 | Power convention, `sample_field` shape, phase noise scaling, polarisation vector, seeded reproducibility, `instantaneous_field` shapes, `power_out`, zero-linewidth edge case, RIN scaling |
+| `tests/test_mzm.py` | 13 | `V_pi` derivation, null/peak transmission, quadrature bias, transfer symmetry, push-pull vs single-drive, mode validation, X-cut vs Y-cut `V_pi`, array modulation, insertion loss, crystal-cut component selection |
+| `tests/test_fiber.py` | 10 | Attenuation formula and distance scaling, birefringence unitarity and phase shift, temperature sensitivity, dispersion `dt` requirement and power conservation, output shape, zero-length edge case, wavelength dependence, seeded reproducibility |
+| `tests/test_apd.py` | 11 | Responsivity formula, signal current scaling, zero-power, bandwidth scaling of shot noise, thermal noise floor, `output()` return type and details dict, `detect_photons` edge cases, DCR formula, seeded reproducibility |
+| `tests/conftest.py` | — | Auto-seeds `random` and `np.random` at configured start; `--seed` CLI option (default 42); `rng_seed` fixture |
+
+### Seed convention
+- Each test file seeds `np.random` before RNG-dependent tests.
+- `conftest.py` pins both `random` and `np.random` at session start (`pytest_configure`).
+- `--seed` on the CLI overrides the default (42).
+- BB84 scripts accept `--seed` for per-run reproducibility.
+
+## Directory Structure (post-refactor)
+
+```
+opto-sim-dev/
+├── main.py                    # Quick demo (uses deprecated SolidStateLaser)
+├── scripts/                   # Experiment & diagnostic scripts
+│   ├── compare_dc_rf.py
+│   ├── laser_characterization.py   # SolidStateLaser characterisation (deprecated)
+│   ├── laser_diagnostic.py
+│   ├── ndyag_characterization.py
+│   ├── run_experiments.py
+│   └── run_bitrate_experiments.py
+├── analysis/                  # Generated figures & TeX papers
+│   ├── laser_characterization.py   # Active: CWLaser dashboard (Agg, headless)
+│   ├── *.png
+│   └── *.tex / *.pdf
+├── tests/                     # pytest suite (48 tests)
+│   ├── conftest.py            # --seed CLI, auto-seed at session start
+│   ├── test_apd.py
+│   ├── test_cwlaser.py
+│   ├── test_fiber.py
+│   └── test_mzm.py
+├── src/
+│   ├── lasers/
+│   │   ├── __init__.py        # Exports: CWLaser
+│   │   └── cwlaser.py         # Active laser model
+│   ├── deprecated/            # Broken/unused, kept for reference
+│   │   ├── __init__.py        # Exports: SolidStateLaser, NdYAGLaser
+│   │   ├── sslaser.py
+│   │   └── ndyag.py
+│   ├── detectors/
+│   │   ├── __init__.py
+│   │   └── apd.py
+│   ├── channel/               # Optical channel components (renamed from opto_eq)
+│   │   ├── __init__.py
+│   │   ├── fiber.py
+│   │   ├── mzm.py
+│   │   ├── optics.py
+│   │   └── phase_modulator.py
+│   ├── visualization/         # Plotting & Poincaré (renamed from viewers)
+│   │   ├── __init__.py
+│   │   ├── fields.py
+│   │   ├── polarimeter.py
+│   │   └── stokes.py
+│   ├── protocols/
+│   │   ├── __init__.py
+│   │   ├── bb84_ideal.py           # CW laser, optional dispersion
+│   │   ├── bb84_high_bitrate.py    # Bitrate-sweep variant
+│   │   └── bb84_test_dispersion.py # MZM-carved pulses, dispersion=on by default
+│   └── common/                # README images only
+├── research_roadmap.md
+├── AGENTS.md
+├── CHANGELOG.md
+├── pyproject.toml
+├── requirements.txt
+└── README.md
+```
+
+## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
-| `src/lasers/cwlaser.py` | Relaxation-oscillation RIN model (Coldren Eq 5.3.38), rewritten `_sample_rin()` |
-| `src/opto_eq/fiber.py` | Removed `pin`/`pout`, attenuation on field only |
-| `src/detectors/apd.py` | `output(E, ...)` derives power from field |
-| `src/protocols/examples/bb84_ideal.py` | Switched to CWLaser, removed power calibration, dispersion=False |
-| `src/protocols/examples/bb84_high_bitrate.py` | Switched to CWLaser, removed power calibration |
-| `main.py` | Updated cable/stokes calls |
-| `src/viewers/stokes.py` | Normalized S0=1.0, returns `[S0,S1,S2,S3], [psi,chi]` |
-| `CHANGELOG.md` | Full audit trail with line ranges and timestamps |
-| `analysis/laser_characterization.py` | Rewritten: uses `laser.sample_field()`, MZM model, no inline noise generation |
-| `src/lasers/cwlaser.py` | Added `sample_field()`, renamed `t`→`dt`, `n_samples` param |
-| `src/opto_eq/mzm.py` | New: physical MZM device model (push-pull) |
-| `src/opto_eq/__init__.py` | Exports MZM |
+| `src/protocols/bb84_test_dispersion.py` | **New**: MZM-carved pulses for CD/PMD testing; dispersion=True by default |
+| `src/protocols/bb84_ideal.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
+| `src/protocols/bb84_high_bitrate.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
+| `src/lasers/cwlaser.py` | `get_electric_field()` → `instantaneous_field()`; updated docstrings for both methods |
+| `tests/test_cwlaser.py` | Updated test names for `instantaneous_field` |
+| `src/channel/fiber.py` | Updated docstring reference |
+| `README.md` | Updated to CWLaser + `instantaneous_field` example |
+| `CHANGELOG.md` | Added BB84 migration + dispersion test entries |
+| `AGENTS.md` | Updated for all sessions |
