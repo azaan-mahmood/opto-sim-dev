@@ -4,6 +4,17 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-06-24 — QBER vs distance dispersion graph
+
+### Session: ~16:00–16:10 UTC+5
+
+**New analysis script — `analysis/qber_vs_distance_dispersion.py`:**
+- Sweeps fiber length 10–200 km with 5 ps MZM-carved pulses (300 bits/point).
+- Two curves: dispersion ON (CD+PMD active) and dispersion OFF (baseline).
+- Dispersion OFF: flat 0% QBER at all distances.
+- Dispersion ON: QBER climbs from ~0% at 10 km to ~42% at 200 km (CD + PMD accumulate with distance).
+- Output: `analysis/qber_vs_distance_dispersion.png`
+
 ## 2026-06-24 — BB84 migration to `sample_field` + dispersion test
 
 ### Session: ~15:30–16:00 UTC+5

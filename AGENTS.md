@@ -101,6 +101,7 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 ## Generated Graphs
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
 - `analysis/qber_vs_bitrate.png`: 0% at 215 MHz → 35% at 10 GHz
+- `analysis/qber_vs_distance_dispersion.png`: QBER climb 0→42% at 10→200 km with dispersion (5 ps pulse)
 - `analysis/laser_characterization.png`: 8-panel CWLaser dashboard
 - `analysis/poincare_sphere.png`: Poincaré sphere from Stokes parameters
 - `analysis/eye_diagrams.png`: NRZ-OOK eye diagrams at 5/10/25 Gbaud
@@ -143,6 +144,7 @@ opto-sim-dev/
 │   └── run_bitrate_experiments.py
 ├── analysis/                  # Generated figures & TeX papers
 │   ├── laser_characterization.py   # Active: CWLaser dashboard (Agg, headless)
+│   ├── qber_vs_distance_dispersion.py  # Dispersion QBER sweep
 │   ├── *.png
 │   └── *.tex / *.pdf
 ├── tests/                     # pytest suite (48 tests)
@@ -190,6 +192,7 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `analysis/qber_vs_distance_dispersion.py` | **New**: QBER vs distance sweep with MZM-carved 5 ps pulses; dispersion ON vs OFF |
 | `src/protocols/bb84_test_dispersion.py` | **New**: MZM-carved pulses for CD/PMD testing; dispersion=True by default |
 | `src/protocols/bb84_ideal.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
 | `src/protocols/bb84_high_bitrate.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
