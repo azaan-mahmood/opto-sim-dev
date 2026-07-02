@@ -4,6 +4,45 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-07-02 — Tier 1 Channel Validation
+
+### Session: ~11:00–11:30 UTC+5
+
+**Restructured validation into `analysis/validation/` with per-task output dirs:**
+- `analysis/validation/validate_cd.py` → outputs to `analysis/val_cd/`
+- `analysis/validation/validate_pmd.py` → outputs to `analysis/val_pmd/`
+- `analysis/validation/validate_attenuation.py` → outputs to `analysis/val_att/`
+- `analysis/validation/validate_birefringence.py` → outputs to `analysis/val_biref/`
+
+**Task 1 — CD validation (Agrawal [6] Fig 2.6, Eq 3.2.6):**
+- 30 ps Gaussian pulse at z/L_D = 0.0, 0.5, 1.0, 2.0
+- RMS width ratio vs analytic: **0.0000% error** at all points
+- Output: `analysis/val_cd/val_cd--seed42.{png,csv}`
+
+**Task 2 — PMD validation (Razavi [5] Fig 2.11):**
+- Fixed `fiber.py:145`: `np.random.rayleigh` → `scipy.stats.maxwell.rvs`
+  Old: Rayleigh (2D) gave RMS = 1.128 × target
+  New: Maxwell (3D) gives RMS = target exactly
+- 20k realizations: RMS DGD = 22.36 ps (target 22.36 ps), mean = 20.62 ps
+- KS test p = 0.82 — data consistent with Maxwellian
+- All 12 fiber tests continue to pass
+
+**Task 3 — Attenuation validation (Keiser [1] Eq 3.6, SMF-28):**
+- Sweep 0–200 km, 0.182 dB/km @ 1550 nm
+- **0.0000% error** at all distances
+
+**Task 4 — Birefringence validation (Yuan [4] Fig 1):**
+- Physics-based bend birefringence: Δn_bend = 8.762e-10 / R²
+- L_B vs R for Δn₀ = {0.5, 1.0, 2.0} × 10⁻⁵
+- Confirmed L_B ∝ R / Δn₀ scaling in bend-dominated regime
+- **Finding**: fiber.py uses fixed `bend_effect_factor = 2.4e-4` (not R-dependent);
+  correct Yuan model requires 1/R² scaling — flagged for future update
+
+**Task 5 — Reproducibility pass:**
+- `run_all.py` at project root runs all 4 validations with `--seed N`
+- All outputs tagged with seed in filename: `{name}--seed{N}.{ext}`
+- Total runtime: ~17.5s for all 4 scripts
+
 ## 2026-06-24 — QBER vs distance dispersion graph
 
 ### Session: ~16:00–16:10 UTC+5

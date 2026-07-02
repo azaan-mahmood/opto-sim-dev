@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import stats
 
 # --- LITERATURE SOURCES ---
 # [1] Keiser, G., "Optical Fiber Communications", 5th ed., McGraw-Hill, 2015.
@@ -137,14 +138,13 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
         E_f = E_f * H[:, np.newaxis]
         E = np.fft.ifft(E_f, axis=0)
 
-        # --- PMD (Razavi [5], Agrawal [6] §4.5) ---
-        # DGD follows a Maxwellian distribution with RMS = pmd_sd.
-        # We apply a frequency-dependent phase difference between Ex and Ey
-        # in the Fourier domain:  Δτ is the differential group delay.
-        pmd_sd = pm_dispersion * np.sqrt(L)          # seconds
-        dgd = np.random.rayleigh(pmd_sd * np.sqrt(2.0 / np.pi))  # mean DGD
-        # Maxwellian mean = sqrt(2/π)·σ, so σ = pmd_sd gives
-        # RMS(DGD) = pmd_sd.
+        # --- PMD (Razavi [5] Fig 2.11, Agrawal [6] §4.5) ---
+        # DGD follows a Maxwellian distribution (3D PMD vector magnitude).
+        # scale a = pmd_sd / √3 gives RMS(DGD) = pmd_sd and
+        # mean(DGD) = 2·a·√(2/π) ≈ 0.921·pmd_sd.
+        pmd_sd = pm_dispersion * np.sqrt(L)          # seconds, RMS DGD
+        maxwell_scale = pmd_sd / np.sqrt(3)
+        dgd = stats.maxwell.rvs(scale=maxwell_scale)  # Maxwellian DGD
 
         # Frequency-dependent Jones matrix for PMD:
         #   J_pmd = diag(exp(-j·ω·Δτ/2), exp(+j·ω·Δτ/2))

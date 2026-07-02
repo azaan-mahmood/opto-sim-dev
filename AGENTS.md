@@ -91,6 +91,12 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - Electric field units are mW-based (not Watts). BB84 scripts calibrate with `E *= sqrt(power_W / mean(|E|²))` at laser output.
 - Retained in `src/deprecated/` for reference; CWLaser is the active replacement.
 
+### Fiber Birefringence
+- `bend_effect_factor = 2.4e-4` is a fixed scalar per bend, NOT a function of bend radius R
+- Correct Yuan [4] model requires Δn_bend ∝ 1/R² with coefficient ~8.76e-10 (derived from strain-optic coefficients)
+- Currently `num_bends` is an integer count; should become bend radius R for physics-validated behavior
+- Flagged for future update — current model adequate when bend radius not a controlled variable
+
 ### BB84 Scripts
 - `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → cable (dispersion flag) → PBS → APD
 - Both accept `--dispersion` CLI flag (default False for backward compatibility in ideal/bitrate scripts)
@@ -99,6 +105,10 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - QBER with 5 ps MZM-carved pulses + dispersion at 100 km: **15.0 %** (z/LD ≈ 87, PMD >> pulse width)
 
 ## Generated Graphs
+- `analysis/val_cd/val_cd--seed42.png`: CD validation, Agrawal Fig 2.6 (0.0000% error)
+- `analysis/val_pmd/val_pmd_dgd--seed42.png`: PMD DGD histogram vs Maxwellian (Razavi Fig 2.11)
+- `analysis/val_att/val_att--seed42.png`: Attenuation vs distance SMF-28 (0.0000% error)
+- `analysis/val_biref/val_biref--seed42.png`: Birefringence L_B vs R (Yuan Fig 1)
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
 - `analysis/qber_vs_bitrate.png`: 0% at 215 MHz → 35% at 10 GHz
 - `analysis/qber_vs_distance_dispersion.png`: QBER climb 0→42% at 10→200 km with dispersion (5 ps pulse)
@@ -142,7 +152,17 @@ opto-sim-dev/
 │   ├── ndyag_characterization.py
 │   ├── run_experiments.py
 │   └── run_bitrate_experiments.py
+├── run_all.py                 # Runs all Tier-1 validations with --seed N
 ├── analysis/                  # Generated figures & TeX papers
+│   ├── validation/            # Tier-1 channel validation scripts
+│   │   ├── validate_cd.py     # CD: Agrawal Fig 2.6, 0.0000% error
+│   │   ├── validate_pmd.py    # PMD: Razavi Fig 2.11, Maxwellian DGD
+│   │   ├── validate_attenuation.py  # Attenuation: SMF-28, 0.0000% error
+│   │   └── validate_birefringence.py # Birefringence: Yuan Fig 1, L_B vs R
+│   ├── val_cd/                # CD outputs (seed-tagged PNG+CSV)
+│   ├── val_pmd/               # PMD outputs
+│   ├── val_att/               # Attenuation outputs
+│   ├── val_biref/             # Birefringence outputs
 │   ├── laser_characterization.py   # Active: CWLaser dashboard (Agg, headless)
 │   ├── qber_vs_distance_dispersion.py  # Dispersion QBER sweep
 │   ├── *.png
@@ -192,7 +212,14 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
-| `analysis/qber_vs_distance_dispersion.py` | **New**: QBER vs distance sweep with MZM-carved 5 ps pulses; dispersion ON vs OFF |
+| `src/channel/fiber.py` | PMD: Rayleigh → Maxwell (`scipy.stats.maxwell.rvs`); added `from scipy import stats` |
+| `analysis/validation/validate_cd.py` | **New**: CD validation (Agrawal Fig 2.6, 0.0000% error) |
+| `analysis/validation/validate_pmd.py` | **New**: PMD validation (Razavi Fig 2.11, Maxwellian) |
+| `analysis/validation/validate_attenuation.py` | **New**: Attenuation validation (SMF-28, 0.0000% error) |
+| `analysis/validation/validate_birefringence.py` | **New**: Birefringence validation (Yuan Fig 1, L_B vs R) |
+| `run_all.py` | **New**: Single-command runner for all Tier-1 validations |
+| `analysis/val_cd/`, `val_pmd/`, `val_att/`, `val_biref/` | **New**: Per-task output directories |
+| `analysis/qber_vs_distance_dispersion.py` | QBER vs distance sweep with MZM-carved 5 ps pulses; dispersion ON vs OFF |
 | `src/protocols/bb84_test_dispersion.py` | **New**: MZM-carved pulses for CD/PMD testing; dispersion=True by default |
 | `src/protocols/bb84_ideal.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
 | `src/protocols/bb84_high_bitrate.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
