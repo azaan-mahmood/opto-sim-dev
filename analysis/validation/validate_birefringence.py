@@ -2,9 +2,13 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
-import os, argparse
+import os, sys, argparse
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from src.channel.fiber import cable
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_biref')
+os.makedirs(OUT, exist_ok=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=42)
@@ -12,86 +16,88 @@ args = parser.parse_args()
 SEED = args.seed
 np.random.seed(SEED)
 
-WAVELENGTH = 1550e-9   # m
-FIBER_RADIUS = 62.5e-6 # m, SMF-28 cladding radius
+WAVELENGTH = 1550e-9
+N_SAMPLES = 1024
+DT = 1e-12
+E_in = np.zeros((N_SAMPLES, 2), dtype=np.complex128)
+E_in[:, 0] = 1.0 + 0j
 
-# --- Strain-optic coefficients for silica (p_ij: Pockels coefficients) ---
-# Ref: Xu & Stroud, "Stress-optic coefficient of silica fiber"
-N_SILICA = 1.444
-P11 = 0.121
-P12 = 0.270
-C_BEND = 0.5 * N_SILICA**3 * np.sqrt((P11 - P12)**2 + (P11 - 3*P12)**2 / 4.0)
-# For a linear birefringence model, the simpler form is:
-# Δn_bend = -0.5 · n³ · (p₁₁ - p₁₂) · (r/R)²
-# The magnitude of bend-induced birefringence:
-BEND_COEFF = 0.5 * N_SILICA**3 * abs(P11 - P12) * FIBER_RADIUS**2
+# fiber.py coefficients
+DN0 = 0.87e-5
+TCOEFF = -5e-7
+BEND_EFF = 2.4e-4
 
-print(f"Bend birefringence coefficient: dn_bend = {BEND_COEFF:.3e} / R^2  (R in m)")
-print(f"  At R = 1 cm: dn_bend = {BEND_COEFF/0.01**2:.3e}")
-print(f"  At R = 5 mm: dn_bend = {BEND_COEFF/0.005**2:.3e}")
-print()
+def measure_delta_n(L_m, temp, n_bends):
+    E_out = cable(L_m/1000, E_in.copy(), dt=DT, wavelength=WAVELENGTH,
+                  dispersion=False, attenuation_factor=0.0,
+                  temperature=temp, num_bends=n_bends)
+    phase = np.angle(np.mean(E_out[:, 0]))
+    # phase = 2*pi*L*dn/lambda  =>  dn = phase * lambda / (2*pi*L)
+    return phase * WAVELENGTH / (2 * np.pi * L_m)
 
-# --- Bend radii (mm) ---
-R_mm = np.logspace(np.log10(5), np.log10(100), 200)
-R_m = R_mm * 1e-3
+# --- 1. Base birefringence: sweep length at T=25, no bends ---
+L_vals_m = np.array([1e-3, 2e-3, 5e-3, 1e-2, 2e-2])
+dn_base = np.array([measure_delta_n(L, 25.0, 0) for L in L_vals_m])
+coeff_L = np.polyfit(L_vals_m, dn_base, 0)  # constant fit (should = DN0)
+print(f"Base birefringence: measured = {np.mean(dn_base):.3e}, fiber.py = {DN0:.3e}")
+print(f"  Error: {abs((np.mean(dn_base)-DN0)/DN0)*100:.4f}%")
 
-# --- Intrinsic birefringence values for the curves ---
-# Yuan [4] Fig 1 uses Δn₀ = 0.5, 1.0, 2.0 × 10⁻⁵
-delta_n0_vals = [0.5e-5, 1.0e-5, 2.0e-5]
-labels = [r'$\Delta n_0 = 0.5\times 10^{-5}$',
-          r'$\Delta n_0 = 1.0\times 10^{-5}$',
-          r'$\Delta n_0 = 2.0\times 10^{-5}$']
+# --- 2. Temperature: L = 1 cm, sweep 0-50 C ---
+L_T = 1e-2
+T_vals = np.array([0, 10, 25, 40, 50])
+dn_T = np.array([measure_delta_n(L_T, T, 0) for T in T_vals])
+coeff_T = np.polyfit(T_vals - 25, dn_T, 1)
+print(f"\nTemperature coeff: measured = {coeff_T[0]:.3e} /C, fiber.py = {TCOEFF:.3e} /C")
+temp_err = abs((coeff_T[0] - TCOEFF) / TCOEFF) * 100
+print(f"  Error: {temp_err:.2f}%")
 
-# --- Current model from fiber.py for reference ---
-# fiber.py uses: Δn = Δn₀ + bend_effect_factor × num_bends
-# where bend_effect_factor = 2.4e-4 and num_bends is a count (not R-dependent)
-# For comparison, we show the "bend effect" as a horizontal line at the
-# beat length corresponding to bend_effect_factor / revolution
-# (assuming 1 bend at R gives some Δn contribution)
-print("Current fiber.py model: bend_effect_factor = 2.4e-4 per bend")
-print("  This is a fixed scalar, NOT a function of bend radius R.")
-print("  To reproduce Yuan Fig 1, the bend contribution must scale as 1/R^2.")
-print()
+# --- 3. Bends: L = 0.1 mm, sweep 0-5 bends ---
+L_B = 1e-4
+bend_vals = np.array([0, 1, 2, 3, 5])
+dn_B = np.array([measure_delta_n(L_B, 25.0, nb) for nb in bend_vals])
+coeff_B = np.polyfit(bend_vals, dn_B, 1)
+dn_B_expected = DN0 + BEND_EFF * bend_vals
+print(f"\nBend coeff: measured = {coeff_B[0]:.3e} /bend, fiber.py = {BEND_EFF:.3e} /bend")
+bend_err = abs((coeff_B[0] - BEND_EFF) / BEND_EFF) * 100
+print(f"  Error: {bend_err:.2f}%")
 
-# --- Reproduce Yuan Fig 1: L_B vs R for various Δn₀ ---
-fig, ax = plt.subplots(figsize=(8, 5))
+# --- Plot ---
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
 
-for dn0, lab in zip(delta_n0_vals, labels):
-    # Total birefringence = intrinsic + bend-induced
-    dn_bend = BEND_COEFF / R_m**2
-    dn_total = dn0 + dn_bend
-    L_B = WAVELENGTH / dn_total      # beat length (m)
-    ax.plot(R_mm, L_B * 100, linewidth=1.5, label=lab)
+# Base dn
+axes[0].axhline(DN0, c='gray', ls='--', label=f'fiber.py: {DN0:.3e}')
+axes[0].plot(L_vals_m*1e3, dn_base, 'o-', c='C0', label='cable() measured')
+axes[0].set(xlabel='Length (mm)', ylabel='Delta n',
+            title=f'Base birefringence (T=25, no bends)')
+axes[0].legend(); axes[0].grid(True, alpha=0.3)
 
-ax.set_xscale('log')
-ax.set_yscale('log')
-ax.set_xlabel('Bend radius R (mm)')
-ax.set_ylabel('Beat length $L_B$ (cm)')
-ax.set_title('Birefringence validation — Yuan [4] Fig 1')
-ax.legend(fontsize=9)
-ax.grid(True, alpha=0.3, which='both')
-ax.set_xlim(5, 100)
+# Temperature
+dn_T_expected = DN0 + TCOEFF * (T_vals - 25)
+axes[1].plot(T_vals, dn_T_expected, 's--', c='C1', ms=4, label=f'fiber.py: {TCOEFF:.1e}/C')
+axes[1].plot(T_vals, dn_T, 'o-', c='C0', ms=5, label=f'cable() fit: {coeff_T[0]:.2e}/C')
+axes[1].set(xlabel='Temperature (C)', ylabel='Delta n',
+            title=f'Temperature (L = {L_T*1e3:.0f} mm)')
+axes[1].legend(); axes[1].grid(True, alpha=0.3)
 
-# Annotate key scaling regimes
-ax.annotate('$L_B \\propto R$ (bend-dominated)', xy=(8, 0.4), fontsize=8,
-            rotation=35, color='gray', alpha=0.7)
-ax.annotate('plateau (intrinsic $\\Delta n_0$ dominates)', xy=(30, 5), fontsize=8,
-            color='gray', alpha=0.7)
+# Bends
+dn_B_fit = coeff_B[0] * bend_vals + coeff_B[1]
+axes[2].plot(bend_vals, dn_B_expected, 's--', c='C1', ms=4, label=f'fiber.py: {BEND_EFF:.1e}/bend')
+axes[2].plot(bend_vals, dn_B, 'o-', c='C0', ms=5, label=f'cable() fit: {coeff_B[0]:.2e}/bend')
+axes[2].set(xlabel='Num bends', ylabel='Delta n',
+            title=f'Bends (L = {L_B*1e3:.3f} mm)')
+axes[2].legend(); axes[2].grid(True, alpha=0.3)
 
 fig.tight_layout()
 fname = f'val_biref--seed{SEED}.png'
-fig.savefig(os.path.join(OUT, fname), dpi=150, bbox_inches='tight')
-print(f"Saved: {fname}")
+fig.savefig(os.path.join(OUT, fname), dpi=150)
+print(f"\nSaved: {fname}")
 
-# --- CSV ---
 csv_name = f'val_biref--seed{SEED}.csv'
-header = 'R_mm,dn0_0.5e-5_LB_cm,dn0_1.0e-5_LB_cm,dn0_2.0e-5_LB_cm'
-lb_vals = []
-for dn0 in delta_n0_vals:
-    dn_total = dn0 + BEND_COEFF / R_m**2
-    lb_vals.append(WAVELENGTH / dn_total * 100)
 np.savetxt(os.path.join(OUT, csv_name),
-           np.column_stack([R_mm] + lb_vals),
-           delimiter=',', header=header, comments='')
+           np.column_stack([L_vals_m*1e3, dn_base,
+                           T_vals, dn_T,
+                           bend_vals, dn_B]),
+           delimiter=',',
+           header='L_mm,dn_base,T_C,dn_T,num_bends,dn_bends', comments='')
 print(f"Saved: {csv_name}")
 plt.close(fig)

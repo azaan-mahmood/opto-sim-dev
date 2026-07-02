@@ -3,79 +3,104 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats
-import os, argparse
+import os, sys, argparse
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from src.channel.fiber import cable
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_pmd')
+os.makedirs(OUT, exist_ok=True)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--seed', type=int, default=42)
+parser.add_argument('--n-realizations', type=int, default=5000)
 args = parser.parse_args()
 SEED = args.seed
+N_REAL = args.n_realizations
 np.random.seed(SEED)
 
-N_REALIZATIONS = 20000
-PM_DISPERSION = 0.1e-12        # s / sqrt(m)
-L_KM = 50
-L_M = L_KM * 1e3
+L_KM = 100
+PMD_COEFF = 0.1e-12
+DT = 0.5e-12
+N_SAMPLES = 4096
+T = np.arange(N_SAMPLES) * DT
+center = N_SAMPLES // 2
 
-# --- replicate fiber.py DGD generation (updated: Maxwellian) ---
-pmd_sd = PM_DISPERSION * np.sqrt(L_M)          # seconds, RMS DGD
+PULSE_SIGMA = 5e-12
+t_arr = T - T[center]
+E_in = np.zeros((N_SAMPLES, 2), dtype=np.complex128)
+E_in[:, 0] = np.exp(-0.5 * (t_arr / PULSE_SIGMA)**2)
+E_in[:, 1] = E_in[:, 0].copy()
+
+f = np.fft.fftfreq(N_SAMPLES, d=DT)
+omega = 2 * np.pi * f
+
+pmd_sd = PMD_COEFF * np.sqrt(L_KM * 1e3)
 maxwell_scale = pmd_sd / np.sqrt(3)
-dgd_samples = stats.maxwell.rvs(scale=maxwell_scale, size=N_REALIZATIONS)
 
-# --- statistics ---
-mean_dgd = np.mean(dgd_samples)
-rms_dgd = np.sqrt(np.mean(dgd_samples**2))
-# Maxwell(scale=a): mean = 2a·√(2/π), RMS = a·√3
-# With a = pmd_sd/√3: RMS = pmd_sd ✓, mean = 2·pmd_sd/√3·√(2/π) ≈ 0.921·pmd_sd
-expected_mean = 2 * maxwell_scale * np.sqrt(2 / np.pi)
-expected_rms = maxwell_scale * np.sqrt(3)
+def extract_dgd(E_out, dt):
+    E = E_out[:, 0]
+    Ey = E_out[:, 1]
+    # Cross-correlation peaks at lag = DGD (Ex advanced by DGD/2, Ey delayed by DGD/2)
+    corr = np.correlate(E, Ey, mode='same')
+    lags = np.arange(-len(E)//2, len(E)//2) * dt
+    peak_idx = np.argmax(np.abs(corr))
+    return lags[peak_idx]
 
-print(f"PMD DGD distribution validation ({N_REALIZATIONS} realizations)")
-print(f"  PMD coeff = {PM_DISPERSION*1e12:.2f} ps/sqrt(m)")
-print(f"  L = {L_KM} km")
-print(f"  Target RMS DGD (pmd_sd) = {pmd_sd*1e12:.4f} ps")
-print(f"  Maxwell scale a = {maxwell_scale*1e12:.4f} ps  (a = pmd_sd/sqrt(3))")
+print(f"PMD validation via cable() — {N_REAL} realizations, {L_KM} km")
+print(f"  Expected RMS DGD = {pmd_sd*1e12:.2f} ps")
+print(f"  Expected mean DGD = {2*maxwell_scale*np.sqrt(2/np.pi)*1e12:.2f} ps")
 print()
-print(f"Current model (Maxwellian):")
-print(f"  Measured mean DGD = {mean_dgd*1e12:.4f} ps  (expected = {expected_mean*1e12:.4f})")
-print(f"  Measured RMS DGD  = {rms_dgd*1e12:.4f} ps  (expected = {expected_rms*1e12:.4f})")
-print(f"  RMS/mean = {rms_dgd/mean_dgd:.4f}  (Maxwell theory: {np.sqrt(3/(8/np.pi)):.4f})")
 
-# --- KS test ---
-ks = stats.kstest(dgd_samples, lambda x: stats.maxwell.cdf(x, scale=maxwell_scale))
-print()
-print(f"KS test vs Maxwell:  statistic={ks.statistic:.6f}, p-value={ks.pvalue:.4f}")
+dgds = []
+for i in range(N_REAL):
+    E_out = cable(L_KM, E_in.copy(), dt=DT, wavelength=1550e-9,
+                  dispersion=True, pm_dispersion=PMD_COEFF,
+                  attenuation_factor=0.0, temperature=25.0, num_bends=0)
+    dgd = extract_dgd(E_out, DT)
+    if dgd is not None and not np.isnan(dgd) and dgd > 0:
+        dgds.append(dgd)
+    if (i + 1) % 1000 == 0:
+        print(f"  {i+1}/{N_REAL} complete")
 
-# --- plot ---
+dgds = np.array(dgds) * 1e12  # convert to ps
+mean_dgd = np.mean(dgds)
+rms_dgd = np.sqrt(np.mean(dgds**2))
+expected_mean = 2 * maxwell_scale * np.sqrt(2 / np.pi) * 1e12
+expected_rms = pmd_sd * 1e12
+
+print(f"\nResults:")
+print(f"  Mean DGD = {mean_dgd:.3f} ps  (expected = {expected_mean:.3f} ps)")
+print(f"  RMS  DGD = {rms_dgd:.3f} ps  (expected = {expected_rms:.3f} ps)")
+
+ks = stats.kstest(dgds, lambda x: stats.maxwell.cdf(x * 1e-12, scale=maxwell_scale))
+print(f"  KS test vs Maxwell:  D={ks.statistic:.5f}, p={ks.pvalue:.4f}")
+
+# --- Plot ---
 fig, ax = plt.subplots(figsize=(8, 5))
-bins = np.linspace(0, max(dgd_samples)*1.05, 80)
-ax.hist(dgd_samples * 1e12, bins=bins, density=True, alpha=0.6, color='C0',
-        label=f'Simulated ({N_REALIZATIONS} draws)')
+bins = np.linspace(0, max(dgds)*1.05, 60)
+ax.hist(dgds, bins=bins, density=True, alpha=0.6, color='C0',
+        label=f'cable() extracted DGD ({len(dgds)} valid)')
 
-dgd_grid = np.linspace(0, max(dgd_samples)*1.05, 500)
-pdf = stats.maxwell.pdf(dgd_grid, scale=maxwell_scale)
-ax.plot(dgd_grid * 1e12, pdf * 1e12, '-', color='C2', linewidth=1.5,
-        label=f'Maxwellian: mean={expected_mean*1e12:.2f} ps, RMS={expected_rms*1e12:.2f} ps')
+dgd_ps = np.linspace(0, max(dgds)*1.05, 500)
+pdf = stats.maxwell.pdf(dgd_ps * 1e-12, scale=maxwell_scale) * 1e-12
+ax.plot(dgd_ps, pdf, '-', c='C2', lw=1.5,
+        label=f'Maxwellian (RMS = {expected_rms:.1f} ps)')
+ax.axvline(mean_dgd, c='C0', ls=':', alpha=0.7, label=f'Mean = {mean_dgd:.2f} ps')
+ax.axvline(expected_rms, c='gray', ls=':', alpha=0.5, label=f'Target RMS = {expected_rms:.1f} ps')
 
-ax.axvline(mean_dgd * 1e12, color='C0', linestyle=':', alpha=0.7, label=f'Sim mean = {mean_dgd*1e12:.3f} ps')
-ax.axvline(pmd_sd * 1e12, color='gray', linestyle=':', alpha=0.5, label=f'Target RMS = {pmd_sd*1e12:.3f} ps')
-
-ax.set_xlabel('DGD (ps)')
-ax.set_ylabel('Probability density')
-ax.set_title(f'PMD DGD distribution — {L_KM} km, PMD coeff = {PM_DISPERSION*1e12:.2f} ps/√km')
-ax.legend(fontsize=8, loc='upper right')
+ax.set(xlabel='DGD (ps)', ylabel='Probability density',
+       title=f'PMD: DGD extracted from cable() output — {L_KM} km')
+ax.legend(fontsize=8)
 ax.grid(True, alpha=0.3)
 
 fig.tight_layout()
 fname = f'val_pmd_dgd--seed{SEED}.png'
-fig.savefig(os.path.join(OUT, fname), dpi=150, bbox_inches='tight')
+fig.savefig(os.path.join(OUT, fname), dpi=150)
 print(f"\nSaved: {fname}")
 
-# --- CSV ---
 csv_name = f'val_pmd_dgd--seed{SEED}.csv'
-header = 'dgd_ps'
-np.savetxt(os.path.join(OUT, csv_name), dgd_samples.reshape(-1, 1) * 1e12,
-           delimiter=',', header=header, comments='')
+np.savetxt(os.path.join(OUT, csv_name), dgds, delimiter=',',
+           header='dgd_ps_extracted_from_cable', comments='')
 print(f"Saved: {csv_name}")
 plt.close(fig)
