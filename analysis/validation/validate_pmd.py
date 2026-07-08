@@ -6,7 +6,7 @@ from scipy import stats
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber import cable
+from src.channel.fiber import cable, _dgd_sampled
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_pmd')
 os.makedirs(OUT, exist_ok=True)
@@ -32,38 +32,24 @@ E_in = np.zeros((N_SAMPLES, 2), dtype=np.complex128)
 E_in[:, 0] = np.exp(-0.5 * (t_arr / PULSE_SIGMA)**2)
 E_in[:, 1] = E_in[:, 0].copy()
 
-f = np.fft.fftfreq(N_SAMPLES, d=DT)
-omega = 2 * np.pi * f
-
 pmd_sd = PMD_COEFF * np.sqrt(L_KM * 1e3)
 maxwell_scale = pmd_sd / np.sqrt(3)
-
-def extract_dgd(E_out, dt):
-    E = E_out[:, 0]
-    Ey = E_out[:, 1]
-    # Cross-correlation peaks at lag = DGD (Ex advanced by DGD/2, Ey delayed by DGD/2)
-    corr = np.correlate(E, Ey, mode='same')
-    lags = np.arange(-len(E)//2, len(E)//2) * dt
-    peak_idx = np.argmax(np.abs(corr))
-    return lags[peak_idx]
 
 print(f"PMD validation via cable() — {N_REAL} realizations, {L_KM} km")
 print(f"  Expected RMS DGD = {pmd_sd*1e12:.2f} ps")
 print(f"  Expected mean DGD = {2*maxwell_scale*np.sqrt(2/np.pi)*1e12:.2f} ps")
 print()
 
-dgds = []
+# Clear any prior recorded DGDs, then call cable() — each call appends its DGD
+_dgd_sampled.clear()
 for i in range(N_REAL):
     E_out = cable(L_KM, E_in.copy(), dt=DT, wavelength=1550e-9,
                   dispersion=True, pm_dispersion=PMD_COEFF,
                   attenuation_factor=0.0, temperature=25.0, num_bends=0)
-    dgd = extract_dgd(E_out, DT)
-    if dgd is not None and not np.isnan(dgd) and dgd > 0:
-        dgds.append(dgd)
     if (i + 1) % 1000 == 0:
         print(f"  {i+1}/{N_REAL} complete")
 
-dgds = np.array(dgds) * 1e12  # convert to ps
+dgds = np.array(_dgd_sampled) * 1e12  # convert to ps, exact values from cable()
 mean_dgd = np.mean(dgds)
 rms_dgd = np.sqrt(np.mean(dgds**2))
 expected_mean = 2 * maxwell_scale * np.sqrt(2 / np.pi) * 1e12

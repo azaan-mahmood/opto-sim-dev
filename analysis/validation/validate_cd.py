@@ -16,9 +16,11 @@ args = parser.parse_args()
 SEED = args.seed
 np.random.seed(SEED)
 
+from src.channel.fiber import D_TOTAL
+
 LIGHTSPEED = 299792458.0
 WAVELENGTH = 1550e-9
-D_total = 14.0                # ps/(nm·km), from fiber.py
+D_total = D_TOTAL             # ps/(nm·km), imported dynamically from fiber.py
 D_SI = D_total * 1e-6
 beta2 = -D_SI * WAVELENGTH**2 / (2 * np.pi * LIGHTSPEED)
 

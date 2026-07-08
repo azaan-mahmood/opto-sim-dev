@@ -9,12 +9,24 @@ from scipy import stats
 # [3] Keck, D. B. et al., "Waveguide dispersion in single-mode fibers",
 #     IEEE J. Quantum Electron., vol. QE-21, no. 6, 1985.
 # [4] Yuan, L. et al., "Stress-induced birefringence and fabrication of
-#     in-fiber polarization structures", Opt. Express, vol. 27, 2019.
+#     in-fiber polarization devices by controlled femtosecond laser
+#     irradiations", Opt. Express, vol. 24, no. 2, pp. 1062-1071, 2016.
+#     DOI: 10.1364/oe.24.001062.
 # [5] Razavi, B., "Design of Integrated Circuits for Optical Communications",
 #     2nd ed., Wiley, 2012. PMD and birefringence effects in fiber links.
 # [6] Agrawal, G. P., "Fiber-Optic Communication Systems", 5th ed., Wiley, 2021.
 #     Ch. 2: Signal degradation in optical fibers (CD, PMD).
 #     Ch. 4: Fiber birefringence and beat length.
+
+# Module-level dispersion parameters (Hui [2], Keck [3]) —
+# exposed for validation scripts to import dynamically.
+D_MATERIAL = 17.0      # ps/(nm·km) material @ 1550 nm
+D_WAVEGUIDE = -3.0     # ps/(nm·km) waveguide @ 1550 nm
+D_TOTAL = D_MATERIAL + D_WAVEGUIDE   # ps/(nm·km)
+
+# Validation: stores the DGD sampled in each cable() call when
+# dispersion=True.  Cleared by the validation script before its loop.
+_dgd_sampled = []
 
 
 def cable(fiber_length, E, dt=None, wavelength=1550e-9,
@@ -110,14 +122,8 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
                 "dt (sampling interval) is required when dispersion=True."
             )
 
-        # Total dispersion parameter (Hui [2] material + Keck [3] waveguide)
-        D_material = 17.0      # ps/(nm·km) material  @ 1550 nm
-        D_waveguide = -3.0     # ps/(nm·km) waveguide @ 1550 nm
-        D_total = D_material + D_waveguide   # ps/(nm·km)
-
-        # Convert ps/(nm·km) → s/m²:
-        #   1 ps/(nm·km) = 1e-12 s / (1e-9 m · 1e3 m) = 1e-6 s/m²
-        D_SI = D_total * 1e-6   # s/m²
+        # Total dispersion parameter (module-level constants)
+        D_SI = D_TOTAL * 1e-6   # ps/(nm·km) → s/m²
 
         # GVD parameter (Agrawal [6] Eq 2.4.11)
         #   β₂ = -D · λ² / (2πc)   [s²/m]
@@ -145,6 +151,7 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
         pmd_sd = pm_dispersion * np.sqrt(L)          # seconds, RMS DGD
         maxwell_scale = pmd_sd / np.sqrt(3)
         dgd = stats.maxwell.rvs(scale=maxwell_scale)  # Maxwellian DGD
+        _dgd_sampled.append(dgd)                     # record for validation
 
         # Frequency-dependent Jones matrix for PMD:
         #   J_pmd = diag(exp(-j·ω·Δτ/2), exp(+j·ω·Δτ/2))
