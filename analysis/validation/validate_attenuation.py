@@ -32,7 +32,7 @@ for L in DISTANCES:
     else:
         E_out = cable(L, E_in.copy(), dt=DT, wavelength=WAVELENGTH,
                       dispersion=False, attenuation_factor=ATT_FACTOR,
-                      temperature=25.0, num_bends=0)
+                      temperature=25.0, bend_radius=None)
         ratios.append(np.mean(np.abs(E_out)**2) / power_in)
 
 ratios = np.array(ratios)

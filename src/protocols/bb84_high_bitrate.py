@@ -77,7 +77,7 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9,
         # sample_field returns the complex envelope (not the optical carrier).
         E = cable(
             fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
-            attenuation_factor=0.182, temperature=25, num_bends=10
+            attenuation_factor=0.182, temperature=25, bend_radius=None
         )
 
         # Bob's random basis choice

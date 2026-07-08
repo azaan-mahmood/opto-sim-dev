@@ -46,22 +46,22 @@ class TestFiber:
         P_out = np.mean(np.abs(E_out)**2)
         # power is slightly reduced by attenuation, but compare to
         # a pure-attenuation run
-        E_att = cable(10, np.copy(field), temperature=25, num_bends=0)
+        E_att = cable(10, np.copy(field), temperature=25, bend_radius=None)
         P_att = np.mean(np.abs(E_att)**2)
         assert np.isclose(P_out, P_att, rtol=0.01)
 
     def test_birefringence_changes_phase(self, field):
         """Birefringence should introduce a phase shift in Ex."""
         phase_in = np.angle(field[:, 0])
-        E_out = cable(10, np.copy(field), temperature=25, num_bends=0)
+        E_out = cable(10, np.copy(field), temperature=25, bend_radius=None)
         phase_out = np.angle(E_out[:, 0])
         avg_shift = np.mean(np.unwrap(phase_out - phase_in))
         assert np.abs(avg_shift) > 1e-6
 
     def test_birefringence_vs_temperature(self, field):
         """Different temperatures should give different phase shifts."""
-        E_T1 = cable(10, np.copy(field), temperature=0, num_bends=0)
-        E_T2 = cable(10, np.copy(field), temperature=50, num_bends=0)
+        E_T1 = cable(10, np.copy(field), temperature=0, bend_radius=None)
+        E_T2 = cable(10, np.copy(field), temperature=50, bend_radius=None)
         assert not np.allclose(E_T1, E_T2)
 
     def test_dispersion_requires_dt(self, field):

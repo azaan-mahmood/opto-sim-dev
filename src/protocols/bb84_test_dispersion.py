@@ -92,7 +92,7 @@ def simulate_bb84_dispersion(num_bits, fiber_length=100, pulse_sigma=30e-12,
         # Fiber with dispersion (now physically meaningful for broadband pulses)
         E = cable(
             fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
-            attenuation_factor=0.182, temperature=25, num_bends=10
+            attenuation_factor=0.182, temperature=25, bend_radius=None
         )
 
         bob_basis = random.choice(['C', 'X'])

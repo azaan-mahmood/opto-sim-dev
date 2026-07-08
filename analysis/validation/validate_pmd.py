@@ -45,7 +45,7 @@ _dgd_sampled.clear()
 for i in range(N_REAL):
     E_out = cable(L_KM, E_in.copy(), dt=DT, wavelength=1550e-9,
                   dispersion=True, pm_dispersion=PMD_COEFF,
-                  attenuation_factor=0.0, temperature=25.0, num_bends=0)
+                  attenuation_factor=0.0, temperature=25.0, bend_radius=None)
     if (i + 1) % 1000 == 0:
         print(f"  {i+1}/{N_REAL} complete")
 

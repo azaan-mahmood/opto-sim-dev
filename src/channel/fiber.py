@@ -17,6 +17,16 @@ from scipy import stats
 # [6] Agrawal, G. P., "Fiber-Optic Communication Systems", 5th ed., Wiley, 2021.
 #     Ch. 2: Signal degradation in optical fibers (CD, PMD).
 #     Ch. 4: Fiber birefringence and beat length.
+# [7] Ulrich, R. et al., "Bending-induced birefringence in single-mode
+#     fibers", Opt. Lett., vol. 5, no. 6, pp. 273-275, 1980.
+#     DOI: 10.1364/ol.5.000273.
+# [8] Smith, A. M., "Bend-induced birefringence in single-mode optical
+#     fibers", Appl. Opt., vol. 19, no. 15, pp. 2606-2611, 1980.
+#     DOI: 10.1364/ao.19.002606.
+# [9] Shibata, N. et al., "Bend-induced birefringence of a single-mode
+#     fiber evaluated by a heterodyne method", J. Opt. Soc. Am. A,
+#     vol. 3, no. 11, pp. 1935-1939, 1986.  DOI: 10.1364/josaa.3.001935.
+#     Confirms Ulrich's model down to R = 2 mm.
 
 # Module-level dispersion parameters (Hui [2], Keck [3]) —
 # exposed for validation scripts to import dynamically.
@@ -31,7 +41,7 @@ _dgd_sampled = []
 
 def cable(fiber_length, E, dt=None, wavelength=1550e-9,
           dispersion=False, attenuation_factor=0.182,
-          temperature=25, num_bends=0, pm_dispersion=0.1e-12):
+          temperature=25, bend_radius=None, pm_dispersion=0.1e-12):
     """
     Transmission through an optical fiber.
 
@@ -64,10 +74,10 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
     temperature : float
         Ambient temperature in °C.  Affects birefringence.
         Default 25 °C.
-    num_bends : int
-        Number of discrete bends.  Each bend contributes to the
-        stress-induced birefringence (Yuan [4]).
-        Default 0.
+    bend_radius : float or None
+        Bend radius in metres.  Induces stress birefringence via
+        Δn_bend = 0.135·(r_fiber/R)² (Ulrich [7], Smith [8], Shibata [9]).
+        Default None — no bending birefringence.
     pm_dispersion : float
         PMD coefficient in s/sqrt(m).  Default 0.1e-12.
         The RMS DGD after length L is ``pm_dispersion * sqrt(L)``.
@@ -93,16 +103,22 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
     # Base birefringence at T0 for silica glass (source: effect of
     # temperature and pressure on the refractive index of some oxide
     # glasses).  Temperature coefficient from ThorLabs, pure silica.
-    # Bend contribution from Yuan [4].
+    # Bend contribution: Δn_bend = 0.135·(r_fiber/R)², where
+    # r_fiber = 62.5 μm (SMF cladding radius).
+    #   Ulrich [7] Eq 1: Δβ_bend ∝ (r_f/R)²,  1980.
+    #   Smith  [8] §III: Δn_bend = 0.135·(r_f/R)²,  1980.
+    #   Shibata [9] Fig 3: validated down to R = 2 mm,  1986.
+    r_fiber = 62.5e-6                      # cladding radius (m)
     birefringence_T0 = 0.87e-5
     temperature_coefficient = -5e-7
-    bend_effect_factor = 2.4e-4
+    bend_effect_factor = 0.135             # silica strain-optic constant
 
     birefringence = (
         birefringence_T0
         + temperature_coefficient * (temperature - T0)
-        + bend_effect_factor * num_bends
     )
+    if bend_radius is not None:
+        birefringence += bend_effect_factor * (r_fiber / bend_radius) ** 2
 
     # Propagation-constant difference (Agrawal [6] Eq 4.1.2):
     #   Δβ = β_slow - β_fast = 2π · Δn / λ

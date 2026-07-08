@@ -6,7 +6,7 @@ Date: 2026-07-08 | Project: opto-sim-dev | Commit: ebf4971 | All 48 tests passin
 
 ### 1. `src/channel/fiber.py` — Fiber Channel
 
-**References:** [1] Keiser 2015, [2] Hui 2009, [3] Keck 1985, [4] Yuan 2016, [5] Razavi 2012, [6] Agrawal 2021
+**References:** [1] Keiser 2015, [2] Hui 2009, [3] Keck 1985, [4] Yuan 2016, [5] Razavi 2012, [6] Agrawal 2021, [7] Ulrich 1980, [8] Smith 1980, [9] Shibata 1986
 
 | Eq/Location | Reference | Implementation | Status |
 |---|---|---|---|
@@ -15,13 +15,13 @@ Date: 2026-07-08 | Project: opto-sim-dev | Commit: ebf4971 | All 48 tests passin
 | Agrawal [6] Eq 2.4.11 | β₂ = -D·λ²/(2πc) | `beta2 = -D_SI * wavelength**2 / (2 * np.pi * c0)` (L:130) | **PASS** |
 | Razavi [5] Fig 2.11 | DGD follows Maxwellian (3D PMD vector) | `stats.maxwell.rvs(scale=pmd_sd/sqrt(3))` (L:153) | **PASS** |
 | Razavi [5] | J_pmd = diag(exp(∓jωΔτ/2), exp(±jωΔτ/2)) | Hx/Hy with opposite signs (L:159-160) | **PASS** |
-| Yuan [4] | Bend-induced birefringence 2.4e-4 (see Fix 2) | `bend_effect_factor = 2.4e-4` (L:99) | **CONDITIONAL** — deferred |
+| Ulrich [7] / Smith [8] / Shibata [9] | Δn_bend = 0.135·(r_fiber/R)² | `bend_effect_factor = 0.135; Δn += bend_effect_factor * (r_fiber / bend_radius)²` (L:120-121) | **PASS** |
+| Agrawal [6] Eq 4.1.2 | Δβ = 2π·Δn/λ | `dbeta = 2.0 * np.pi * birefringence / wavelength` (L:125) | **PASS** (Fix applied) |
+| — | Symmetric Jones: diag(exp(±jΔβL/2)) | `[[exp(j·dbeta·L/2), 0], [0, exp(-j·dbeta·L/2)]]` (L:128-129) | **PASS** (Fix applied) |
+| — | PMD axis randomized 50:50 | `if np.random.rand() < 0.5: Hx, Hy = Hy, Hx` (L:176-177) | **PASS** (Fix applied) |
 
 Anomalies:
 
-- **Δβ = 4π·Δn/λ** (L:101): Non-standard definition. Standard (Agrawal [6] §4.1.2) is Δβ = 2π·Δn/λ. The code compensates with a L/2 factor in the Jones matrix, giving the same total phase 2π·L·Δn/λ. Mathematically correct but unconventional — the factor choice conflates Δβ (propagation-constant difference) with the total phase accumulated in one beat length.
-- **Asymmetric Jones matrix** (L:102-103): `diag(exp(jΔβL/2), 1)` instead of the symmetric `diag(exp(jΔβL/2), exp(-jΔβL/2))`. Gives correct relative phase between Ex and Ey (Δβ·L/2 = 2π·L·Δn/λ) but the absolute phase is offset by Δβ·L/4. Only relative phase matters for polarization, so this is benign. Consider switching to the symmetric form for conceptual clarity.
-- **PMD applies fixed sign** (L:159-160): The fast axis is always Ex (Hx = exp(-jωDGD/2), Hy = exp(+jωDGD/2)). In a real fiber, the PMD vector orientation is random per realization. The sign of the DGD application should be ±1 with 50% probability each. **Effect on QKD**: minimal because BB84 randomizes the measurement basis, but a systematic PMD sign could bias the output polarization in a single-fiber setup.
 - **_dgd_sampled side-effect** (L:29, L:154): Module-level list accumulates DGD from every `cable()` call with `dispersion=True`. Tests and scripts that call `cable()` will append values. Validation scripts clear it first, but running tests + validation in the same process would mix values. **Fix**: use a separate subprocess (as `run_all.py` already does) or add a reset function.
 
 ---
@@ -174,28 +174,29 @@ Anomaly: `t = np.linspace(0, 2π/frequency, 1000)` hardcodes 1000 points (L:16).
 
 ### 11. `analysis/validation/validate_birefringence.py` — Birefringence Validation
 
-**References:** Yuan [4], Ulrich [7], Smith [8]
+**References:** Yuan [4], Ulrich [7], Smith [8], Shibata [9]
 
 | Check | Result |
 |---|---|
 | Base Δn = 0.87e-5 | **PASS**: 0.0000% error |
 | Temperature coefficient = -5e-7 /C | **PASS**: 0.0000% error |
-| Bend coefficient = 2.4e-4 /bend | **PASS**: 0.0000% error |
+| Bend Δn = 0.135·(r_f/R)² (Ulrich [7], Smith [8], Shibata [9]) | **PASS**: 0.0000% error — slope Δn vs (r_f/R)² matches 0.135 |
 
 ---
 
 ### 12. Summary of Issues Found
 
-| # | File | Severity | Issue | Fix |
-|---|---|---|---|---|
-| 1 | stokes.py:41 | **BUG** | `np.arcsin(S3)` without clip — NaN if |S3| slightly > 1 | Add `np.clip(S3, -1.0, 1.0)` |
-| 2 | fiber.py:101-103 | Minor | Δβ = 4π·Δn/λ is non-standard; Jones matrix asymmetry | Use symmetric form: `diag(exp(jΔβL/2), exp(-jΔβL/2))` with Δβ = 2π·Δn/λ |
-| 3 | fiber.py:159-160 | Minor | PMD sign always applies Ex fast / Ey slow | Randomize sign: `if np.random.rand() < 0.5: swap(Hx, Hy)` per realization |
-| 4 | phase_modulator.py:84-93 | Minor | Uses n_o for both cuts; n_e may be correct for X-cut (r13) | Verify exact crystal orientation and update if needed |
-| 5 | phase_modulator.py:84-93 | Minor | V_π formula has implicit factor of 2 (single-arm vs push-pull) | Clarify in docstring that V_π is the MZM-effective value |
-| 6 | phase_modulator.py | Info | Missing formal numbered references | Add Weis & Gaylord 1985 for coefficients, Alferness 1988 for V_π |
-| 7 | fiber.py:29,154 | Info | `_dgd_sampled` is a module-level side-effect | Already mitigated by subprocess in `run_all.py` |
-| 8 | fields.py:16,18 | Info | Hardcoded 1000 points; title only applies to first subplot | Minor usability — no physics impact |
+| # | File | Severity | Issue | Fix | Status |
+|---|---|---|---|---|---|---|
+| 1 | stokes.py:41 | **BUG** | `np.arcsin(S3)` without clip — NaN if |S3| slightly > 1 | Add `np.clip(S3, -1.0, 1.0)` | **FIXED** |
+| 2 | fiber.py | Minor | Δβ = 4π·Δn/λ is non-standard; Jones matrix asymmetry | Use symmetric form with standard Δβ = 2π·Δn/λ | **FIXED** |
+| 3 | fiber.py:159-160 | Minor | PMD sign always applies Ex fast / Ey slow | Randomize sign: `if np.random.rand() < 0.5: swap(Hx, Hy)` | **FIXED** |
+| 4 | fiber.py:99-105 | Minor | Bend model used Yuan 2.4e-4 per bend (stress rods), not ∝ 1/R² | Replace with Ulrich Δn_bend = 0.135·(r_f/R)² | **FIXED** |
+| 5 | phase_modulator.py:84-93 | Minor | Uses n_o for both cuts; n_e may be correct for X-cut (r13) | Verify exact crystal orientation and update if needed | PENDING |
+| 6 | phase_modulator.py:84-93 | Minor | V_π formula has implicit factor of 2 (single-arm vs push-pull) | Clarify in docstring that V_π is the MZM-effective value | **FIXED** |
+| 7 | phase_modulator.py | Info | Missing formal numbered references | Add Weis & Gaylord 1985 for coefficients, Alferness 1988 for V_π | **FIXED** |
+| 8 | fiber.py:29,154 | Info | `_dgd_sampled` is a module-level side-effect | Already mitigated by subprocess in `run_all.py` | PENDING (known) |
+| 9 | fields.py:16,18 | Info | Hardcoded 1000 points; title only applies to first subplot | Minor usability — no physics impact | **FIXED** |
 
 ### 13. Literature Coverage by Severity
 
@@ -205,10 +206,11 @@ Anomaly: `t = np.linspace(0, 2π/frequency, 1000)` hardcodes 1000 points (L:16).
 
 **Bug (incorrect behavior for edge cases):** Stokes (missing S3 clip — NaN for near-circular polarization)
 
-### 14. Recommendations
+### 14. Recommendations (all resolved)
 
-1. **CRITICAL**: Fix the missing S3 clip in `stokes.py:41` — `np.arcsin(np.clip(S3, -1.0, 1.0))`
-2. **MINOR**: Switch fiber birefringence to symmetric Jones matrix with standard Δβ = 2π·Δn/λ for conceptual clarity
-3. **MINOR**: Randomize PMD fast/slow axis sign in fiber.py
-4. **INFO**: Document the V_π factor convention in PhaseModulator
-5. **INFO**: Add numbered references to PhaseModulator docstring
+1. ~~**CRITICAL**: Fix the missing S3 clip in `stokes.py:41` — `np.arcsin(np.clip(S3, -1.0, 1.0))`~~ **FIXED**
+2. ~~**MINOR**: Switch fiber birefringence to symmetric Jones matrix with standard Δβ = 2π·Δn/λ for conceptual clarity~~ **FIXED**
+3. ~~**MINOR**: Randomize PMD fast/slow axis sign in fiber.py~~ **FIXED**
+4. ~~**MINOR**: Replace num_bends (Yuan stress rods) with bend_radius (Ulrich 1/R²)~~ **FIXED**
+5. ~~**INFO**: Document the V_π factor convention in PhaseModulator~~ **FIXED**
+6. ~~**INFO**: Add numbered references to PhaseModulator docstring~~ **FIXED**

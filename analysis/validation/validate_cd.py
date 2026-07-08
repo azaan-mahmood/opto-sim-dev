@@ -50,7 +50,7 @@ for L_km in distances_km:
     else:
         E_out = cable(L_km, E_in.copy(), dt=DT, wavelength=WAVELENGTH,
                       dispersion=True, pm_dispersion=0.0,
-                      attenuation_factor=0.0, temperature=25.0, num_bends=0)
+                      attenuation_factor=0.0, temperature=25.0, bend_radius=None)
     I = np.abs(E_out[:, 0])**2
     total = I.sum()
     t_mean = np.sum(T * I) / total
@@ -73,7 +73,7 @@ colors = plt.cm.viridis(np.linspace(0.2, 0.9, len(z_over_LD)))
 for i, L_km in enumerate(distances_km):
     E_out = cable(L_km, E_in.copy(), dt=DT, wavelength=WAVELENGTH,
                   dispersion=True, pm_dispersion=0.0,
-                  attenuation_factor=0.0, temperature=25.0, num_bends=0) if L_km > 0 else E_in
+                   attenuation_factor=0.0, temperature=25.0, bend_radius=None) if L_km > 0 else E_in
     I = np.abs(E_out[:, 0])**2
     ax1.plot(T*1e12, I/I.max(), color=colors[i],
              label=f'z/L_D = {z_over_LD[i]:.1f}')

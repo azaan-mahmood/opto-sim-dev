@@ -4,6 +4,38 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-07-08 — Literature verification fixes + Ulrich bend model
+
+### Session: literature verification (commit 25cf9b9)
+
+| Fix | File | Detail |
+|-----|------|--------|
+| 1 — Stokes S3 clip | `src/visualization/stokes.py` | Added `np.clip(S3, -1.0, 1.0)` before `np.arcsin()` — prevented NaN at near-circular polarization |
+| 2 — Symmetric Jones + standard Δβ | `src/channel/fiber.py` | Switched to `diag(exp(±j·Δβ·L/2))` with Δβ = 2π·Δn/λ (Agrawal [6] Eq 4.1.2). Relative phase = Δβ·L = 2π·L/L_B as before. |
+| 3 — PMD sign randomized | `src/channel/fiber.py` | `if np.random.rand() < 0.5: Hx, Hy = Hy, Hx` — 50:50 fast/slow axis per realization |
+| 4 — Vπ doc + refs | `src/channel/phase_modulator.py` | Added numbered refs [1] Weis & Gaylord 1985, [2] Alferness 1988; clarified Vπ is MZM push-pull effective value |
+| 5 — Fields title | `src/visualization/fields.py` | Changed to `plt.suptitle()` spanning all subplots |
+| — Yuan ref corrected | `src/channel/fiber.py` | Vol 27, 2019 → vol 24, no. 2, pp. 1062-1071, 2016 + DOI |
+
+### Session: Ulrich bend model (this session)
+
+**Bend model rebuilt — `num_bends` → `bend_radius`:**
+
+| File | Change |
+|------|--------|
+| `src/channel/fiber.py` | Replaced `num_bends=0` (Yuan stress rod factor 2.4e-4) with `bend_radius=None` using Δn_bend = 0.135·(r_fiber/R)². References [7] Ulrich 1980, [8] Smith 1980, [9] Shibata 1986. |
+| `analysis/validation/validate_birefringence.py` | Sweeps `bend_radius` (2 mm–2 cm), fits Δn vs (r_f/R)². 0.0000% error on slope coefficient 0.135. |
+| `analysis/validation/validate_cd.py`, `validate_pmd.py`, `validate_attenuation.py` | `num_bends=0` → `bend_radius=None` |
+| `tests/test_fiber.py` | `num_bends=0` → `bend_radius=None` |
+| `src/protocols/bb84_*.py` | `num_bends=10` → `bend_radius=None` |
+| `literature_verification_report.md` | Updated table, issue summary, recommendations (all fixed). |
+| `validation_report.md` | Updated Fix 2 description. |
+| `AGENTS.md` | Updated parameters, birefringence description, removed known issue. |
+
+**Cumulative status:** All 5 literature verification issues resolved. All 4 Tier-1 validations pass with 0.0000% error. Bend model blocker eliminated.
+
+---
+
 ## 2026-07-02 — Tier 1 Channel Validation
 
 ### Session: ~11:00–11:30 UTC+5

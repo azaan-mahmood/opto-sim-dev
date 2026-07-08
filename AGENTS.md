@@ -54,10 +54,10 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - `cable()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
-- **Birefringence**: Beat-length Jones matrix `[[exp(j·Δβ·L/2), 0], [0, 1]]` where `Δβ = 4π·Δn/λ` and Δn depends on temperature and bends (Yuan [4]). Beat length `L_B = λ/Δn` distinguishes SM (long L_B) vs PM (short L_B) fibre.
+- **Birefringence**: Symmetric Jones matrix `diag(exp(±j·Δβ·L/2))` where `Δβ = 2π·Δn/λ` (Agrawal [6] Eq 4.1.2). Δn depends on temperature and bend radius (Ulrich [7] Eq 1). Beat length `L_B = λ/Δn` distinguishes SM (long L_B) vs PM (short L_B) fibre.
 - **Chromatic dispersion** (disabled by default): FFT-based, `H(Ω) = exp(-j·β₂·Ω²·L/2)` applied to both Ex and Ey (Agrawal [6] Eq 2.4.11). Requires `dt` (sampling interval) and assumes the field is the complex envelope.
 - **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
-- Parameters: `fiber_length (km)`, `E`, `dt` (required for dispersion), `wavelength` (default 1550e-9), `dispersion`, `attenuation_factor`, `temperature`, `num_bends`, `pm_dispersion`.
+- Parameters: `fiber_length (km)`, `E`, `dt` (required for dispersion), `wavelength` (default 1550e-9), `dispersion`, `attenuation_factor`, `temperature`, `bend_radius`, `pm_dispersion`.
 
 ### Mach-Zehnder Modulator (`src/channel/mzm.py`)
 - Physics-based MZI built from `PhaseModulator` instances per arm
@@ -91,11 +91,10 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - Electric field units are mW-based (not Watts). BB84 scripts calibrate with `E *= sqrt(power_W / mean(|E|²))` at laser output.
 - Retained in `src/deprecated/` for reference; CWLaser is the active replacement.
 
-### Fiber Birefringence
-- `bend_effect_factor = 2.4e-4` is a fixed scalar per bend, NOT a function of bend radius R
-- Correct Yuan [4] model requires Δn_bend ∝ 1/R² with coefficient ~8.76e-10 (derived from strain-optic coefficients)
-- Currently `num_bends` is an integer count; should become bend radius R for physics-validated behavior
-- Flagged for future update — current model adequate when bend radius not a controlled variable
+### Fiber Birefringence (FIXED)
+- Bend model now uses `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7], Smith [8], Shibata [9])
+- `bend_radius` parameter (float, metres) replaces old `num_bends` (int)
+- Validated: 0.0000% error against the Ulrich formula
 
 ### BB84 Scripts
 - `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → cable (dispersion flag) → PBS → APD
@@ -212,20 +211,19 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
-| `src/channel/fiber.py` | PMD: Rayleigh → Maxwell (`scipy.stats.maxwell.rvs`); added `from scipy import stats` |
-| `analysis/validation/validate_cd.py` | **New**: CD validation (Agrawal Fig 2.6, 0.0000% error) |
-| `analysis/validation/validate_pmd.py` | **New**: PMD validation (Razavi Fig 2.11, Maxwellian) |
-| `analysis/validation/validate_attenuation.py` | **New**: Attenuation validation (SMF-28, 0.0000% error) |
-| `analysis/validation/validate_birefringence.py` | **New**: Birefringence validation (Yuan Fig 1, L_B vs R) |
-| `run_all.py` | **New**: Single-command runner for all Tier-1 validations |
-| `analysis/val_cd/`, `val_pmd/`, `val_att/`, `val_biref/` | **New**: Per-task output directories |
-| `analysis/qber_vs_distance_dispersion.py` | QBER vs distance sweep with MZM-carved 5 ps pulses; dispersion ON vs OFF |
-| `src/protocols/bb84_test_dispersion.py` | **New**: MZM-carved pulses for CD/PMD testing; dispersion=True by default |
-| `src/protocols/bb84_ideal.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
-| `src/protocols/bb84_high_bitrate.py` | Migrated to `sample_field()`, added `--dispersion` CLI flag |
-| `src/lasers/cwlaser.py` | `get_electric_field()` → `instantaneous_field()`; updated docstrings for both methods |
-| `tests/test_cwlaser.py` | Updated test names for `instantaneous_field` |
-| `src/channel/fiber.py` | Updated docstring reference |
-| `README.md` | Updated to CWLaser + `instantaneous_field` example |
-| `CHANGELOG.md` | Added BB84 migration + dispersion test entries |
-| `AGENTS.md` | Updated for all sessions |
+| `src/channel/fiber.py` | `num_bends` → `bend_radius` (Ulrich 1980 bend model); symmetric Jones + standard Δβ; PMD sign randomized; refs [7][8][9] added |
+| `analysis/validation/validate_birefringence.py` | Sweeps `bend_radius` (2 mm–2 cm); fits Δn vs (r_f/R)²; 0.0000% error |
+| `analysis/validation/validate_cd.py` | `num_bends=0` → `bend_radius=None` |
+| `analysis/validation/validate_pmd.py` | `num_bends=0` → `bend_radius=None` |
+| `analysis/validation/validate_attenuation.py` | `num_bends=0` → `bend_radius=None` |
+| `tests/test_fiber.py` | `num_bends=0` → `bend_radius=None` |
+| `src/protocols/bb84_ideal.py` | `num_bends=10` → `bend_radius=None` |
+| `src/protocols/bb84_high_bitrate.py` | `num_bends=10` → `bend_radius=None` |
+| `src/protocols/bb84_test_dispersion.py` | `num_bends=10` → `bend_radius=None` |
+| `src/visualization/stokes.py` | Added `np.clip(S3, -1.0, 1.0)` before arcsin (Fix 1) |
+| `src/visualization/fields.py` | Changed to `plt.suptitle()` (Fix 5) |
+| `src/channel/phase_modulator.py` | Added refs [1][2]; clarified Vπ convention (Fixes 4/6/7) |
+| `literature_verification_report.md` | All issues marked FIXED; bend validation updated |
+| `validation_report.md` | Fix 2 updated for Ulrich bend model |
+| `AGENTS.md` | Updated params, known issues, files changed |
+| `CHANGELOG.md` | Added literature verification + bend model entries |
