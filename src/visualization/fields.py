@@ -16,14 +16,11 @@ def plot_field(E, frequency, title)->None:
     t = np.linspace(0, 2 * np.pi / frequency, 1000)
     plt.subplot(3, 1, 1)
     plt.plot(t, Ex, label="Ex")
-    plt.title(title)
-    plt.xlabel("Time")
     plt.ylabel("Ex")
     plt.grid(True)
 
     plt.subplot(3, 1, 2)
     plt.plot(t, Ey, label="Ey", color="orange")
-    plt.xlabel("Time")
     plt.ylabel("Ey")
     plt.grid(True)
 
@@ -33,5 +30,6 @@ def plot_field(E, frequency, title)->None:
     plt.ylabel("E")
     plt.grid(True)
 
+    plt.suptitle(title)
     plt.tight_layout()
     plt.show()

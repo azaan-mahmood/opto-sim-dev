@@ -104,15 +104,13 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
         + bend_effect_factor * num_bends
     )
 
-    # Beat length L_B = λ / Δn  (Keiser [1] §3.4, Agrawal [6] §4.2).
-    # Phase accumulated by Ex over length L:
-    #   Δφ = 2π · L / L_B  =  2π · L · Δn / λ
-    # We keep the L/2 factor in the Jones matrix (beat-length formulation
-    # distinguishing SM vs PM fibre) so we define:
-    #   Δβ = 4π · Δn / λ   →   Δφ = Δβ · L / 2  =  2π · L · Δn / λ
-    delta_beta = 4.0 * np.pi * birefringence / wavelength   # rad/m
-    jones = np.array([[np.exp(1j * delta_beta * L / 2), 0],
-                      [0, 1]])
+    # Propagation-constant difference (Agrawal [6] Eq 4.1.2):
+    #   Δβ = β_slow - β_fast = 2π · Δn / λ
+    dbeta = 2.0 * np.pi * birefringence / wavelength   # rad/m
+    # Symmetric Jones matrix: Ex advances by Δβ·L/2, Ey retards by Δβ·L/2.
+    # Relative phase = Δβ·L = 2π·L·Δn/λ = 2π·L/L_B.
+    jones = np.array([[np.exp(1j * dbeta * L / 2), 0],
+                      [0, np.exp(-1j * dbeta * L / 2)]])
     E = np.transpose(jones @ np.transpose(E))
 
     # --- Chromatic dispersion (Agrawal [6] §2.4.1) ---
@@ -155,9 +153,12 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
 
         # Frequency-dependent Jones matrix for PMD:
         #   J_pmd = diag(exp(-j·ω·Δτ/2), exp(+j·ω·Δτ/2))
+        # The fast/slow axis orientation is random per realization.
         phase_pmd = omega * dgd / 2.0
         Hx = np.exp(-1j * phase_pmd)
         Hy = np.exp(+1j * phase_pmd)
+        if np.random.rand() < 0.5:
+            Hx, Hy = Hy, Hx
 
         E_f_after_cd = np.fft.fft(E, axis=0)    # re-FFT after CD + IFFT
         E_f_after_cd[:, 0] *= Hx

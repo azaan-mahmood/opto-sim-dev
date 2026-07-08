@@ -18,26 +18,25 @@ class PhaseModulator:
         Important Notes:
             - RF modulation is not yet implemented.
             - Based on Z-propagation with Ex, Ey transverse field simulation.
-            - Based on well-known Pockels effect in LiNbO3.
-        Explanation:
-            - Since our simulation is Transverse Ex and Ey, our phase-modulator is automatically Z-Propagating as Ez = 0
-            - We must choose between X-Cut or Y-Cut. X-Cut means Y surface, so apply phase to Ey.
-            - Y-Cut means X surface, so apply phase to Ex.
-            - X-Cut has r13 and Y-Cut has r22 config. LiNbO3 crystal is well-defined for all such configs. Pockels is the
-            - linear electro-optic effect of materials in presence of electric-field.
+            - X-Cut means Y surface, so phase applied to Ey.
+            - Y-Cut means X surface, so phase applied to Ex.
+            - X-Cut uses r13 coefficient (Ey modulation), Y-Cut uses r22 (Ex modulation).
 
-            - Kerr effect is ignored. It is negligible compared to Pockels, and is highly non-linear electro-optic effect
-            - of materials in presence of electric-field.
-            - Phase modulator design is single symmetry, single-waveguide, therefore it is polarization insensitive,
-            - and polarization will apply to either Ex or Ey, depending on Cut.
+        V_π formula:
+            V_π = λ·d / (2·n_o³·r·Γ·L)
 
-        Sources:
-            - Site: https://www.fiberoptics4sale.com/blogs/wave-optics/guided-wave-electro-optic-modulators
-            - Site: https://www.fiberoptics4sale.com/blogs/wave-optics/pockels-effect
-            - Paper: Titanium-Diffused Lithium Niobate Waveguide Devices by R.C. Alferness
-            - Paper:  Lithium niobate thin film electro-optic modulator by Jikun Liu
-            - Paper: Recent Progress of LiNbO3 Based Electro-optic Modulators with NRZ Coding in High Speed Photonic Networks
-            - Paper:  Broadband integrated optical modulators:achievements and prospects by V M Petrov
+            This is the voltage needed by the *push-pull MZM* to achieve a
+            π relative phase shift between its arms. A single arm alone would
+            require 2× this voltage for π phase shift.
+
+        References
+        ----------
+        [1] Weis, R. S. & Gaylord, T. K., "Lithium Niobate: Summary of
+            Physical Properties and Crystal Structure", Appl. Phys. A 37,
+            191-203, 1985.  — LiNbO3 Pockels coefficients r13, r22.
+        [2] Alferness, R. C., "Titanium-diffused lithium niobate waveguide
+            devices", in Guided-Wave Optoelectronics, T. Tamir (ed.),
+            Springer, 1988, Ch. 4.  — V_π formula for LiNbO3 modulators.
         """
         self.default_params = {
             "wavelength": 1550e-9,   # Wavelength (in nm)

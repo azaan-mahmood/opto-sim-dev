@@ -38,9 +38,8 @@ def compute_stokes_parameters(E: np.ndarray) -> tuple:
     S0 = 1.0  # Normalize S0 to 1 for pure states, so S1, S2, S3 are relative values on the Poincaré sphere.    
     # Polarization ellipse parameters (Collett [1], Eq. 2.28–2.29)
     psi = 0.5 * np.arctan2(S2, S1)   #— orientation angle
-    chi = 0.5 * np.arcsin(S3)        #— ellipticity angle (S3 already normalized)
-    # Note: Clip to [-1, 1] guards against floating-point noise in S3
-    # that can exceed unity and cause arcsin to return NaN (Born & Wolf [3]).
+    chi = 0.5 * np.arcsin(np.clip(S3, -1.0, 1.0))  # clip guards against
+    # floating-point noise that can push |S3| slightly above 1.0 (Born & Wolf [3]).
 
     return [S0, S1, S2, S3], [psi, chi]
 

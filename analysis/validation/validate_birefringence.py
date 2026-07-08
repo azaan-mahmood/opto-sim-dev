@@ -21,6 +21,7 @@ N_SAMPLES = 1024
 DT = 1e-12
 E_in = np.zeros((N_SAMPLES, 2), dtype=np.complex128)
 E_in[:, 0] = 1.0 + 0j
+E_in[:, 1] = 1.0 + 0j
 
 # fiber.py coefficients
 DN0 = 0.87e-5
@@ -31,9 +32,11 @@ def measure_delta_n(L_m, temp, n_bends):
     E_out = cable(L_m/1000, E_in.copy(), dt=DT, wavelength=WAVELENGTH,
                   dispersion=False, attenuation_factor=0.0,
                   temperature=temp, num_bends=n_bends)
-    phase = np.angle(np.mean(E_out[:, 0]))
-    # phase = 2*pi*L*dn/lambda  =>  dn = phase * lambda / (2*pi*L)
-    return phase * WAVELENGTH / (2 * np.pi * L_m)
+    # Relative phase between Ex and Ey (symmetric Jones formulation):
+    #   dphi = dbeta·L = 2π·L·Δn/λ
+    dphi = np.angle(np.mean(E_out[:, 0])) - np.angle(np.mean(E_out[:, 1]))
+    dphi = np.arctan2(np.sin(dphi), np.cos(dphi))  # wrap to [-pi, pi]
+    return dphi * WAVELENGTH / (2 * np.pi * L_m)
 
 # --- 1. Base birefringence: sweep length at T=25, no bends ---
 L_vals_m = np.array([1e-3, 2e-3, 5e-3, 1e-2, 2e-2])
