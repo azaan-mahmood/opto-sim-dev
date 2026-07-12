@@ -91,6 +91,12 @@ Refactor the QKD simulation codebase with physics-informed models for APD detect
 - Electric field units are mW-based (not Watts). BB84 scripts calibrate with `E *= sqrt(power_W / mean(|E|²))` at laser output.
 - Retained in `src/deprecated/` for reference; CWLaser is the active replacement.
 
+### LaTeX compilation: `mdframed` + `\begin{table}` (FIXED)
+- `mdframed` patches `\@xfloat` using `\color@vbox`, which is no longer defined in the current LaTeX kernel (2024+). Causes "Not in outer par mode" error on every `\begin{table}`.
+- **Fix:** Removed `mdframed` package; replaced abstract box with `\colorbox{highlightblue!5}{\begin{minipage}{...}}`.
+- Also removed `caption` package (was only needed for `\captionof`, no longer used).
+- `journal_paper_outline.pdf` now compiles at 13 pages with xelatex.
+
 ### Fiber Birefringence (FIXED)
 - Bend model now uses `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7], Smith [8], Shibata [9])
 - `bend_radius` parameter (float, metres) replaces old `num_bends` (int)
@@ -211,6 +217,9 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `journal_paper_outline.tex` | Removed `mdframed` + `caption` packages; replaced abstract box with `\colorbox{highlightblue!5}{...}`. Compiles to 13 pages (was failing with "Not in outer par mode"). |
+| `AGENTS.md` | Updated files changed, known issues. |
+| `CHANGELOG.md` | Added mdframed fix + journal outline compilation entry. |
 | `src/channel/fiber.py` | `num_bends` → `bend_radius` (Ulrich 1980 bend model); symmetric Jones + standard Δβ; PMD sign randomized; refs [7][8][9] added |
 | `analysis/validation/validate_birefringence.py` | Sweeps `bend_radius` (2 mm–2 cm); fits Δn vs (r_f/R)²; 0.0000% error |
 | `analysis/validation/validate_cd.py` | `num_bends=0` → `bend_radius=None` |

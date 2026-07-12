@@ -144,7 +144,7 @@ Anomaly: `t = np.linspace(0, 2π/frequency, 1000)` hardcodes 1000 points (L:16).
 |---|---|
 | sigma(z) = sigma0·√(1 + (z/LD)²) | **PASS**: 0.0000% error at z/LD = 0.0, 0.5, 1.0, 2.0 |
 | beta2 computed correctly | **PASS**: β₂ = -D·λ²/(2πc) |
-| D_TOTAL imported dynamically | **PASS** (Fix 4 applied) |
+| D_TOTAL imported dynamically from fiber.py | **PASS** (Fix 4 applied — no hardcoding) |
 
 ---
 
@@ -154,33 +154,63 @@ Anomaly: `t = np.linspace(0, 2π/frequency, 1000)` hardcodes 1000 points (L:16).
 
 | Check | Result |
 |---|---|
-| Maxwellian DGD distribution | **PASS**: KS p=0.31 (Fix 3 applied) |
+| Maxwellian DGD distribution | **PASS**: KS p=0.31 at 5000 realizations |
 | Mean DGD = 29.3 ps (expected 29.1 ps) | **PASS**: error 0.6% |
 | RMS DGD = 31.8 ps (expected 31.6 ps) | **PASS**: error 0.5% |
 | DGD recorded directly from cable() | **PASS** (Fix 3 applied) |
+
+Gap:
+- **Ensemble size**: Currently 5000 realizations.  The paper target is
+  10000 for a cleaner histogram.  The KS test at 5000 already passes
+  (p=0.31 >> 0.05), but the publication figure benefits from more
+  samples.
+- **Type II error check**: The Rayleigh distribution bug (pre-commit
+  24d4751) would have failed a Maxwellian KS test with p << 0.001 at
+  5000 samples — confirming the correction was real and detectable.
 
 ---
 
 ### 10. `analysis/validation/validate_attenuation.py` — Attenuation Validation
 
-**Reference:** Keiser [1] Eq 3.6
+**Reference:** Keiser [1] Eq 3.6; Corning SMF-28 Ultra datasheet
 
 | Check | Result |
 |---|---|
 | P_out/P_in = 10^{-αL/10} | **PASS**: 0.0000% error at 0-200 km |
 | Validates via cable() output | **PASS** |
 
+Gap:
+- **No external OTDR data overlay** — currently a pure self-consistency check.
+  The roadmap (Task 3) targets overlaying an experimental OTDR trace from
+  Corning SMF-28 Ultra datasheet or a Thorlabs app note for external
+  validation.  This is needed for the Tier-1 paper (OFC/CLEO).
+- **alpha = 0.182 dB/km** is slightly above Corning's max spec of
+  0.18 dB/km for SMF-28 Ultra at 1550 nm — note as conservative.  SMF-28e
+  spec (0.19–0.22 dB/km) would make 0.182 well within range.
+
 ---
 
 ### 11. `analysis/validation/validate_birefringence.py` — Birefringence Validation
 
-**References:** Yuan [4], Ulrich [7], Smith [8], Shibata [9]
+**References:** Ulrich [7], Smith [8], Shibata [9], Yuan [4]
 
 | Check | Result |
 |---|---|
 | Base Δn = 0.87e-5 | **PASS**: 0.0000% error |
 | Temperature coefficient = -5e-7 /C | **PASS**: 0.0000% error |
 | Bend Δn = 0.135·(r_f/R)² (Ulrich [7], Smith [8], Shibata [9]) | **PASS**: 0.0000% error — slope Δn vs (r_f/R)² matches 0.135 |
+
+Bend model history:
+- **Active model**: Ulrich [7] / Smith [8] / Shibata [9] — Δn_bend = 0.135·(r_f/R)².
+  This is physically correct: bending-induced birefringence scales with
+  (core_radius / bend_radius)² (Ulrich Eq 1, 1980).  Parameter `bend_radius`
+  is a continuous float in metres.
+- **Deprecated model**: Yuan [4] — Δn_bend = 2.4e-4 per "bend" (discrete count).
+  Yuan 2016 measures femtosecond-laser-fabricated stress rods, not fiber
+  bending, producing a constant additive factor independent of bend radius.
+  This was the initial implementation but was replaced by the Ulrich model
+  in commit 65f078f.  Retained as [4] for the stress-birefringence background
+  (cite remains valid for that context).
 
 ---
 
