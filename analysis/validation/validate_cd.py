@@ -5,7 +5,7 @@ import numpy as np
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber import cable
+from src.channel.fiber import apply_cd, D_TOTAL
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_cd')
 os.makedirs(OUT, exist_ok=True)
@@ -16,11 +16,9 @@ args = parser.parse_args()
 SEED = args.seed
 np.random.seed(SEED)
 
-from src.channel.fiber import D_TOTAL
-
 LIGHTSPEED = 299792458.0
 WAVELENGTH = 1550e-9
-D_total = D_TOTAL             # ps/(nm·km), imported dynamically from fiber.py
+D_total = D_TOTAL
 D_SI = D_total * 1e-6
 beta2 = -D_SI * WAVELENGTH**2 / (2 * np.pi * LIGHTSPEED)
 
@@ -36,7 +34,6 @@ t_arr = T - T[center]
 print(f"beta2 = {beta2:.3e} s^2/m  (D = {D_total} ps/(nm km))")
 print(f"T0 = {T0*1e12:.1f} ps,  LD = {LD/1e3:.2f} km\n")
 
-# --- Generate Gaussian pulse and propagate through cable() ---
 E_in = np.zeros((N_SAMPLES, 2), dtype=np.complex128)
 E_in[:, 0] = np.exp(-0.5 * (t_arr / T0)**2)
 
@@ -48,9 +45,7 @@ for L_km in distances_km:
     if L_km == 0:
         E_out = E_in.copy()
     else:
-        E_out = cable(L_km, E_in.copy(), dt=DT, wavelength=WAVELENGTH,
-                      dispersion=True, pm_dispersion=0.0,
-                      attenuation_factor=0.0, temperature=25.0, bend_radius=None)
+        E_out = apply_cd(E_in.copy(), dt=DT, L=L_km*1000, wavelength=WAVELENGTH)
     I = np.abs(E_out[:, 0])**2
     total = I.sum()
     t_mean = np.sum(T * I) / total
@@ -67,24 +62,21 @@ print(f"{'z/LD':>6s}  {'z(km)':>8s}  {'sigma(ps)':>11s}  {'analytic':>11s}  {'er
 for i, zf in enumerate(z_over_LD):
     print(f"{zf:6.1f}  {distances_km[i]:8.2f}  {widths[i]*1e12:11.6f}  {analytic[i]*1e12:11.6f}  {errors[i]:7.4f}")
 
-# --- Plot ---
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.5))
 colors = plt.cm.viridis(np.linspace(0.2, 0.9, len(z_over_LD)))
 for i, L_km in enumerate(distances_km):
-    E_out = cable(L_km, E_in.copy(), dt=DT, wavelength=WAVELENGTH,
-                  dispersion=True, pm_dispersion=0.0,
-                   attenuation_factor=0.0, temperature=25.0, bend_radius=None) if L_km > 0 else E_in
+    E_out = apply_cd(E_in.copy(), dt=DT, L=L_km*1000, wavelength=WAVELENGTH) if L_km > 0 else E_in
     I = np.abs(E_out[:, 0])**2
     ax1.plot(T*1e12, I/I.max(), color=colors[i],
              label=f'z/L_D = {z_over_LD[i]:.1f}')
 ax1.set(xlabel='Time (ps)', ylabel='Normalized intensity',
-        title='Gaussian pulse broadening (cable() output)')
+        title='Gaussian pulse broadening (apply_cd)')
 ax1.legend(fontsize=8); ax1.grid(True, alpha=0.3)
 
 z_plot = np.linspace(0, 2.5, 200)
 ax2.plot(z_plot, np.sqrt(1+z_plot**2), 'k-', lw=1.5,
          label=r'Analytic $\sqrt{1+(z/L_D)^2}$')
-ax2.plot(z_over_LD, ratio_m, 'o', c='C3', ms=6, label='cable() measured')
+ax2.plot(z_over_LD, ratio_m, 'o', c='C3', ms=6, label='apply_cd measured')
 for zf, err, rm in zip(z_over_LD, errors, ratio_m):
     ax2.annotate(f'{err:.4f}%', (zf, rm), fontsize=7, va='bottom', ha='left', c='C3')
 ax2.set(xlabel=r'$z/L_D$', ylabel=r'$\sigma(z)/\sigma_0$',

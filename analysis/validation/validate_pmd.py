@@ -6,7 +6,7 @@ from scipy import stats
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber import cable, _dgd_sampled
+from src.channel.fiber import apply_pmd
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_pmd')
 os.makedirs(OUT, exist_ok=True)
@@ -35,21 +35,19 @@ E_in[:, 1] = E_in[:, 0].copy()
 pmd_sd = PMD_COEFF * np.sqrt(L_KM * 1e3)
 maxwell_scale = pmd_sd / np.sqrt(3)
 
-print(f"PMD validation via cable() — {N_REAL} realizations, {L_KM} km")
+print(f"PMD validation via apply_pmd — {N_REAL} realizations, {L_KM} km")
 print(f"  Expected RMS DGD = {pmd_sd*1e12:.2f} ps")
 print(f"  Expected mean DGD = {2*maxwell_scale*np.sqrt(2/np.pi)*1e12:.2f} ps")
 print()
 
-# Clear any prior recorded DGDs, then call cable() — each call appends its DGD
-_dgd_sampled.clear()
+dgds = []
 for i in range(N_REAL):
-    E_out = cable(L_KM, E_in.copy(), dt=DT, wavelength=1550e-9,
-                  dispersion=True, pm_dispersion=PMD_COEFF,
-                  attenuation_factor=0.0, temperature=25.0, bend_radius=None)
+    _, dgd = apply_pmd(E_in.copy(), dt=DT, L=L_KM*1000, pm_dispersion=PMD_COEFF)
+    dgds.append(dgd)
     if (i + 1) % 1000 == 0:
         print(f"  {i+1}/{N_REAL} complete")
 
-dgds = np.array(_dgd_sampled) * 1e12  # convert to ps, exact values from cable()
+dgds = np.array(dgds) * 1e12
 mean_dgd = np.mean(dgds)
 rms_dgd = np.sqrt(np.mean(dgds**2))
 expected_mean = 2 * maxwell_scale * np.sqrt(2 / np.pi) * 1e12
@@ -62,11 +60,10 @@ print(f"  RMS  DGD = {rms_dgd:.3f} ps  (expected = {expected_rms:.3f} ps)")
 ks = stats.kstest(dgds, lambda x: stats.maxwell.cdf(x * 1e-12, scale=maxwell_scale))
 print(f"  KS test vs Maxwell:  D={ks.statistic:.5f}, p={ks.pvalue:.4f}")
 
-# --- Plot ---
 fig, ax = plt.subplots(figsize=(8, 5))
 bins = np.linspace(0, max(dgds)*1.05, 60)
 ax.hist(dgds, bins=bins, density=True, alpha=0.6, color='C0',
-        label=f'cable() extracted DGD ({len(dgds)} valid)')
+        label=f'apply_pmd DGD ({len(dgds)} realizations)')
 
 dgd_ps = np.linspace(0, max(dgds)*1.05, 500)
 pdf = stats.maxwell.pdf(dgd_ps * 1e-12, scale=maxwell_scale) * 1e-12
@@ -76,7 +73,7 @@ ax.axvline(mean_dgd, c='C0', ls=':', alpha=0.7, label=f'Mean = {mean_dgd:.2f} ps
 ax.axvline(expected_rms, c='gray', ls=':', alpha=0.5, label=f'Target RMS = {expected_rms:.1f} ps')
 
 ax.set(xlabel='DGD (ps)', ylabel='Probability density',
-       title=f'PMD: DGD extracted from cable() output — {L_KM} km')
+       title=f'PMD: DGD from apply_pmd — {L_KM} km')
 ax.legend(fontsize=8)
 ax.grid(True, alpha=0.3)
 
@@ -87,6 +84,6 @@ print(f"\nSaved: {fname}")
 
 csv_name = f'val_pmd_dgd--seed{SEED}.csv'
 np.savetxt(os.path.join(OUT, csv_name), dgds, delimiter=',',
-           header='dgd_ps_extracted_from_cable', comments='')
+           header='dgd_ps_from_apply_pmd', comments='')
 print(f"Saved: {csv_name}")
 plt.close(fig)
