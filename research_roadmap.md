@@ -4,14 +4,10 @@
 
 ## Core Principle
 
-> This paper models the physical components of an optical system sufficiently,
-> and it aligns with published literature or actual physical components.
-> Additionally these components are modular and can be attached with one another
-> to produce relatively proper real-like graphs and parameters.
-
-Every component is validated against the published formula or datasheet it
-implements — no more, no less. The paper demonstrates that the components
-compose correctly in a modular pipeline.
+Each component is validated against the analytic theory, published literature,
+or datasheet from which it is derived. The paper demonstrates that these
+independently validated models compose correctly into an end-to-end
+optical-system simulation.
 
 ---
 
