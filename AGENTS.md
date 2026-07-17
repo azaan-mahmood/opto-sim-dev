@@ -1,4 +1,4 @@
-# Project Context: opto-sim QKD Simulation
+# Project Context: opto-sim — Physical-Layer Fiber-Optic Simulator
 # CRITICAL RULES - MUST FOLLOW
 
 ## Responses
@@ -24,7 +24,7 @@
 
 
 ## Goal
-Refactor the QKD simulation codebase with physics-informed models for APD detection, fiber attenuation, and laser sources.
+Open-source, validated physical-layer fiber-optic simulator where the complex-envelope electric field is the single source of truth. QKD (BB84) is one application protocol; the platform is general-purpose: CW lasers, MZMs, CD, PMD, birefringence, attenuation, APDs — any classical or quantum optical link that can be modeled as a linear pipeline of physically parametrised impairments.
 
 ## Field Convention
 - `mean(|E|²)` = optical power in **Watts**

@@ -4,25 +4,20 @@ All timestamps are local time (UTC+5).
 
 ---
 
-## 2026-07-12 — LaTeX compilation fix: mdframed → colorbox
+## 2026-07-12 — LaTeX compilation fix: mdframed → colorbox + scope clarification
 
-### Session
+### Session: LaTeX fix + project scope broadened
 
-**Background:** `journal_paper_outline.tex` failed with "Not in outer par mode" on every `\begin{table}[!ht]`. Both `\begin{table}` (float env) and `\begin{center}+\captionof` (non-float) approaches failed, at different points in the document.
+**Background:** `journal_paper_outline.tex` failed with "Not in outer par mode" on every `\begin{table}[!ht]`.
 
-**Root cause:** [`mdframed`](https://ctan.org/pkg/mdframed) patches `\@xfloat` (the LaTeX float-start macro) using `\color@vbox`, which was removed from the LaTeX kernel in the 2024–2025 kernel update cycle. When `mdframed` is loaded, every `\begin{table}` calls the patched `\@xfloat` → undefined `\color@vbox` → "Not in outer par mode".
+**Root cause:** [`mdframed`](https://ctan.org/pkg/mdframed) patches `\@xfloat` using `\color@vbox`, which was removed from the LaTeX kernel in 2024–2025.
 
 **Fix:**
-- Removed `mdframed` package (incompatible with current MikTeX/kernel)
-- Removed `caption` package (no longer needed without `mdframed`)
-- Replaced abstract box: `\mdframed{...}` → `\colorbox{highlightblue!5}{\begin{minipage}{0.95\textwidth}...\end{minipage}}`
+- Removed `mdframed` + `caption` packages
+- Replaced abstract box: `\mdframed{...}` → `\colorbox{highlightblue!5}{...}`
+- `journal_paper_outline.pdf` now compiles (13 pages, xelatex)
 
-| File | Change |
-|------|--------|
-| `journal_paper_outline.tex` | Removed `mdframed`, `caption`; swapped abstract box. |
-| `journal_paper_outline.pdf` | Now compiles successfully, 13 pages (was: 9 pages before the bug appeared because old compilation skipped the broken floats silently). |
-
-**Cumulative status:** All LaTeX compilation issues resolved. Document compiles with xelatex and lualatex. Minor overfull boxes remain (cosmetic, to be fixed during paper finalisation).
+**Scope clarification:** The project is a general-purpose physical-layer fiber-optic simulator, not QKD-specific. BB84 is one protocol on top. AGENTS.md updated accordingly.
 
 ---
 
