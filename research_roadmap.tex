@@ -1,0 +1,377 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{fontspec}
+\setmainfont{DejaVu Serif}
+\setsansfont{DejaVu Sans}
+\setmonofont{DejaVu Sans Mono}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{colortbl}
+\usepackage{tabularx}
+\usepackage{amsmath,amssymb}
+\usepackage{microtype}
+
+% ── Colours ───────────────────────────────────────────────────────
+\definecolor{highlightblue}{RGB}{0,51,102}
+\definecolor{softblue}{RGB}{220,230,241}
+\definecolor{darkgreen}{RGB}{0,100,0}
+\definecolor{softgreen}{RGB}{230,245,230}
+\definecolor{softred}{RGB}{245,220,220}
+
+% ── Section formatting ────────────────────────────────────────────
+\titleformat{\section}{\Large\bfseries\color{highlightblue}}{}{0em}{}[\vspace{-2pt}\rule{\textwidth}{0.4pt}]
+\titleformat{\subsection}{\large\bfseries\color{highlightblue!80!black}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{highlightblue!60!black}}{}{0em}{}
+\pagenumbering{gobble}
+
+% ── Custom commands ───────────────────────────────────────────────
+\newcommand{\goodenough}[1]{\textcolor{darkgreen}{\textit{#1}}}
+\newcommand{\toomuch}[1]{\textcolor{red}{\textit{#1}}}
+\newcommand{\done}{\textcolor{darkgreen}{$\checkmark$}}
+\newcommand{\todo}{\textcolor{orange}{$\circ$}}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+% ── Document ──────────────────────────────────────────────────────
+\begin{document}
+
+\title{\vspace{-1cm}\textcolor{highlightblue}{\textbf{opto-sim Research Roadmap}}}
+\author{Physical-Layer Fiber-Optic Simulator}
+\date{}
+\maketitle
+
+\noindent A tiered publication plan with effort estimates,
+experimental-validation requirements, and scope boundaries.
+
+\vspace{0.5cm}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Perspective}
+
+opto-sim is a \textbf{general-purpose, open-source, validated physical-layer
+fiber-optic simulator}. The complex-envelope electric field
+($\overline{|\mathcal{E}|^2} = \text{Watts}$) is the single source of truth.
+BB84 QKD is one downstream application protocol, not the defining purpose.
+
+This roadmap is organised around \textbf{four papers}. Tier~1 validates the
+simulator itself against published experimental data. Tiers~2--4 are QKD-focused
+and depend on Tier~1 being published.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Publication Plan}
+
+\vspace{0.3cm}
+{\small
+\begin{tabularx}{\textwidth}{c L{3.5cm} L{2.8cm} c L{2.5cm}}
+\toprule
+\# & Paper & Target & When & Depends on \\
+\midrule
+A & Software validation: validated physical-layer simulator & OE\,/\,JLT\,/\,SoftwareX & Now & --- \\
+B & QKD environmental sensitivity: temperature, bend, channel & OE\,/\,JLT\,/\,EPJ~QT & After A & A \\
+C & Physical-layer security: side-channel analysis & IEEE~T-IFS\,/\,NPJ~QI\,/\,PRX~Q. & After B & A+B \\
+D & Full QKD system: decoy-state, SKR, release & Nature Comms\,/\,PRX~Q. & Optional & A+B+C \\
+\bottomrule
+\end{tabularx}}
+
+% ══════════════════════════════════════════════════════════════════
+\section{Tier 0 --- Infrastructure (COMPLETE)}
+
+\begin{tabularx}{\textwidth}{l L{6cm} l}
+Effort: 1--2 weeks & Deliverable: pytest suite + seeded reproducibility + 48 tests & Paper: None (scaffolding) \\
+\end{tabularx}
+
+\noindent\textbf{Status:} All done. No further work planned.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Tier 1 --- Software Validation Paper}
+
+\textbf{Goal:} Publish a validated physical-layer fiber-optic simulator that
+reproduces published experimental data across all components.
+
+\textbf{Novelty:} No open-source simulator validates CD, PMD, birefringence,
+attenuation, laser RIN, phase noise, MZM transfer, and APD response against
+\textit{both} analytic theory and published experimental/datasheet curves.
+
+% ── 1.1 ───────────────────────────────────────────────────────────
+\subsection{1.1  Fiber Channel (DONE)}
+
+\begin{tabularx}{\textwidth}{L{3.5cm} L{4cm} c L{3cm}}
+\toprule
+Validation & Reference & Error & Script \\
+\midrule
+CD: Gaussian pulse broadening & Agrawal Fig.~2.6 & 0.0000\% & \texttt{validate\_cd.py} \\
+PMD: DGD histogram vs Maxwellian & Razavi Fig.~2.11 & KS $p=0.31$ & \texttt{validate\_pmd.py} \\
+Attenuation: $\alpha=0.182$\,dB/km @ 1550\,nm & SMF-28 spec & 0.0000\% & \texttt{validate\_attenuation.py} \\
+Birefringence: $\Delta n \propto (r_f/R)^2$ & Yuan Fig.~1 & 0.0000\% & \texttt{validate\_birefringence.py} \\
+\bottomrule
+\end{tabularx}
+
+These prove the implementation matches the underlying analytic formula to
+machine precision. They are \textit{necessary} but not \textit{sufficient}
+for a software paper---they verify coding correctness, not physical fidelity
+against real-world data.
+
+% ── 1.2 ───────────────────────────────────────────────────────────
+\subsection{1.2  Fiber --- Experimental Overlay (NEW)}
+
+\subsubsection{D($\lambda$) dispersion curve --- Corning SMF-28 datasheet}
+
+\begin{tabularx}{\textwidth}{L{3cm} L{10cm}}
+\toprule
+What to add & Sellmeier coefficients for fused silica (Malitson~1965)
+$\rightarrow n(\lambda) \rightarrow \mathrm{d}^2n/\mathrm{d}\lambda^2
+\rightarrow D_{\text{material}}(\lambda) + D_{\text{waveguide}}$ \\
+Effort & $\sim$2 sessions \\
+Good enough & $|D_{\text{sim}} - D_{\text{datasheet}}| < 1$\,ps/(nm$\cdot$km) across O--L bands \\
+Too much & Full waveguide mode solver; temperature-dependent Sellmeier \\
+Priority & \textbf{High} --- $D(\lambda)$ is the standard fiber datasheet curve \\
+\bottomrule
+\end{tabularx}
+
+\subsubsection{$\alpha(\lambda)$ attenuation spectrum --- Corning SMF-28 datasheet}
+
+\begin{tabularx}{\textwidth}{L{3cm} L{10cm}}
+\toprule
+What to add & Rayleigh ($C_R/\lambda^4$) + IR tail + UV tail + OH$^-$ peak at 1383\,nm \\
+Effort & $\sim$1 session \\
+Good enough & $|\alpha_{\text{sim}} - \alpha_{\text{datasheet}}| < 0.02$\,dB/km outside OH peak \\
+Too much & Temperature-dependent $\alpha$; radiation-induced loss; bend-loss spectrum \\
+Priority & \textbf{High} --- attenuation spectrum is the second standard fiber curve \\
+\bottomrule
+\end{tabularx}
+
+% ── 1.3 ───────────────────────────────────────────────────────────
+\subsection{1.3  Laser Validation (NEW)}
+
+\subsubsection{RIN spectrum --- $S_{\text{RIN}}(f)$ vs relaxation-oscillation model}
+
+\begin{tabularx}{\textwidth}{L{3cm} L{10cm}}
+\toprule
+What to add & Validation script: RIN time series $\rightarrow$ Welch PSD $\rightarrow$
+Coldren Eq.~5.3.38 overlay \\
+Effort & $\sim$1 session \\
+Good enough & Peak frequency $\pm10\%$; roll-off $1/f^2$; DC level matches RIN$_0$ \\
+Too much & Shot-noise-calibrated high-resolution RIN; $1/f$ noise \\
+Priority & \textbf{High} --- relaxation-oscillation model is a unique simulator feature \\
+\bottomrule
+\end{tabularx}
+
+\subsubsection{Phase noise --- Lorentzian linewidth verification}
+
+\begin{tabularx}{\textwidth}{L{3cm} L{10cm}}
+\toprule
+What to add & Simulate field $\rightarrow$ complex-envelope PSD $\rightarrow$
+fit Lorentzian, compare FWHM to input $\Delta\nu$ \\
+Effort & $\sim$1 session \\
+Good enough & Fitted FWHM within $\pm10\%$ of input linewidth \\
+Too much & Gaussian line-shape decomposition; $1/f$ divergence \\
+Priority & \textbf{High} --- linewidth validation is essential \\
+\bottomrule
+\end{tabularx}
+
+% ── 1.4 ───────────────────────────────────────────────────────────
+\subsection{1.4  MZM Validation (NEW)}
+
+\begin{tabularx}{\textwidth}{L{4cm} L{3.5cm} L{3cm} L{2.5cm}}
+\toprule
+Validation & What to add & Effort & Good enough \\
+\midrule
+$V_\pi$ from crystal params & Report for default geometry & None (test exists) & $\pm5\%$ of literature \\
+Extinction ratio & Plot $E_{\text{out}}$ vs $V$ & None (test exists) & Matches user ER \\
+Push-pull vs single-drive chirp & Compare output phase & $\sim$1 session & Chirp $\propto$ 0.5$V_\pi$ \\
+\bottomrule
+\end{tabularx}
+
+\textbf{Priority: Medium.} Well-tested model; one validation script to publish.
+
+% ── 1.5 ───────────────────────────────────────────────────────────
+\subsection{1.5  APD Validation (NEW)}
+
+\begin{tabularx}{\textwidth}{L{4cm} L{3.5cm} L{3cm} L{2.5cm}}
+\toprule
+Validation & What to add & Effort & Good enough \\
+\midrule
+Responsivity $R(\lambda)$ & Spectral $\eta(\lambda)$ for InGaAs; plot vs datasheet & $\sim$1 session & Peak $\pm10\%$, shape matches \\
+Shot-noise scaling & $I_{\text{noise}}^2 = 2eIB\cdot F$ & None (test exists) & Numerical tolerance \\
+\bottomrule
+\end{tabularx}
+
+\textbf{Priority: Medium.}
+
+% ── 1.6 ───────────────────────────────────────────────────────────
+\subsection{1.6  System Demonstration}
+
+\begin{tabularx}{\textwidth}{L{5cm} L{3cm} L{3cm}}
+\toprule
+Demonstration & Status & Effort \\
+\midrule
+BB84 QBER under CD+PMD vs distance & Existing graphic & 0 \\
+Full link budget: laser $\rightarrow$ fiber $\rightarrow$ detector & New & $\sim$1 session \\
+\bottomrule
+\end{tabularx}
+
+\textbf{Priority: Medium} --- completes the system story.
+
+% ── 1.7 ───────────────────────────────────────────────────────────
+\subsection{1.7  Tier 1 --- Scope Boundaries}
+
+\subsubsection*{IN SCOPE}
+\begin{itemize}[nosep]
+\item Fiber: $D(\lambda)$ dispersion curve, $\alpha(\lambda)$ attenuation spectrum
+  (Sellmeier + Rayleigh + OH$^-$)
+\item Laser: RIN spectrum plot, Lorentzian linewidth verification
+\item MZM: $V_\pi$, extinction, chirp-mode validation scripts
+\item APD: Spectral responsivity, shot-noise validation
+\item System: BB84 QBER demonstration, link budget
+\end{itemize}
+
+\subsubsection*{OUT OF SCOPE}
+\begin{itemize}[nosep]
+\item Nonlinear effects (Kerr, SPM, XPM, FWM) --- 3+ months, separate paper
+\item EDFA / optical amplifier --- not needed for passive-fiber validation
+\item PDL --- second-order effect, no reference data
+\item Splice / connector loss --- negligible publication value
+\item Temperature-dependent Sellmeier --- belongs in Tier~2
+\item Waveguide mode solvers --- defeats the purpose of a macroscopic simulator
+\item More protocols (E91, MDI-QKD, TF-QKD) --- strong diminishing returns
+\item Quantum security analysis --- belongs in Tier~3
+\end{itemize}
+
+\subsubsection*{Effort Summary}
+
+\begin{tabularx}{\textwidth}{L{3cm} L{2.5cm} L{3.5cm} L{2cm}}
+\toprule
+Sub-tier & Sessions & New code & Status \\
+\midrule
+1.1 Fiber (analytic) & --- & --- & \done \\
+1.2 Fiber (experimental) & $\sim$3 & Sellmeier, $\alpha(\lambda)$ & \todo \\
+1.3 Laser & $\sim$2 & RIN/linewidth scripts & \todo \\
+1.4 MZM & $\sim$1 & Validation script & \todo \\
+1.5 APD & $\sim$1 & Spectral $\eta(\lambda)$ model & \todo \\
+1.6 System & $\sim$1 & Link budget script & \todo \\
+\midrule
+\textbf{Total} & \textbf{$\sim$8 sessions} & & \\
+\bottomrule
+\end{tabularx}
+
+Estimated calendar time: \textbf{3--4 weeks} combined coding + paper writing.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Tier 2 --- QKD Environmental Sensitivity (DEFERRED)}
+
+\textbf{Requires:} Tier~1 published first.
+
+\textbf{Goal:} Publish a journal paper on how temperature and bend radius affect
+QKD system performance.
+
+\subsection*{Tasks}
+\begin{enumerate}[nosep]
+\item Temperature sweep (0--50$\,^{\circ}$C, 25\,km spans) $\rightarrow$
+  $\Delta n(T)$, beat length, QBER
+\item Bend sensitivity ($R = 10$--100\,mm) $\rightarrow$ $\Delta n(R)$,
+  coupled $T \times R$ regimes
+\item Time-varying channel (1$\,^{\circ}$C/min ramp) $\rightarrow$ QBER time series
+\item Aerial vs buried comparison (ASHRAE weather data) $\rightarrow$ QBER variance
+\end{enumerate}
+
+\subsection*{Scope Boundaries}
+
+\begin{tabularx}{\textwidth}{L{7cm} L{7cm}}
+\toprule
+IN & OUT \\
+\midrule
+Temperature-dependent birefringence and phase drift & Temperature-dependent Sellmeier \\
+Static and slow-ramp temperature profiles & Thermo-mechanical stress modeling \\
+Single-span fiber (25\,km) & Multi-span with amplifiers \\
+BB84 phase-encoding & Other protocols \\
+Bend-induced birefringence & Bend-induced attenuation \\
+\bottomrule
+\end{tabularx}
+
+\textbf{Effort: $\sim$6 weeks.} Stop if QBER delta $< 0.5\%$.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Tier 3 --- Physical-Layer Security Analysis (DEFERRED)}
+
+\textbf{Requires:} Tiers~1 and 2 published.
+
+\textbf{Goal:} Publish a high-impact paper on a QKD side channel that \textit{only
+a physical-layer simulator can reveal}.
+
+\subsection*{Tasks}
+\begin{enumerate}[nosep]
+\item Laser-noise side-channel (RIN resonance $\rightarrow$ amplitude leakage)
+\item Finite-key effects with correlated noise (non-i.i.d. RIN/phase noise)
+\item Detector side-channel (dead time, afterpulsing, time-shift attacks)
+\item Phase modulator flaw analysis (drive ripple $\rightarrow$ deterministic phase errors)
+\end{enumerate}
+
+\textbf{Effort: $\sim$5 months.} One strong result beats a catalogue of re-runs.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Tier 4 --- Full QKD System Optimisation (OPTIONAL)}
+
+\textbf{Requires:} Tiers~1--3.
+
+\textbf{Goal:} Decoy-state protocol, SKR optimisation, open-source release.
+
+\textbf{Effort: $\sim$10 months.} Strongly diminishing returns after Tier~3.
+
+% ══════════════════════════════════════════════════════════════════
+\section{Summary}
+
+\begin{tabularx}{\textwidth}{c L{3cm} L{2cm} L{3cm} L{2.5cm}}
+\toprule
+Tier & What & Effort & Paper target & Dependency \\
+\midrule
+0 & Infrastructure & DONE & --- & --- \\
+\textbf{1} & \textbf{Software validation} & \textbf{3--4 w} & \textbf{OE\,/\,JLT\,/\,SoftwareX} & \textbf{---} \\
+2 & QKD environmental & 6 w & OE\,/\,JLT\,/\,EPJ~QT & Tier~1 \\
+3 & QKD security & 5 m & IEEE~T-IFS\,/\,NPJ~QI\,/\,PRX~Q. & Tiers~1--2 \\
+4 & Full QKD system & 10 m & Nature Comms\,/\,PRX~Q. & Tiers~1--3 \\
+\bottomrule
+\end{tabularx}
+
+\subsection*{Recommended Route}
+\begin{enumerate}[nosep]
+\item \textbf{Tier~1 now} (3--4 weeks). Publish a validated physical-layer
+  simulator paper. This is the immediate priority.
+\item \textbf{If Tier~2's QBER signal is strong} ($\ge 0.5\%$ delta), publish
+  an environmental journal paper (6 weeks).
+\item \textbf{Tier~3} (5 months). The laser-noise side-channel is the
+  highest-impact result this platform enables.
+\item \textbf{Stop} after Tier~3 unless you want a flagship capstone.
+  Diminishing returns past this point are steep.
+\end{enumerate}
+
+\subsection*{Competitive Landscape}
+
+{\small
+\begin{tabularx}{\textwidth}{L{3.2cm} L{1.6cm} L{1.6cm} L{1.4cm} L{1.6cm} L{1.4cm}}
+\toprule
+Advantage & opto-sim & NetSquid & qkdX & Comsis & Caputo \\
+\midrule
+Physical-layer field & \done & --- & --- & \done & \done \\
+Multi-experiment validated & \textsl{in prog.} & --- & --- & --- & --- \\
+Open-source & \done & \done & --- & --- & --- \\
+Modern (Python + NumPy) & \done & \done & --- & --- & \done \\
+Laser RIN + phase noise & \done & --- & --- & --- & --- \\
+Temp/bend birefringence & \done & --- & --- & --- & --- \\
+FFT-based CD + PMD & \done & --- & --- & --- & --- \\
+APD with excess noise & \done & --- & --- & --- & --- \\
+Seeded reproducibility & \done & --- & --- & --- & --- \\
+\bottomrule
+\end{tabularx}}
+
+\vspace{0.3cm}
+\noindent This roadmap positions opto-sim as the first\textbf{ open-source,
+multi-experiment-validated, physical-layer fiber-optic simulator} --- a unique
+position in the landscape.
+
+\end{document}
