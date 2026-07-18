@@ -74,8 +74,11 @@ fig = plt.figure(figsize=(16, 12))
 gs = fig.add_gridspec(2, 3, hspace=0.35, wspace=0.35)
 
 # --- Panel A: Pulse broadening — time-domain (Agrawal Fig 2.6) ---
+# Use distinct colors, zoom into pulse region
 ax1 = fig.add_subplot(gs[0, 0])
-colors = plt.cm.viridis(np.linspace(0.2, 0.9, len(z_test)))
+colors_A = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728']  # blue, green, orange, red
+labels_A = [f'z/L_D = {zf:.1f} (theory: sigma = {wa*1e12:.1f} ps)'
+            for zf, wa in zip(z_test, widths_analytic_test)]
 for i, zf in enumerate(z_test):
     L_km = d_test[i]
     if L_km == 0:
@@ -83,49 +86,50 @@ for i, zf in enumerate(z_test):
     else:
         E_out = apply_cd(E_in.copy(), dt=DT, L=L_km*1000, wavelength=WAVELENGTH)
     I = np.abs(E_out[:, 0])**2
-    ax1.plot(T*1e12, I/I.max(), color=colors[i], lw=1.5,
-             label=f'z/L_D = {zf:.1f}')
+    ax1.plot(T*1e12, I/I.max(), color=colors_A[i], lw=1.5, label=labels_A[i])
 ax1.set(xlabel='Time (ps)', ylabel='Normalized intensity',
-        title='A: Gaussian pulse broadening\n(Agrawal [6] Fig 2.6)',
-        xlim=(-80, 80))
-ax1.legend(fontsize=8)
+        title='A: Gaussian pulse broadening (Agrawal [6] Fig 2.6)')
+ax1.legend(fontsize=7, loc='upper left')
 ax1.grid(True, alpha=0.25)
-ax1.annotate(f'T₀ = {T0*1e12:.0f} ps\nλ = {WAVELENGTH*1e9:.0f} nm',
+ax1.set_xlim(-60, 60)
+ax1.annotate(f'T0 = {T0*1e12:.0f} ps, lambda = {WAVELENGTH*1e9:.0f} nm',
              xy=(0.95, 0.95), xycoords='axes fraction', ha='right', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel B: σ(z)/σ₀ vs z/L_D with analytic curve ---
+# --- Panel B: sigma(z)/sigma0 vs z/LD with analytic curve ---
 ax2 = fig.add_subplot(gs[0, 1])
 z_plot = np.linspace(0, 2.5, 500)
 ax2.plot(z_plot, np.sqrt(1+z_plot**2), 'k-', lw=2, alpha=0.7,
          label=r'Analytic: $\sqrt{1+(z/L_D)^2}$')
 ratio_sim = widths_sim / sigma0
 ax2.plot(z_over_LD_dense, ratio_sim, '.-', c='C3', ms=2, lw=0.8,
-         label='apply_cd')
+         label='apply_cd measured')
 for i, zf in enumerate(z_test):
     ax2.plot(zf, ratio_sim[np.argmin(np.abs(z_over_LD_dense-zf))], 'o', c='C3', ms=6)
     ax2.annotate(f'{errors_test[i]:.4f}%', (zf, ratio_sim[np.argmin(np.abs(z_over_LD_dense-zf))]),
                  fontsize=7, va='bottom', ha='left', c='C3')
 ax2.set(xlabel=r'$z / L_D$', ylabel=r'$\sigma(z) / \sigma_0$',
-        title=f'B: RMS width growth  (D = {D_total} ps/(nm·km))',
+        title=f'B: RMS width growth  (D = {D_total} ps/(nm*km))',
         xlim=(0, 2.5))
 ax2.legend(fontsize=8)
 ax2.grid(True, alpha=0.25)
 
-# --- Panel C: Residual (% error) ---
+# --- Panel C: Residual (% error) with legend ---
 ax3 = fig.add_subplot(gs[0, 2])
-ax3.semilogy(z_over_LD_dense, errors_pct, '-', c='C3', lw=1)
+ax3.semilogy(z_over_LD_dense, errors_pct, '-', c='C3', lw=1, label='Error across sweep')
 ax3.axhline(0, color='gray', ls=':', lw=0.5)
 for i, zf in enumerate(z_test):
     err = errors_test[i]
-    ax3.plot(zf, err if err > 0 else 1e-16, 'o', c='k', ms=4)
+    ax3.plot(zf, err if err > 0 else 1e-16, 'o', c='k', ms=6, zorder=5)
+ax3.plot([], [], 'ok', ms=6, label='Test points (z/L_D = 0, 0.5, 1.0, 2.0)')
 ax3.set(xlabel=r'$z / L_D$', ylabel='|Relative error| (%)',
         title='C: Residual')
+ax3.legend(fontsize=8)
 ax3.grid(True, alpha=0.25)
 ymin, ymax = ax3.get_ylim()
 ax3.set_ylim(bottom=max(1e-16, ymin))
 
-# --- Panel D: Frequency-domain phase response H(ω) ---
+# --- Panel D: Frequency-domain phase response H(omega) ---
 omega = 2*np.pi * np.fft.fftfreq(N_SAMPLES, d=DT)
 H_analytic = np.exp(-1j * beta2 * omega**2 * (2*LD) / 2)  # z = 2*LD
 E_f_in = np.fft.fft(E_in[:, 0])
@@ -133,7 +137,6 @@ E_f_out = np.fft.fft(apply_cd(E_in.copy(), dt=DT, L=2*LD, wavelength=WAVELENGTH)
 H_sim = np.where(np.abs(E_f_in) > 1e-15, E_f_out / E_f_in, 0)
 f_hz = omega / (2*np.pi)
 
-# Limit to Nyquist (f < 1/(2*DT)) and positive frequencies only
 f_nyquist = 1.0 / (2 * DT)
 idx_pos = (omega > 0) & (f_hz < f_nyquist)
 phase_ana = np.unwrap(np.angle(H_analytic[idx_pos]))
@@ -143,18 +146,21 @@ f_THz = f_hz[idx_pos] * 1e-12
 ax4 = fig.add_subplot(gs[1, 0])
 ax4.plot(f_THz, phase_ana, '-k', lw=1.5, alpha=0.6, label='Analytic (unwrapped)')
 ax4.plot(f_THz, phase_sim, ':', c='C3', lw=1, label='apply_cd (unwrapped)')
+# Add reference: phase at z = L_D (half the test distance)
+H_ref = np.exp(-1j * beta2 * omega**2 * LD / 2)
+phase_ref = np.unwrap(np.angle(H_ref[idx_pos]))
+ax4.plot(f_THz, phase_ref, '--', c='C0', lw=1, alpha=0.5,
+         label=r'Reference: $\phi$ at $z = L_D$')
 ax4.set(xlabel='Frequency (THz)', ylabel='Unwrapped phase (rad)',
         title='D: CD transfer function phase\n(Agrawal [6] Eq 2.4.11, z = 2L$_D$)')
-ax4.legend(fontsize=8)
+ax4.legend(fontsize=7)
 ax4.grid(True, alpha=0.25)
 
 # --- Panel E: Material vs waveguide dispersion ---
 lam_range = np.linspace(1100e-9, 1700e-9, 200)
 c0 = LIGHTSPEED
-# Material dispersion: Sellmeier-based D_mat(λ)
-# Using typical silica values: D_mat ≈ S0/4 * (λ - λ0^4/λ^3) for SMF-28
-D_mat_lam = (D_MATERIAL / 2) * (1 + (1310e-9)**2 / lam_range**2)  # approximate
-D_wg_lam = D_WAVEGUIDE * np.ones_like(lam_range)  # simplified
+D_mat_lam = (D_MATERIAL / 2) * (1 + (1310e-9)**2 / lam_range**2)
+D_wg_lam = D_WAVEGUIDE * np.ones_like(lam_range)
 D_total_lam = D_mat_lam + D_wg_lam
 
 ax5 = fig.add_subplot(gs[1, 1])
@@ -163,22 +169,22 @@ ax5.plot(lam_range*1e9, D_wg_lam, '-', c='C1', lw=1.5, label=f'Waveguide (D_wg @
 ax5.plot(lam_range*1e9, D_total_lam, '--k', lw=1.5, label=f'Total (D @ 1550 = {D_total})')
 ax5.axvline(1550, c='gray', ls=':', lw=0.6, alpha=0.5)
 ax5.axvline(1310, c='gray', ls=':', lw=0.6, alpha=0.5)
-ax5.set(xlabel='Wavelength (nm)', ylabel='Dispersion D (ps/(nm·km))',
+ax5.set(xlabel='Wavelength (nm)', ylabel='Dispersion D (ps/(nm*km))',
         title='E: Material & waveguide dispersion\n(Hui [2], Keck [3])')
 ax5.legend(fontsize=7)
 ax5.grid(True, alpha=0.25)
-ax5.annotate(f'D_total = D_mat + D_wg\n= {D_MATERIAL} + ({D_WAVEGUIDE})\n= {D_total} ps/(nm·km) @ 1550 nm',
-             xy=(0.05, 0.05), xycoords='axes fraction', ha='left', va='bottom',
+ax5.annotate(f'D_total = D_mat + D_wg\n= {D_MATERIAL} + ({D_WAVEGUIDE})\n= {D_total} ps/(nm*km) @ 1550 nm',
+             xy=(0.95, 0.95), xycoords='axes fraction', ha='right', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
 # --- Panel F: tabular summary ---
 ax6 = fig.add_subplot(gs[1, 2])
 ax6.axis('off')
 summary_rows = [
-    ['D_total', f'{D_total} ps/(nm·km)'],
-    ['D_material', f'{D_MATERIAL} ps/(nm·km)'],
-    ['D_waveguide', f'{D_WAVEGUIDE} ps/(nm·km)'],
-    ['β₂', f'{beta2:.3e} s²/m'],
+    ['D_total', f'{D_total} ps/(nm*km)'],
+    ['D_material', f'{D_MATERIAL} ps/(nm*km)'],
+    ['D_waveguide', f'{D_WAVEGUIDE} ps/(nm*km)'],
+    ['beta2', f'{beta2:.3e} s^2/m'],
     ['Dispersion length L_D', f'{LD/1e3:.2f} km'],
     ['Max error', f'{errors_pct.max():.6e} %'],
     ['Gaussian broadening', 'Matches analytic: all < 0.001 %'],
@@ -189,6 +195,10 @@ table = ax6.table(cellText=summary_rows,
 table.auto_set_column_width(col=list(range(2)))
 table.auto_set_font_size(False)
 table.set_fontsize(8)
+for (row, col), cell in table.get_celld().items():
+    if row == 0:
+        cell.set_facecolor('#40466e')
+        cell.set_text_props(color='w', fontweight='bold')
 ax6.set_title('F: Validation summary', fontsize=10, pad=10)
 
 fig.suptitle('Chromatic Dispersion - Validation vs Agrawal [6] Sec 2.4',

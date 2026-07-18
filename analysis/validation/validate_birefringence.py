@@ -24,11 +24,8 @@ biref_T0 = 0.87e-5
 temp_coeff = -5e-7
 bend_factor = 0.135
 
-def dbeta_from_biref(biref, lam=WAVELENGTH):
+def dbeta(biref, lam=WAVELENGTH):
     return 2 * np.pi * biref / lam
-
-def jones_error(J_sim, J_ana):
-    return np.abs(J_sim - J_ana)
 
 # --- Self-consistency checks ---
 def test_power_conservation():
@@ -37,18 +34,16 @@ def test_power_conservation():
     for L_m in [1, 10, 100, 1000]:
         E_out = apply_birefringence(E.copy(), L_m, wavelength=WAVELENGTH)
         P_out = np.mean(np.abs(E_out)**2)
-        err = abs(P_out - P_in) / P_in
-        assert err < 1e-12, f"Power not conserved at L={L_m}m"
+        assert abs(P_out - P_in) / P_in < 1e-12
     print("  [PASS] Power conservation (unitary Jones matrix)")
 
 def test_phase_ratio():
     E = np.ones((2, 2), dtype=complex)
     J0 = [apply_birefringence(E.copy(), L, wavelength=WAVELENGTH)[0, 0] for L in [1, 2]]
     ratio = J0[1] * np.conj(J0[0])
-    expected = np.exp(1j * dbeta_from_biref(biref_T0) * 0.5)
-    err = np.abs(ratio - expected)
-    assert err < 1e-12, f"Phase ratio error: {err:.2e}"
-    print(f"  [PASS] Phase ratio: complex error = {err:.2e}")
+    expected = np.exp(1j * dbeta(biref_T0) * 0.5)
+    assert np.abs(ratio - expected) < 1e-12
+    print("  [PASS] Phase ratio: complex error < 1e-12")
 
 def test_temperature_dependence():
     E = np.ones((100, 2), dtype=complex)
@@ -71,125 +66,113 @@ test_temperature_dependence()
 test_wavelength_dependence()
 
 # ============================================================
-# Main validation figure — 6 panels (all error-based, no unwrap)
+# Main validation figure — 6 panels
+# Panels A/B/C: theory and model overlaid (short L, no wrap)
 # ============================================================
 fig = plt.figure(figsize=(14, 10))
 gs = fig.add_gridspec(2, 3, hspace=0.35, wspace=0.35)
 
-# --- Panel A: Jones matrix error vs length ---
-L_m_dense = np.logspace(0, 4, 200)
+# --- Panel A: Phase vs length (short L, no wrapping) ---
+L_short = np.linspace(0, 0.5, 100)  # max phase ~9 rad, no wrap
 E_in = np.ones((1, 2), dtype=complex)
-dbeta_val = dbeta_from_biref(biref_T0)
+dbeta_val = dbeta(biref_T0)
 
-J_sim_arr = np.array([
-    apply_birefringence(E_in.copy(), L, wavelength=WAVELENGTH)[0, 0]
-    for L in L_m_dense
-])
-J_ana_arr = np.exp(1j * dbeta_val * L_m_dense / 2)
-err_A = jones_error(J_sim_arr, J_ana_arr)
+J_sim_A = np.array([apply_birefringence(E_in.copy(), L, wavelength=WAVELENGTH)[0, 0]
+                     for L in L_short])
+J_ana_A = np.exp(1j * dbeta_val * L_short / 2)
+phase_sim_A = np.angle(J_sim_A)
+phase_ana_A = np.angle(J_ana_A)
 
 ax1 = fig.add_subplot(gs[0, 0])
-ax1.plot(L_m_dense, err_A, '-', c='C0', lw=1.5)
-ax1.set(xlabel='Fibre length (m)', ylabel='|J_sim - J_analytic|',
-        title='A: Jones matrix error vs length\n(Agrawal [6] Eq 4.1.2)',
-        ylim=(-1e-16, 2e-16))
-ax1.axhline(0, color='gray', ls=':', lw=0.5)
+ax1.plot(L_short, phase_ana_A, '-', c='k', lw=2, label='Theory: dbeta*L/2')
+ax1.plot(L_short[::5], phase_sim_A[::5], 'o', ms=4, c='C3', label='apply_birefringence')
+ax1.set(xlabel='Fibre length (m)', ylabel='Phase of J[0,0] (rad)',
+        title='A: Phase vs length (Agrawal [6] Eq 4.1.2)')
+ax1.legend(fontsize=8)
 ax1.grid(True, alpha=0.25)
-ax1.annotate(f'max error = {err_A.max():.2e}\ndelta_beta = {dbeta_val:.1f} rad/m\n'
-             f'L_B = {2*np.pi/dbeta_val*1e3:.1f} mm',
-             xy=(0.95, 0.05), xycoords='axes fraction', ha='right', va='bottom',
+ax1.annotate(f'delta_beta = {dbeta_val:.1f} rad/m\nL_B = {2*np.pi/dbeta_val*1e3:.1f} mm\n'
+             f'Phase error max = {np.abs(phase_sim_A - phase_ana_A).max():.2e} rad',
+             xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel B: Temperature — Jones matrix error at each T ---
-# Compare J_sim(T) with J_analytic(T) directly (no ratio, no unwrap)
+# --- Panel B: Temperature sensitivity (short L, no wrapping) ---
 temp_C = np.linspace(-20, 60, 33)
+L_temp = 0.1  # max phase ~6 rad, no wrap
 E_in = np.ones((1, 2), dtype=complex)
-Js_T = np.array([
-    apply_birefringence(E_in.copy(), 1000, wavelength=WAVELENGTH, temperature=T)[0, 0]
-    for T in temp_C
-])
 
-# Analytic Jones element at each temperature
-J_ana_T = np.array([
-    np.exp(1j * dbeta_from_biref(biref_T0 + temp_coeff * (T - T0_C)) * 1000 / 2)
-    for T in temp_C
-])
-
-temp_err = jones_error(Js_T, J_ana_T)
+J_sim_B = np.array([apply_birefringence(E_in.copy(), L_temp, wavelength=WAVELENGTH,
+                                          temperature=T)[0, 0]
+                     for T in temp_C])
+J_ana_B = np.array([np.exp(1j * dbeta(biref_T0 + temp_coeff * (T - T0_C)) * L_temp / 2)
+                     for T in temp_C])
+phase_sim_B = np.angle(J_sim_B)
+phase_ana_B = np.angle(J_ana_B)
 
 ax2 = fig.add_subplot(gs[0, 1])
-ax2.plot(temp_C, temp_err, 'o-', ms=3, c='C1', lw=1)
-ax2.axhline(0, color='gray', ls=':', lw=0.5)
-ax2.set(xlabel='Temperature (C)', ylabel='|J_sim - J_analytic|',
-        title='B: Temperature sensitivity\n(Jones matrix error)',
-        ylim=(-1e-16, 2e-16))
+ax2.plot(temp_C, phase_ana_B, '-', c='k', lw=2, label='Theory: dbeta(T)*L/2')
+ax2.plot(temp_C[::3], phase_sim_B[::3], 'o', ms=4, c='C1', label='apply_birefringence')
+ax2.set(xlabel='Temperature (C)', ylabel='Phase of J[0,0] (rad)',
+        title='B: Temperature sensitivity')
+ax2.legend(fontsize=8)
 ax2.grid(True, alpha=0.25)
-ax2.annotate(f'max error = {temp_err.max():.2e}\ntemp_coeff = -5e-7 /C',
+ax2.annotate(f'temp_coeff = -5e-7 /C\nPhase error max = {np.abs(phase_sim_B - phase_ana_B).max():.2e} rad',
              xy=(0.05, 0.05), xycoords='axes fraction', ha='left', va='bottom',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel C: Bend sweep — Jones matrix error ---
+# --- Panel C: Bend radius sweep (short L, no wrapping) ---
 bend_radii = np.logspace(np.log10(0.002), np.log10(0.02), 40)
-L_bend = 10.0
+L_bend = 0.01  # max phase ~2.9 rad at R=2mm, no wrap
 E_in = np.ones((1, 2), dtype=complex)
 
-J_sim_B = np.array([
-    apply_birefringence(E_in.copy(), L_bend, wavelength=WAVELENGTH,
-                        temperature=T0_C, bend_radius=R)[0, 0]
-    for R in bend_radii
-])
+J_sim_C = np.array([apply_birefringence(E_in.copy(), L_bend, wavelength=WAVELENGTH,
+                                          temperature=T0_C, bend_radius=R)[0, 0]
+                     for R in bend_radii])
 dn_bend = bend_factor * (r_fiber / bend_radii)**2
-J_ana_B = np.exp(1j * dbeta_from_biref(biref_T0 + dn_bend) * L_bend / 2)
-err_C = jones_error(J_sim_B, J_ana_B)
+J_ana_C = np.exp(1j * dbeta(biref_T0 + dn_bend) * L_bend / 2)
+phase_sim_C = np.angle(J_sim_C)
+phase_ana_C = np.angle(J_ana_C)
 
 ax3 = fig.add_subplot(gs[0, 2])
-ax3.plot(bend_radii*1e3, err_C, 'o-', ms=3, c='C2', lw=1.2)
-ax3.axhline(0, color='gray', ls=':', lw=0.5)
-ax3.set(xlabel='Bend radius (mm)', ylabel='|J_sim - J_analytic|',
-        title='C: Bend-induced birefringence\n(Ulrich [7] Eq 1)',
-        ylim=(-1e-16, 2e-16))
+ax3.plot(bend_radii*1e3, phase_ana_C, '-', c='k', lw=2, label='Theory: Ulrich [7]')
+ax3.plot(bend_radii[::3]*1e3, phase_sim_C[::3], 'o', ms=4, c='C2', label='apply_birefringence')
+ax3.set(xlabel='Bend radius (mm)', ylabel='Phase of J[0,0] (rad)',
+        title='C: Bend-induced birefringence\n(Ulrich [7] Eq 1)')
+ax3.legend(fontsize=8)
 ax3.grid(True, alpha=0.25)
-ax3.annotate(f'max error = {err_C.max():.2e}',
+ax3.annotate(f'Phase error max = {np.abs(phase_sim_C - phase_ana_C).max():.2e} rad',
              xy=(0.95, 0.95), xycoords='axes fraction', ha='right', va='top',
              fontsize=9, fontweight='bold',
              bbox=dict(boxstyle='round', fc='lightgreen', alpha=0.6))
 
-# --- Panel D: Extracted vs expected delta_n using tiny delta_L ---
-# Use delta_L = 0.001m (1mm) so phase diff < pi even at R=2mm
-# At R=2mm: dbeta = 571 rad/m, delta_L=0.001 => dphi = 571*0.001/2 = 0.286 rad < pi
+# --- Panel D: Extracted vs expected delta_n ---
 L_ref = 10.0
 delta_L = 0.001
-dn_total_expected = biref_T0 + dn_bend
+E_in = np.ones((1, 2), dtype=complex)
 
-J_ref = np.array([
-    apply_birefringence(E_in.copy(), L_ref, wavelength=WAVELENGTH,
-                        temperature=T0_C, bend_radius=R)[0, 0]
-    for R in bend_radii
-])
-J_del = np.array([
-    apply_birefringence(E_in.copy(), L_ref + delta_L, wavelength=WAVELENGTH,
-                        temperature=T0_C, bend_radius=R)[0, 0]
-    for R in bend_radii
-])
+J_ref = np.array([apply_birefringence(E_in.copy(), L_ref, wavelength=WAVELENGTH,
+                                       temperature=T0_C, bend_radius=R)[0, 0]
+                   for R in bend_radii])
+J_del = np.array([apply_birefringence(E_in.copy(), L_ref + delta_L, wavelength=WAVELENGTH,
+                                       temperature=T0_C, bend_radius=R)[0, 0]
+                   for R in bend_radii])
 
-ratio_J = J_del * np.conj(J_ref)
-dphi_extracted = np.angle(ratio_J)
-dn_extracted = dphi_extracted * WAVELENGTH / (np.pi * delta_L)
+dn_extracted = np.angle(J_del * np.conj(J_ref)) * WAVELENGTH / (np.pi * delta_L)
+dn_expected = biref_T0 + dn_bend
 
 ax4 = fig.add_subplot(gs[1, 0])
 ax4.loglog(bend_radii*1e3, dn_extracted, 'o', ms=4, c='C2', label='Extracted delta_n')
-ax4.loglog(bend_radii*1e3, dn_total_expected, '--k', lw=1.5, label='Ulrich [7] theory')
+ax4.loglog(bend_radii*1e3, dn_expected, '--k', lw=1.5, label='Ulrich [7] theory')
 ax4.set(xlabel='Bend radius (mm)', ylabel='Total delta_n',
         title='D: delta_n vs bend radius\n(Ulrich [7] Eq 1)')
 ax4.legend(fontsize=7)
 ax4.grid(True, alpha=0.25)
-dn_err = np.abs(dn_extracted - dn_total_expected) / dn_total_expected * 100
+dn_err = np.abs(dn_extracted - dn_expected) / dn_expected * 100
 ax4.annotate(f'max error: {dn_err.max():.4f}%',
              xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=9, fontweight='bold',
              bbox=dict(boxstyle='round', fc='lightgreen', alpha=0.6))
 
-# --- Panel E: Beat length L_B vs wavelength ---
+# --- Panel E: Beat length vs wavelength ---
 lam_range = np.linspace(800e-9, 1700e-9, 50)
 L_B_vals = lam_range / biref_T0
 
@@ -213,11 +196,11 @@ ax6.axis('off')
 summary = [
     ['Power conservation', 'Unitary Jones', 'err < 1e-12'],
     ['Phase vs length', f'dbeta = {dbeta_val:.1f} rad/m',
-     f'max err = {err_A.max():.2e}'],
-    ['Temperature', f'dphi/dT per step',
-     f'max err = {temp_err.max():.2e}'],
-    ['Bend (Ulrich [7])', f'max bend err = {err_C.max():.2e}',
-     f'dn err = {dn_err.max():.4f}%'],
+     f'phase err = {np.abs(phase_sim_A - phase_ana_A).max():.2e}'],
+    ['Temperature', f'L = {L_temp} m',
+     f'phase err = {np.abs(phase_sim_B - phase_ana_B).max():.2e}'],
+    ['Bend (Ulrich [7])', f'L = {L_bend} m',
+     f'phase err = {np.abs(phase_sim_C - phase_ana_C).max():.2e}'],
     ['Wavelength', '1310 vs 1550 nm differ', 'PASS'],
 ]
 table = ax6.table(cellText=summary,
@@ -239,7 +222,7 @@ print(f"Saved: val_birefringence--seed{SEED}.png")
 
 csv_name = f'val_birefringence--seed{SEED}.csv'
 np.savetxt(os.path.join(OUT, csv_name),
-           np.column_stack([L_m_dense, err_A]),
-           delimiter=',', header='length_m,jones_error', comments='')
+           np.column_stack([L_short, phase_sim_A, phase_ana_A]),
+           delimiter=',', header='length_m,phase_sim_rad,phase_analytic_rad', comments='')
 print(f"Saved: {csv_name}")
 plt.close(fig)
