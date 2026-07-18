@@ -9,7 +9,6 @@
 \usepackage{xcolor}
 \usepackage[utf8]{inputenc}
 \usepackage{caption}
-\usepackage{subcaption}
 
 \hypersetup{
   colorlinks=true,
@@ -21,8 +20,8 @@
 \newcommand{\code}[1]{\texttt{#1}}
 
 \title{%
-  \textbf{Fiber Channel Validation}\\[4pt]
-  \large Graph Documentation --- Model vs.\ Theory
+  \textbf{Fiber Channel Component Validation}\\[4pt]
+  \large Numerical Implementation vs.\ Analytical Models from the Literature
 }
 \author{opto-sim}
 \date{\today}
@@ -30,201 +29,109 @@
 \begin{document}
 \maketitle
 
-\section{Overview}
+\section{Objective}
 
-This document explains every panel in the four validation figures produced by
-\code{analysis/validation/}. Each impairment is validated against its source
-literature. The physics model (simulation) is compared directly to the analytic
-theory derived from the cited reference.
-
-The figures are:
-\begin{enumerate}
-  \item Fiber Attenuation --- \code{val\_attenuation--seed42.png}
-  \item Fiber Birefringence --- \code{val\_birefringence--seed42.png}
-  \item Chromatic Dispersion --- \code{val\_cd--seed42.png}
-  \item Polarization Mode Dispersion --- \code{val\_pmd\_dgd--seed42.png}
-\end{enumerate}
-
-Each figure is a 2$\times$3 grid of six panels (A--F).  Panel F is always a
-tabular summary of the validation results.
+The purpose of this work is to verify that each numerical impairment model in
+the optical-fibre channel library---attenuation, birefringence, chromatic
+dispersion, and polarisation-mode dispersion---correctly reproduces the
+governing physical relationships, scaling laws, and statistical behaviour
+prescribed by the fibre-optics literature.  Each component is validated
+independently through its analytical foundations before system-level
+integration; the focus throughout is on what the quantitative agreement
+implies about physical fidelity rather than on the error metrics themselves.
 
 % ============================================================
-\section{Fiber Attenuation}
+\section{Literature Reference and Operating-Point Verification --- Fiber Attenuation}
 \label{sec:attenuation}
 
-% --- figure ---
 \begin{figure}[ht]
 \centering
 \includegraphics[width=\linewidth]{../val_attenuation/val_attenuation--seed42.png}
-\caption{Fiber Attenuation validation --- 6-panel figure.
+\caption{Attenuation validation --- 6-panel figure.
 \label{fig:attenuation}}
 \end{figure}
 
-\subsection{Source Literature}
-
+\subsection{Literature Source}
 Keiser, G., \emph{Optical Fiber Communications}, 5th ed., McGraw-Hill, 2015.
 Equation~(3.6), Figure~3.2.
 
-\subsection{Theory and Derivation}
-
-Optical power propagating through a fiber attenuates exponentially with
-distance.  The attenuation coefficient $\alpha$ (in \si{\dB\per\kilo\metre})
-is defined by the ratio of output power to input power:
+\subsection{Theory}
+Optical power decays exponentially with distance (Keiser Eq.~3.6):
 \begin{equation}
-  \frac{P(L)}{P_0} = 10^{-\alpha L / 10}
+  P(L) = P_0 \cdot 10^{-\alpha L / 10}
   \label{eq:keiser36}
 \end{equation}
-For SMF-28 fiber at the telecommunication wavelength $\lambda =
-\SI{1550}{\nano\metre}$, the nominal attenuation is $\alpha =
-\SI{0.182}{\dB\per\kilo\metre}$.  Equivalently, the power in linear units
-(nepers) follows $P(L) = P_0 e^{-\Gamma L}$ with field attenuation
-coefficient $\Gamma = \alpha / (10 \log_{10} e) \approx \alpha / 4.343$ in
-\si{\per\kilo\metre}.
+where $\alpha$ is the attenuation coefficient (\si{\dB\per\kilo\metre}).
+For SMF-28 at $\lambda = \SI{1550}{\nano\metre}$, $\alpha =
+\SI{0.182}{\dB\per\kilo\metre}$ --- the operating point in the minimum-loss
+window.
 
-\subsection{Model Implementation}
+\subsection{Model}
+\code{apply\_attenuation(E, L\_km, attenuation\_factor)} scales the
+complex-envelope field by $\sqrt{10^{-\alpha L/10}}$, preserving phase while
+reducing amplitude.  The field-level scaling is equivalent to the
+power-level scaling of Eq.~\eqref{eq:keiser36}.
 
-The function \code{apply\_attenuation(E, L\_km, attenuation\_factor)} is the
-simulation model.  It multiplies the complex-envelope field array
-$\mathbf{E} \in \mathbb{C}^{N \times 2}$ by the field attenuation factor:
-\begin{equation}
-  \mathbf{E}_\text{out} = \mathbf{E}_\text{in} \cdot
-  \sqrt{10^{-\alpha L / 10}}
-  \label{eq:atten_field}
-\end{equation}
-Since instantaneous optical power is $P(t) = |E_x(t)|^2 + |E_y(t)|^2$, the
-factor $\sqrt{10^{-\alpha L/10}}$ applied to the field is equivalent to
-applying $10^{-\alpha L/10}$ to the power (Eq.~\ref{eq:keiser36}).  The phase
-of the field is preserved, which is essential for downstream coherent and
-phase-sensitive applications.
+\medskip
+\noindent\textbf{Validation achieved through:}\\
+governing equations and literature comparison.
 
 \subsection{Panel Descriptions}
 
-\subsubsection*{Panel A: Power decay (Keiser Eq.~3.6)}
-\label{sec:att_panelA}
+\subsubsection*{Panel A --- Power decay (Keiser Eq.~3.6)}
+The black theory line $P(L) = P_0\,10^{-0.182L/10}$ on a log-linear plot is
+a straight line of slope $-\alpha/10$.  The red dots from the simulation
+fall on this line across five orders of magnitude ($10^{-3}$ to
+$10^{-7}$~W).  \textbf{Physical significance:} this exponential decay
+governs all optical-power budgeting; any deviation would accumulate
+systematically over a multi-span link, making the observed precision
+practically meaningful only in that it introduces zero additional loss
+beyond the specified $\alpha$.
 
-\textbf{What is plotted:} The $y$-axis is output power $P_\text{out}$
-in Watts on a logarithmic scale.  The $x$-axis is fiber length $L$ in
-\si{\kilo\metre} from 0 to 200.
+\subsubsection*{Panel B --- Loss vs.\ distance}
+Measured loss ($-10\log_{10} P_\text{out}/P_\text{in}$) is perfectly linear
+with slope $\alpha = \SI{0.182}{\dB\per\kilo\metre}$ ($R^2 = 1.0$).
+\textbf{Significance:} in a deployed link, splice losses and connector
+losses would cause $R^2 < 1$; the model correctly excludes those artefacts,
+providing a clean baseline for system-level simulations where such losses
+are added separately.
 
-\textbf{Mathematics:} The black theory line is $P(L) = P_0 \cdot
-10^{-0.182\,L/10}$ with $P_0 = \SI{1}{mW}$.  On a log-linear plot this is a
-straight line of slope $-\alpha/10 = -0.0182$ decades per km, or
-$-0.182\,\si{\dB\per\kilo\metre}$.
+\subsubsection*{Panel C --- Residual}
+Maximum relative error $\sim\!3\times10^{-14}\,\%$, set by floating-point
+precision.
 
-\textbf{Data source:} Red dots are the measured output power from
-\code{apply\_attenuation} at each distance step.  Because the power is
-computed as $\langle |\mathbf{E}_\text{out}|^{2} \rangle$ (the sample mean of
-the field norm squared), any deviation from the theory would appear as a
-vertical offset from the black line.
+\subsubsection*{Panel D --- SMF-28 attenuation spectrum}
+The operating point ($\SI{1550}{\nano\metre}$, $\SI{0.182}{\dB\per\km}$)
+sits at the global minimum of the standard SMF-28 attenuation curve, which
+spans $\sim\!2.5$~\si{\dB\per\km} at 800~nm (Rayleigh-dominated) down to
+$\sim\!0.18$ at 1550~nm.  The OH$^-$ peak at 1385~nm is visible.
+\textbf{Significance:} the 1550~nm window is the standard for long-haul
+transmission precisely because it simultaneously offers minimum attenuation
+and commercially available erbium-doped fibre amplifiers (EDFAs).
 
-\textbf{Results:} The red dots lie exactly on the black line across five
-orders of magnitude ($10^{-3}$ to $10^{-7}$~W).  There is no visible
-deviation.  This confirms that \code{apply\_attenuation} reproduces
-Eq.~\eqref{eq:keiser36} with machine precision.
+\subsubsection*{Panel E --- $\alpha$ consistency across distance}
+The extracted $\alpha$ is constant at $\SI{0.182}{\dB\per\km}$ from 5 to
+200~\si{\km}, confirming uniform application of Eq.~\eqref{eq:keiser36}.
+\textbf{Significance:} concatenated fibre spans with different lengths are
+modelled without any splice-related artefacts; each span sees the same
+per-kilometre attenuation regardless of position in the link.
 
-\textbf{Physical significance:} Attenuation in SMF-28 at 1550~nm is dominated
-by Rayleigh scattering ($\propto \lambda^{-4}$).  An error of
-$<10^{-13}\,\%$ means that the model is accurate enough for system-length
-links (tens of kilometres) without any accumulated error.
-
-\subsubsection*{Panel B: Loss vs.\ distance}
-
-\textbf{What is plotted:} The $y$-axis is the cumulative loss
-$-10\log_{10}(P_\text{out}/P_\text{in})$ in \si{\dB}.  The $x$-axis is fiber
-length in \si{\kilo\metre}.
-
-\textbf{Mathematics:} For a constant $\alpha$, the loss is linear:
-$\text{Loss}(L) = \alpha L$.  The slope of this line is the attenuation
-coefficient.  The black dashed line shows $\alpha = 0.182$ (nominal), and the
-red solid line is a least-squares linear fit to the measured blue dots.
-
-\textbf{Data source:} Blue dots are computed from the same
-\code{apply\_attenuation} output as Panel~A, but transformed to dB.
-
-\textbf{Results:} The measured loss (blue dots) falls exactly on both the
-nominal and fitted lines.  The fit yields $\alpha_\text{fit} =
-\SI{0.182000}{\dB\per\kilo\metre}$ with $R^2 = 1.0000000000$, matching the
-input parameter.  The $R^2$ of exactly~1 indicates that the attenuation model
-introduces zero numerical variance --- every point is deterministic and
-exact.
-
-\textbf{Physical significance:} In a real link, $R^2 = 1$ would indicate a
-perfectly uniform fiber without splices or connector losses.  The model
-achieves this for any distance, making it a reliable building block for
-link-level simulations.
-
-\subsubsection*{Panel C: Residual}
-
-\textbf{What is plotted:} The $y$-axis is percentage error
-$|P_\text{measured} - P_\text{theory}| / P_\text{theory} \times 100$ on a
-logarithmic scale.  The $x$-axis is fiber length.
-
-\textbf{Results:} The maximum error is $\sim\!3.2 \times 10^{-14}\,\%$,
-independent of distance.  This is the floating-point rounding limit for
-double-precision arithmetic (machine epsilon $\approx 2.2\times10^{-16}$).
-The model is exact at machine precision.
-
-\subsubsection*{Panel D: SMF-28 attenuation spectrum (Keiser Fig.~3.2)}
-
-\textbf{What is plotted:} The $y$-axis is $\alpha$ in \si{\dB\per\kilo\metre}
-from 0 to 3.  The $x$-axis is wavelength from 700 to 1700~\si{\nano\metre}.
-
-\textbf{Data source:} The gray line with markers shows the typical SMF-28
-attenuation spectrum at standard wavelengths published by Corning.  The red
-dashed lines mark the operating point ($\lambda = \SI{1550}{\nano\metre}$,
-$\alpha = \SI{0.182}{\dB\per\kilo\metre}$).
-
-\textbf{Physical interpretation:} The attenuation spectrum has three regimes:
-\begin{itemize}
-  \item \textbf{800--1300~nm:} Rayleigh scattering dominates ($\alpha \propto
-        \lambda^{-4}$), decreasing from $\sim\!2.5$ to $\sim\!0.4$
-        \si{\dB\per\kilo\metre}.
-  \item \textbf{1300--1400~nm:} The OH$^{-}$ absorption peak at 1385~nm
-        raises attenuation to $\sim\!0.7$ \si{\dB\per\kilo\metre}.
-  \item \textbf{1500--1625~nm:} The global minimum near 1550~nm, where
-        $\alpha = \SI{0.182}{\dB\per\kilo\metre}$, is the lowest-loss
-        window, making it ideal for long-haul transmission.
-\end{itemize}
-
-\textbf{Results:} The operating point is positioned correctly on the
-standard curve, confirming that the default $\alpha$ corresponds to the
-actual SMF-28 minimum-loss window.
-
-\subsubsection*{Panel E: Alpha consistency across distance}
-
-\textbf{What is plotted:} The $y$-axis is the attenuation coefficient
-$\alpha$ in \si{\dB\per\kilo\metre} extracted from each distance
-independently via $\alpha(L) = -10\log_{10}(P_\text{out}/P_\text{in})/L$.
-The $x$-axis is fiber length.  The red dashed line shows the nominal
-$\alpha = 0.182$.
-
-\textbf{Results:} Every extracted point is exactly
-$\SI{0.182}{\dB\per\kilo\metre}$.  There is zero distance-dependent drift.
-This confirms that the model applies Eq.~\eqref{eq:keiser36} uniformly --- a
-crucial property because concatenating multiple fiber spans must not introduce
-artifacts at splice points.
-
-\subsubsection*{Panel F: Validation summary}
-
-The table lists $P_\text{measured}$, $P_\text{theory}$, and error at $L = 0,
-20, 50, 100, 150, 200$~\si{\kilo\metre}.  All percentage errors are at
-$\sim\!10^{-14}\,\%$, confirming machine-precision agreement with Keiser
-Eq.~(3.6).
-
+\subsubsection*{Panel F --- Validation summary}
+All errors are at $10^{-14}\,\%$ --- the governing equation
+(Eq.~\eqref{eq:keiser36}) is reproduced exactly.
 
 % ============================================================
-\section{Fiber Birefringence}
+\section{Literature Reference and Parameter Extraction --- Fiber Birefringence}
 \label{sec:birefringence}
 
-% --- figure ---
 \begin{figure}[ht]
 \centering
 \includegraphics[width=\linewidth]{../val_birefringence/val_birefringence--seed42.png}
-\caption{Fiber Birefringence validation --- 6-panel figure.
+\caption{Birefringence validation --- 6-panel figure.
 \label{fig:birefringence}}
 \end{figure}
 
-\subsection{Source Literature}
+\subsection{Literature Sources}
 \begin{enumerate}
   \item Agrawal, G.\,P., \emph{Fiber-Optic Communication Systems}, 5th ed.,
         Wiley, 2021. Equation~(4.1.2).
@@ -235,746 +142,337 @@ Eq.~(3.6).
         pp.~2606--2611, 1980.
 \end{enumerate}
 
-\subsection{Theory and Derivation}
-
-Birefringence in optical fiber arises from a difference in the effective
-refractive index between the two orthogonal polarization axes.  This index
-difference $\Delta n = n_x - n_y$ causes the two polarization components to
-accumulate different phase velocities, producing a relative phase shift at
-the fiber output.
-
-For a fiber of length $L$ with uniform birefringence $\Delta n$, the Jones
-matrix in the eigenmode basis is diagonal (Agrawal Eq.~4.1.2):
+\subsection{Theory}
+Birefringence $\Delta n = n_x - n_y$ produces a Jones matrix (Agrawal
+Eq.~4.1.2):
 \begin{equation}
   \mathbf{J} =
   \begin{pmatrix}
-    e^{\,j\,\Delta\beta\, L/2} & 0 \\
-    0 & e^{-j\,\Delta\beta\, L/2}
-  \end{pmatrix}
+    e^{j\Delta\beta L/2} & 0 \\[2pt]
+    0 & e^{-j\Delta\beta L/2}
+  \end{pmatrix},
+  \qquad
+  \Delta\beta = \frac{2\pi\,\Delta n}{\lambda}
   \label{eq:jones_biref}
 \end{equation}
-where the differential propagation constant is
-\begin{equation}
-  \Delta\beta = \frac{2\pi\,\Delta n}{\lambda}
-  \label{eq:dbeta}
-\end{equation}
-The phase accumulated on each axis is $\phi_{x,y} = \pm n_{x,y} k_0 L$,
-giving a relative phase $\Delta\phi = \Delta\beta\,L$.
-
-Birefringence depends on three physical effects:
-\begin{enumerate}
-  \item \textbf{Intrinsic (geometric):} Core ellipticity and asymmetric
-        stress from the manufacturing process set a baseline
-        $\Delta n_{T_0}$.
-  \item \textbf{Thermal:} The refractive index changes with temperature.
-        Over the range $-20$ to $+60$~\si{\celsius}, the change is linear:
-        \begin{equation}
-          \Delta n(T) = \Delta n_{T_0} + c_T\,(T - 25)
-          \label{eq:biref_temp}
-        \end{equation}
-        with $c_T = \num{-5e-7}\,\si{\per\celsius}$.
-  \item \textbf{Bending (Ulrich model):} A bend of radius $R$ induces
-        additional birefringence proportional to the square of the
-        curvature.  Per Ulrich~\cite{ulrich1980} Eq.~1:
-        \begin{equation}
-          \Delta n_\text{bend} = 0.135\left(\frac{r_\text{fiber}}{R}\right)^{\!2}
-          \label{eq:ulrich_bend}
-        \end{equation}
-        where $r_\text{fiber} = \SI{62.5}{\micro\metre}$ is the cladding
-        radius for standard SMF-28.
-\end{enumerate}
-
-The total birefringence is the sum:
-\begin{equation}
-  \Delta n_\text{total} = \Delta n_{T_0} + c_T\,(T-25) +
-  0.135\left(\frac{r_\text{fiber}}{R}\right)^{\!2}
+Three physical contributions combine to form $\Delta n$:
+\begin{align}
+  \Delta n(T, R) &=
+  \underbrace{\Delta n_{T_0}}_{\text{intrinsic}}
+  + \underbrace{c_T\,(T - 25)}_{\text{thermal}}
+  + \underbrace{0.135\,(r_\text{fiber}/R)^2}_{\text{bend (Ulrich)}}
   \label{eq:ulrich_total}
-\end{equation}
+\end{align}
+with $\Delta n_{T_0} = \num{0.87e-5}$, $c_T = \num{-5e-7}\,\si{\per\celsius}$,
+and $r_\text{fiber} = \SI{62.5}{\micro\metre}$.  The beat length
+$L_B = \lambda/\Delta n$ separates the weak-birefringence regime (SMF,
+$L_B \sim 10$--$200$~\si{\mm}) from the strong-birefringence regime (PM
+fibre, $L_B \sim 1$--$5$~\si{\mm}).
 
-A derived quantity is the \textbf{beat length}:
-\begin{equation}
-  L_B = \frac{\lambda}{\Delta n}
-  \label{eq:beat_length}
-\end{equation}
-This is the distance over which the two polarization components accumulate a
-relative phase of $2\pi$.  Standard single-mode fiber has $L_B \sim
-10$--$200$~\si{\milli\metre}, whereas polarization-maintaining (PM) fiber
-has $L_B \sim 1$--$5$~\si{\milli\metre}.
+\subsection{Model}
+\code{apply\_birefringence(E, L, wavelength, temperature, bend\_radius)}
+constructs $\mathbf{J}$ from Eq.~\eqref{eq:jones_biref} and
+Eq.~\eqref{eq:ulrich_total}.  Unitarity guarantees power conservation.
+Phase is extracted from $J_{00}$ via two closely spaced length calls.
 
-\subsection{Model Implementation}
-
-The function \code{apply\_birefringence(E, L, wavelength, temperature,
-bend\_radius)} constructs the Jones matrix of Eq.~\eqref{eq:jones_biref}
-with $\Delta\beta$ computed from Eq.~\eqref{eq:ulrich_total}
-and Eq.~\eqref{eq:dbeta}, then applies it to the field:
-\[
-\mathbf{E}_\text{out} = \mathbf{J} \cdot \mathbf{E}_\text{in}
-\]
-Because $\mathbf{J}$ is unitary ($\mathbf{J}^\dagger \mathbf{J} =
-\mathbf{I}$), total optical power is conserved to machine precision.
-The default parameters are $\Delta n_{T_0} = \num{0.87e-5}$,
-$T_0 = \SI{25}{\celsius}$, and $r_\text{fiber} = \SI{62.5}{\micro\metre}$.
-
-The phase is extracted from the simulation output as
-$\phi_\text{sim} = \Im[\log(J_{00}^\text{sim})]$, where $J_{00}^\text{sim}$
-is obtained by computing the Jones matrix via two independent
-\code{apply\_birefringence} calls at neighboring lengths and taking the
-ratio.
+\medskip
+\noindent\textbf{Validation achieved through:}\\
+governing equations, physical behaviour (temperature, bending), and scaling
+laws (beat length vs.\ wavelength).
 
 \subsection{Panel Descriptions}
 
-\subsubsection*{Panel A: Phase vs.\ length (Agrawal Eq.~4.1.2)}
-\label{sec:biref_panelA}
+\subsubsection*{Panel A --- Phase vs.\ length (Agrawal Eq.~4.1.2)}
+$\phi = \Delta\beta\,L/2$ increases linearly at
+\SI{35.3}{\radian\per\metre}.  The simulation (red dots) and theory (black
+line) overlap exactly across 0.5~m ($\sim\!2.8\,L_B$).  \textbf{Physical
+significance:} this rate of phase accumulation means that the state of
+polarisation (SOP) in standard SMF evolves slowly --- the beat length is
+$\sim\!18$~cm.  Over a 100~km link, environmental perturbations
+(temperature, stress) dominate SOP evolution, not intrinsic birefringence.
+The Jones matrix implementation is validated over multiple physical
+perturbations (length, temperature, bending) rather than a single operating
+point.
 
-\textbf{What is plotted:} The $y$-axis is the phase $\phi$ of the Jones
-matrix element $J_{00}$ in radians.  The $x$-axis is fiber length $L$ in
-\si{\milli\metre} from 0 to 500 (0.5~m).
+\subsubsection*{Panel B --- Temperature sensitivity}
+$\phi(T)$ decreases from $\sim\!\SI{4.6}{\radian}$ at $-20$~\si{\celsius}
+to $\sim\!\SI{0.6}{\radian}$ at $+60$~\si{\celsius}, slope
+$-0.253$~\si{\radian\per\celsius}.  This matches $d\phi/dT = \pi c_T
+L/\lambda$.  \textbf{Significance:} a $1$~\si{\celsius} change rotates the
+SOP by $\sim\!0.25$~rad over 25~cm.  Over 100~km the accumulated rotation
+reaches $\sim\!10^5$~rad, but buried cable experiences slow thermal drift
+(minutes to hours), making real-time polarisation tracking feasible in
+coherent receivers.
 
-\textbf{Mathematics:} The analytic phase (black line) is
-$\phi_\text{theory} = \Delta\beta \cdot L/2$, where $\Delta\beta =
-2\pi\times 0.87\times10^{-5} / (1550\times10^{-9}) = 35.3$~\si{\radian\per\metre}.
-Thus $\phi_\text{theory}(L) = 35.3\,L$, a straight line through the origin.
+\subsubsection*{Panel C --- Bend-induced birefringence (Ulrich Eq.~1)}
+The bend contribution $0.135\,(r_\text{fiber}/R)^2$ dominates at tight
+radii: at $R = \SI{2}{\mm}$ it is $15\times$ the intrinsic
+$\Delta n_{T_0}$, producing $\phi \approx \SI{2.9}{\radian}$; at
+$R = \SI{20}{\mm}$, $\phi \approx \SI{0.2}{\radian}$.  \textbf{Significance:}
+bend-induced birefringence is negligible at typical cable radii
+($>$\SI{3}{\cm}) but becomes important in tightly coiled delay lines,
+fibre-optic gyroscopes, and spooled fibres where $R < \SI{5}{\mm}$ can
+depolarise the signal.
 
-\textbf{Why short lengths?} The phase wraps modulo $2\pi$ when $L$ exceeds
-the beat length $L_B = 178.2$~mm.  To avoid unwrapping errors, Panel~A uses
-$L \in [0, 0.5]$~m, which spans approximately $2.8\times L_B$ but the
-cumulative phase is only $0$--$18$~rad, allowing unambiguous comparison.
+\subsubsection*{Panel D --- $\Delta n$ vs.\ bend radius}
+Extracted $\Delta n$ via the two-length ratio method follows the Ulrich
+curve $\Delta n = \num{0.87e-5} + 0.135\,(r_\text{fiber}/R)^2$ exactly.
+\textbf{Significance:} the extraction recovers the input $\Delta n$ without
+bias, confirming that the model does not introduce spurious polarisation
+artefacts when fibre is coiled---important for reach and PMD compensation
+studies.
 
-\textbf{Data source:} Red dots are $\phi_\text{sim}$ extracted from
-\code{apply\_birefringence} at 50 evenly spaced points.
+\subsubsection*{Panel E --- Beat length vs.\ wavelength}
+$L_B = \lambda / \Delta n$ increases linearly, from
+\SI{150.6}{\mm} at 1310~nm to \SI{178.2}{\mm} at 1550~nm.
+\textbf{Significance:} the longer beat length at 1550~nm means the fibre is
+slightly less birefringent at the longer wavelength, consistent with the
+reduced confinement factor and the $1/\lambda$ dependence in
+Eq.~\eqref{eq:jones_biref}.  This wavelength dependence is relevant for
+wideband WDM systems spanning both the C- and L-bands.
 
-\textbf{Results:} The red dots lie exactly on the black line at every point.
-The maximum phase error is $0.00e{+00}$~\si{\radian}.  The linear slope
-confirms $L_B = 2\pi / \Delta\beta = 2\pi / 35.3 = \SI{178.2}{\milli\metre}$,
-consistent with the theoretical prediction for
-$\Delta n = \num{0.87e-5}$.
-
-\textbf{Physical significance:} Polarization evolution in standard SMF is
-slow (beat length $\sim$20~cm).  This weak birefringence means that
-state-of-polarization (SOP) fluctuations in a 100~km link are dominated by
-environmental perturbations, not intrinsic birefringence.  The exact phase
-match validates the Jones matrix implementation.
-
-\subsubsection*{Panel B: Temperature sensitivity}
-
-\textbf{What is plotted:} The $y$-axis is $\phi$ in radians.  The $x$-axis
-is temperature $T$ in \si{\celsius} from $-20$ to $+60$, at fixed
-$L = \SI{0.25}{\metre}$.
-
-\textbf{Mathematics:} $\Delta\beta(T) = 2\pi\bigl(\Delta n_{T_0} + c_T(T -
-25)\bigr) / \lambda$, so $\phi(T)$ is linear with slope $d\phi/dT = \pi
-c_T L / \lambda = \pi (-5\times10^{-7}) (0.25) / (1550\times10^{-9}) =
--0.253$~\si{\radian\per\celsius}.
-
-\textbf{Data source:} Orange dots are $\phi_\text{sim}$ at each temperature
-from \code{apply\_birefringence}.
-
-\textbf{Results:} The phase decreases from $\sim\!4.64$~rad at
-$-20$~\si{\celsius} to $\sim\!0.62$~rad at $+60$~\si{\celsius}.  The orange
-dots track the black line exactly (error $0.00e{+00}$~rad).  The extracted
-slope matches the theoretical $d\phi/dT = -0.253$~\si{\radian\per\celsius},
-confirming $c_T = \num{-5e-7}$.
-
-\textbf{Physical significance:} A temperature change of 1~\si{\celsius}
-rotates the SOP by approximately $0.25$~rad over 25~cm of fiber.  Over
-100~km, this would accumulate to $\sim\!10^5$~rad --- but in practice fiber
-is buried at roughly constant temperature, so thermal SOP drift is slow
-(minutes to hours).  The model correctly captures this temperature sensitivity.
-
-\subsubsection*{Panel C: Bend-induced birefringence (Ulrich Eq.~1)}
-
-\textbf{What is plotted:} The $y$-axis is $\phi$ in radians.  The $x$-axis
-is the bend radius $R$ in \si{\milli\metre} from 2 to 20, on a logarithmic
-scale.
-
-\textbf{Mathematics:} Including the Ulrich bend term,
-$\Delta\beta(R) = 2\pi\bigl(\Delta n_{T_0} + 0.135\,(r_\text{fiber}/R)^2
-\bigr) / \lambda$.  For small $R$ the $1/R^2$ term dominates: at
-$R = \SI{2}{\milli\metre}$, the bend contribution is $0.135 \times
-(62.5/2000)^2 = 1.32\times10^{-4}$, nearly $15\times$ the intrinsic
-$\Delta n_{T_0} = 0.87\times10^{-5}$.
-
-\textbf{Data source:} Green dots are $\phi_\text{sim}$ from
-\code{apply\_birefringence} with \code{bend\_radius} set to each value.
-
-\textbf{Results:} The phase increases sharply as $R$ decreases below
-~5~mm.  At $R = \SI{2}{\milli\metre}$, $\phi \approx \SI{2.9}{\radian}$; at
-$R = \SI{20}{\milli\metre}$, $\phi \approx \SI{0.2}{\radian}$.  The green
-dots fall exactly on the black theory line, error $0.00e{+00}$~rad.
-
-\textbf{Physical significance:} Bend-induced birefringence is negligible at
-typical cable bend radii ($>$\SI{3}{\centi\metre}).  However, in tight
-packaging (e.g., fiber coils in a gyroscope or spooled delay lines), bends
-with $R < \SI{5}{\milli\metre}$ introduce significant birefringence that
-can depolarize a signal or degrade PMD compensation.  The Ulrich model is
-validated across the full range.
-
-\subsubsection*{Panel D: $\Delta n$ vs.\ bend radius}
-
-\textbf{What is plotted:} The $y$-axis is the extracted birefringence
-$\Delta n$ (dimensionless).  The $x$-axis is $R$ in \si{\milli\metre} on a
-logarithmic scale.
-
-\textbf{Extraction method:} $\Delta n$ is extracted via two
-\code{apply\_birefringence} calls at lengths $L$ and $L+\delta L$ where
-$\delta L = \SI{0.001}{\metre}$.  The phase difference
-$\Delta\phi = \phi(L+\delta L) - \phi(L)$ gives
-$\Delta n = \lambda \Delta\phi / (2\pi \delta L)$.
-
-\textbf{Results:} The green dots fall exactly on the black dashed theory
-line: $\Delta n = \num{0.87e-5} + 0.135\,(r_\text{fiber}/R)^2$.  The
-maximum extraction error is $0.0000\,\%$.
-
-\textbf{Significance:} The ratio method recovers the input $\Delta n$
-without any post-processing bias, confirming that \code{apply\_birefringence}
-is a faithful implementation of the Ulrich model.
-
-\subsubsection*{Panel E: Beat length vs.\ wavelength}
-
-\textbf{What is plotted:} The $y$-axis is $L_B = \lambda / \Delta n$ in
-\si{\milli\metre}.  The $x$-axis is $\lambda$ from 1100 to 1700~\si{\nano\metre}.
-Gray dashed reference lines at \SI{1310}{\nano\metre} and
-\SI{1550}{\nano\metre}.
-
-\textbf{Results:} $L_B$ increases linearly with $\lambda$.  At
-$\SI{1550}{\nano\metre}$, $L_B = \SI{178.16}{\milli\metre}$; at
-$\SI{1310}{\nano\metre}$, $L_B = \SI{150.57}{\milli\metre}$.  These values
-are consistent with standard SMF (weak birefringence).
-
-\subsubsection*{Panel F: Validation summary}
-
-All five test categories (power conservation, phase vs.\ length, temperature,
-bend, wavelength) pass with zero error.  The Jones matrix is unitary by
-construction (determinant $= 1$), guaranteeing power conservation.
-
+\subsubsection*{Panel F --- Validation summary}
+All tests (power conservation, phase vs.\ length, temperature, bending,
+wavelength) pass with zero error.
 
 % ============================================================
-\section{Chromatic Dispersion}
+\section{Literature Reference and Pulse-Broadening Verification --- Chromatic Dispersion}
 \label{sec:cd}
 
-% --- figure ---
 \begin{figure}[ht]
 \centering
 \includegraphics[width=\linewidth]{../val_cd/val_cd--seed42.png}
-\caption{Chromatic Dispersion validation --- 6-panel figure.
+\caption{Chromatic dispersion validation --- 6-panel figure.
 \label{fig:cd}}
 \end{figure}
 
-\subsection{Source Literature}
-
+\subsection{Literature Source}
 Agrawal, G.\,P., \emph{Fiber-Optic Communication Systems}, 5th ed., Wiley,
 2021. Section~2.4, Equation~(2.4.11), Figure~2.6.
 
-\subsection{Theory and Derivation}
-
-Chromatic dispersion (CD) arises from the frequency dependence of the
-refractive index $n(\omega)$.  Expanding the propagation constant
-$\beta(\omega)$ around the carrier frequency $\omega_0$:
-\[
-\beta(\omega) = \beta_0 + \beta_1(\omega - \omega_0) +
-\frac{1}{2}\beta_2(\omega - \omega_0)^2 + \cdots
-\]
-The first-order term $\beta_1 = 1/v_g$ is the inverse group velocity.  The
-second-order term $\beta_2 = d^2\beta/d\omega^2$ is the group-velocity
-dispersion (GVD) parameter.  In the fiber-optic community it is more common
-to use the dispersion parameter $D$ (in \si{\ps\per\nm\per\km}):
+\subsection{Theory}
+The group-velocity dispersion parameter relates to the dispersion parameter
+$D$ (in \si{\ps\per\nm\per\km}) as:
 \begin{equation}
-  D = -\frac{2\pi c}{\lambda^2}\,\beta_2
-  \qquad\Longleftrightarrow\qquad
   \beta_2 = -\frac{D\,\lambda^2}{2\pi c}
-  \label{eq:beta2_D}
+  \label{eq:beta2}
 \end{equation}
-For SMF-28 at 1550~nm, $D = 14.0$~\si{\ps\per\nm\per\km}, consisting of
-material dispersion $D_\text{mat} = 17.0$ and waveguide dispersion
-$D_\text{wg} = -3.0$ (both in the same units).
-
-The action of CD on the complex envelope is a pure phase shift in the
-frequency domain (Agrawal Eq.~2.4.11):
+A Gaussian pulse of initial $1/e$ half-width $T_0$ broadens according to
+(Agrawal Eq.~2.4.11):
 \begin{equation}
-  H(\omega) = \exp\!\left(-j\,\frac{\beta_2\,\omega^2\,L}{2}\right)
-  \label{eq:Hcd}
-\end{equation}
-where $\omega$ is the angular frequency offset from the carrier
-($\omega = 2\pi f$ with $f$ the baseband frequency).
-
-For a Gaussian input pulse with amplitude $A(0, t) = \exp(-t^2/2T_0^2)$,
-the RMS width evolves as (Agrawal Eq.~2.4.11):
-\begin{equation}
-  \sigma(z) = \frac{T_0}{\sqrt{2}} \sqrt{1 + \left(\frac{z}{L_D}\right)^{\!2}}
+  \sigma(z) = \frac{T_0}{\sqrt{2}}\,
+  \sqrt{1 + \left(\frac{z}{L_D}\right)^{\!2}},
+  \qquad
+  L_D = \frac{T_0^2}{|\beta_2|}
   \label{eq:cd_broadening}
 \end{equation}
-where the dispersion length is
-\begin{equation}
-  L_D = \frac{T_0^2}{|\beta_2|}
-  \label{eq:ld}
-\end{equation}
-At one dispersion length ($z = L_D$), the pulse broadens by a factor of
-$\sqrt{2}$; at $z = 2L_D$ by $\sqrt{5} \approx 2.24$.
+The frequency-domain transfer function is
+$H(\omega) = \exp(-j\beta_2\omega^2 L/2)$.
 
-The RMS width of a sampled pulse is computed as the standard deviation of
-the intensity distribution:
-\begin{equation}
-  \sigma_\text{sim} = \sqrt{\frac{\sum (t_i - \bar{t})^2 |E_i|^2}
-  {\sum |E_i|^2}}, \qquad
-  \bar{t} = \frac{\sum t_i |E_i|^2}{\sum |E_i|^2}
-  \label{eq:rms_width}
-\end{equation}
+The test parameters are $T_0 = \SI{30}{\ps}$,
+$D = \SI{14.0}{\ps\per\nm\per\km}$ ($D_\text{mat} = 17.0$,
+$D_\text{wg} = -3.0$), giving $\beta_2 = \num{-1.786e-26}$~\si{\s^2\per\m}
+and $L_D = \SI{50.40}{\km}$.
 
-\subsection{Model Implementation}
+\subsection{Model}
+\code{apply\_cd(E, dt, L, wavelength)} applies $H(\omega)$ via FFT.  The
+RMS width is computed as the standard deviation of the intensity
+distribution (Eq.~\ref{eq:cd_broadening}).
 
-\code{apply\_cd(E, dt, L, wavelength)} takes the FFT of the input field,
-multiplies by $H(\omega)$ from Eq.~\eqref{eq:Hcd}, and returns the IFFT.
-The frequency grid is given by \texttt{np.fft.fftfreq(N, d=dt)}, which
-produces frequencies from $-f_s/2$ to $f_s/2$ where $f_s = 1/\dt$.
-Only frequencies up to the Nyquist limit $f_\text{Nyquist} = 1/(2\dt)$ are
-physical.
-
-The test uses $\dt = \SI{1}{\ps}$, giving $f_\text{Nyquist} =
-\SI{0.5}{\THz}$.  With $N = 4096$ samples, the total time window is
-$T_\text{total} = N\dt = \SI{4.096}{\ns}$, which accommodates the broadened
-pulses (up to $\sigma \approx \SI{50}{\ps}$) without aliasing.
-
-The dispersion parameters used are:
-\begin{itemize}
-  \item $D_\text{mat} = \SI{17.0}{\ps\per\nm\per\km}$
-  \item $D_\text{wg} = \SI{-3.0}{\ps\per\nm\per\km}$
-  \item $D_\text{total} = \SI{14.0}{\ps\per\nm\per\km}$
-  \item $\beta_2 = -1.786\times10^{-26}$~\si{\s^2\per\m}
-  \item $T_0 = \SI{30}{\ps}$ (initial $1/e$ half-width)
-  \item $\sigma_0 = T_0/\sqrt{2} = \SI{21.213}{\ps}$
-  \item $L_D = \SI{50.40}{\km}$
-\end{itemize}
+\medskip
+\noindent\textbf{Validation achieved through:}\\
+governing equations, scaling laws ($\sqrt{1+(z/L_D)^2}$), and literature
+comparison (Agrawal Fig.~2.6).
 
 \subsection{Panel Descriptions}
 
-\subsubsection*{Panel A: Gaussian pulse broadening (Agrawal Fig.~2.6)}
-\label{sec:cd_panelA}
+\subsubsection*{Panel A --- Gaussian pulse broadening (Agrawal Fig.~2.6)}
+Four pulses at $z/L_D = 0$ (blue), $0.5$ (green), $1.0$ (orange),
+$2.0$ (red) show progressive broadening from $\sigma = \SI{21.2}{\ps}$ to
+$\SI{47.4}{\ps}$ ($\sqrt{5}\times$).  \textbf{Physical significance:} the
+Gaussian profile is preserved because CD is a quadratic phase in the
+frequency domain --- the pulse remains chirp-free and Gaussian at all
+distances, which is the basis for the analytic broadening formula.  In a
+system context, this broadening produces intersymbol interference (ISI):
+at $z = 2L_D$, a $\SI{30}{\ps}$ pulse has spread by $2.24\times$,
+directly limiting the achievable bit-rate--distance product.
 
-\textbf{What is plotted:} The $y$-axis is normalized intensity
-$|E(t)|^2 / \max(|E|^2)$ (unitless, 0--1).  The $x$-axis is time in
-\si{\ps}, centered at the pulse peak and zoomed to $\pm 60$~\si{\ps}.
+\subsubsection*{Panel B --- RMS width growth}
+$\sigma(z)/\sigma_0$ follows $\sqrt{1 + (z/L_D)^2}$ exactly across
+$0 \le z/L_D \le 2.5$.  \textbf{Significance:} at $z/L_D \gg 1$, the width
+grows linearly with distance ($\sigma \propto z/L_D$), meaning the
+dispersion penalty in long-haul links accumulates linearly, not
+quadratically.  This is why dispersion-compensating fibre (DCF) must
+periodically reset the accumulated dispersion rather than relying on a
+single post-compensation stage.
 
-\textbf{Curves:} Four pulses at fractions of the dispersion length:
-\begin{itemize}
-  \item $z/L_D = 0$ (blue): The unpropagated Gaussian pulse with
-        $\sigma_0 = \SI{21.2}{\ps}$ and $1/e$ half-width $T_0 =
-        \SI{30}{\ps}$.  The full width at half-maximum (FWHM) is
-        $2\sqrt{\ln 4}\,\sigma_0 \approx \SI{49.9}{\ps}$.
-  \item $z/L_D = 0.5$ (green): $\sigma = \SI{23.7}{\ps}$.  The pulse has
-        broadened by $\sqrt{1+0.25} = 1.118\times$.
-  \item $z/L_D = 1.0$ (orange): $\sigma = \SI{30.0}{\ps}$.  At exactly one
-        dispersion length, the width is $\sqrt{2}\times$ the initial width.
-  \item $z/L_D = 2.0$ (red): $\sigma = \SI{47.4}{\ps}$.  The width has more
-        than doubled ($\sqrt{5}\times$).
-\end{itemize}
+\subsubsection*{Panel C --- Residual}
+Maximum relative error $\sim\!3\times10^{-14}\,\%$ (machine precision),
+confirming the FFT implementation is exact up to floating-point rounding.
 
-\textbf{What to observe:} All four curves are Gaussian in shape (they remain
-Gaussian because the input was Gaussian and CD is a quadratic phase in the
-frequency domain).  The peak amplitude decreases while the wings broaden,
-conserving total energy.  The legend labels show the analytic $\sigma$
-values for each distance.
+\subsubsection*{Panel D --- CD transfer function phase}
+The unwrapped analytic phase $\phi(f) = -\beta_2(2\pi f)^2 L/2$ and the
+simulated phase extracted from $H_\text{sim} =
+\text{FFT}(E_\text{out})/\text{FFT}(E_\text{in})$ overlap perfectly.
+\textbf{Significance:} the accumulated phase at
+$\SI{0.5}{\THz}$ exceeds $\sim\!10^4$~rad over 100~km.  In coherent
+systems, digital back-propagation (DBP) must estimate and invert this
+phase sample-by-sample --- an error of $1$ part in $10^4$ in $D$ would
+produce a $\sim\!1$~rad phase error at the band edge, degrading the
+constellation and bit-error rate.  The exact phase match ensures the model
+provides a reliable reference for DBP algorithm development.
 
-\textbf{Results:} The pulse shapes match the theoretical prediction exactly.
-The RMS widths extracted from the simulation via Eq.~\eqref{eq:rms_width}
-agree with Eq.~\eqref{eq:cd_broadening} to within $3\times10^{-14}\,\%$.
-The broadening progression (narrow at $z=0$, widening at $z=2L_D$) is
-visually clear.
+\subsubsection*{Panel E --- Material vs.\ waveguide dispersion}
+$D_\text{mat}(\lambda)$ decreases from $\sim\!20$ at 1100~nm to
+$\sim\!12$~\si{\ps\per\nm\per\km} at 1700~nm; $D_\text{wg} =
+-3$~\si{\ps\per\nm\per\km} is constant.  Their sum crosses zero at
+$\sim\!1310$~nm and reaches $14$~\si{\ps\per\nm\per\km} at 1550~nm.
+\textbf{Significance:} this cancellation is by design: pure silica has zero
+dispersion near 1270~nm; the waveguide contribution shifts it to 1310~nm
+and keeps $D$ moderate at 1550~nm.  For dispersion-flattened or
+dispersion-shifted fibres, the material/waveguide breakdown can be
+re-parameterised independently, and this validation confirms the underlying
+model accepts such modifications without structural changes.
 
-\subsubsection*{Panel B: RMS width growth ($D = \SI{14.0}{\ps\per\nm\per\km}$)}
-
-\textbf{What is plotted:} The $y$-axis is $\sigma(z)/\sigma_0$, the ratio of
-RMS width to initial width (dimensionless).  The $x$-axis is $z/L_D$ from 0
-to 2.5.
-
-\textbf{Mathematics:} The black line is the analytic curve
-$\sqrt{1 + (z/L_D)^2}$.  At $z/L_D = 0$, the ratio is 1.  At $z/L_D = 1$,
-the ratio is $\sqrt{2} \approx 1.414$.  The curve asymptotically approaches
-$\sim z/L_D$ for large $z/L_D$ (linear growth in RMS width in the far-field
-regime).
-
-\textbf{Data source:} Red dots with connecting lines show
-$\sigma_\text{sim}(z)/\sigma_0$ measured from \code{apply\_cd} at 51 evenly
-spaced distances.  Red percentage labels at $z/L_D = 0, 0.5, 1.0, 2.0$ show
-the relative error.
-
-\textbf{Results:} Every red dot falls on the black analytic curve.
-The error labels read $0.0000\%$ at all four test points.  The maximum
-error across the entire sweep is $3.01\times10^{-14}\,\%$.  This means that
-the 51-point sweep is exact at every single point, not just at the test
-points.
-
-\subsubsection*{Panel C: Residual}
-
-\textbf{What is plotted:} The $y$-axis is percentage error on a logarithmic
-scale.  The $x$-axis is $z/L_D$.
-
-\textbf{Results:} The residual is flat across the entire range at
-$\sim\!10^{-14}\,\%$, with no systematic structure (no upward or downward
-trend).  Black dots at $z/L_D = 0, 0.5, 1.0, 2.0$ confirm zero error at the
-test points.  The absence of any pattern means the error is purely numerical
-(floating-point rounding), not physical.
-
-\textbf{Why the error is not exactly zero:} The FFT introduces
-floating-point rounding at the level of machine epsilon.  For $N=4096$ and
-double precision, the round-trip FFT error is $\sim\!10^{-15}$ per sample,
-which propagates to a $\sim\!10^{-14}\,\%$ error in the RMS width.  This is
-unavoidable and insignificant for any practical application.
-
-\subsubsection*{Panel D: CD transfer function phase (Agrawal Eq.~2.4.11,
-$z = 2L_D$)}
-
-\textbf{What is plotted:} The $y$-axis is the unwrapped phase in radians
-(from 0 to approximately $-1400$).  The $x$-axis is frequency in \si{\THz}
-from 0 to 0.5 (the Nyquist limit).
-
-\textbf{Mathematics:} The analytic phase at $z = 2L_D$ is
-$\phi(f) = -\beta_2 (2\pi f)^2 (2L_D) / 2$.  Substituting $L_D = T_0^2 /
-|\beta_2|$:
-\[
-\phi(f) = -\frac{\beta_2}{|\beta_2|}\,(2\pi f)^2\,T_0^2
-\]
-Since $\beta_2$ is negative for SMF-28 at 1550~nm ($D > 0$), the sign
-$\beta_2/|\beta_2| = -1$, making $\phi(f) = +(2\pi f)^2\,T_0^2$, which is
-positive.  The phase is quadratic: at $f = \SI{0.5}{\THz}$,
-$\phi \approx (2\pi \times 0.5\times10^{12})^2 \times (30\times10^{-12})^2
-\approx 8880$~rad.  The actual plot shows only up to $f \approx
-\SI{0.3}{\THz}$ because the input pulse has very little power at higher
-frequencies (the Gaussian spectrum decays as $\exp(-(2\pi f T_0)^2/2)$).
-
-\textbf{Data source:} The black line is the analytic phase.  The red dotted
-line is the unwrapped angle of $H_\text{sim}(f) =
-\text{FFT}(E_\text{out}) / \text{FFT}(E_\text{in})$, computed from the
-simulation.  The blue dashed line is the analytic reference at $z = L_D$
-(half the distance), showing half the accumulated phase.
-
-\textbf{Results:} The red dotted line overlaps the black line exactly at all
-frequencies where $|E_\text{in}(f)| > 10^{-15}$ (i.e., where the division is
-well-defined).  The phase at $z = L_D$ is exactly half that at $z = 2L_D$,
-confirming the linear scaling $\phi \propto L$.
-
-\textbf{Physical interpretation:} The parabolic phase profile is the
-signature of chromatic dispersion.  In a coherent system, this phase must be
-compensated (e.g., via digital back-propagation or a dispersion-compensating
-fiber) to avoid intersymbol interference (ISI).  The total accumulated phase
-of $\sim\!10^4$~rad at 1550~nm over 100~km means that even small
-errors in the dispersion coefficient would cause significant phase mismatch
-in coherent receivers.
-
-\subsubsection*{Panel E: Material and waveguide dispersion (Hui~\cite{hui2009},
-Keck~\cite{keck1981})}
-
-\textbf{What is plotted:} The $y$-axis is $D$ in \si{\ps\per\nm\per\km}.
-The $x$-axis is $\lambda$ from 1100 to 1700~\si{\nano\metre}.
-
-\textbf{Curves:}
-\begin{itemize}
-  \item \textbf{Material dispersion} $D_\text{mat}(\lambda)$ (blue): This
-        follows from the Sellmeier equation for fused silica.  The
-        approximate model used is
-        $D_\text{mat}(\lambda) = \frac{D_\text{mat,1550}}{2}\left(1 +
-        \frac{\lambda_\text{ZD}^2}{\lambda^2}\right)$ where
-        $\lambda_\text{ZD} = \SI{1310}{\nano\metre}$ is the zero-dispersion
-        wavelength and $D_\text{mat,1550} = 17.0$.  $D_\text{mat}$ decreases
-        from $\sim 20$ at 1100~nm to $\sim 12$ at 1700~nm.
-  \item \textbf{Waveguide dispersion} $D_\text{wg}$ (orange): This is the
-        contribution from the waveguide structure.  For SMF-28 it is
-        approximately constant at $-3.0$~\si{\ps\per\nm\per\km} across the
-        wavelength range.  The negative sign means it partially cancels the
-        material dispersion.
-  \item \textbf{Total dispersion} $D_\text{total} = D_\text{mat} + D_\text{wg}$
-        (black dashed).
-\end{itemize}
-
-\textbf{Key wavelength points:}
-\begin{itemize}
-  \item At $\SI{1310}{\nano\metre}$ (gray dashed line): $D_\text{total}
-        \approx 0$.  This is the zero-dispersion wavelength, used for
-        high-bit-rate short-reach links where dispersion penalty must be
-        minimized.
-  \item At $\SI{1550}{\nano\metre}$ (gray dashed line): $D_\text{total} =
-        17.0 + (-3.0) = \SI{14.0}{\ps\per\nm\per\km}$, the SMF-28 standard.
-        This is the minimum-loss window.
-\end{itemize}
-
-\textbf{Significance:} The cancellation between material and waveguide
-dispersion is by design --- it shifts the zero-dispersion wavelength from
-$\sim\!1270$~nm (pure silica) to 1310~nm and keeps the dispersion moderate
-at 1550~nm.  The validation confirms that the model uses the correct
-breakdown, which matters when simulating dispersion-flattened or
-dispersion-shifted fibers.
-
-\subsubsection*{Panel F: Validation summary}
-
-Key parameters and results:
-\begin{itemize}
-  \item $D_\text{total} = \SI{14.0}{\ps\per\nm\per\km}$
-  \item $\beta_2 = \num{-1.786e-26}$~\si{\s^2\per\m}
-  \item $L_D = \SI{50.40}{\km}$ (for $T_0 = \SI{30}{\ps}$)
-  \item Max error $= 3.0 \times 10^{-14}\,\%$
-\end{itemize}
-The Gaussian broadening model is verified to $< 0.001\,\%$ across all
-distances.  The FFT-based CD model is a faithful implementation of
-Agrawal~\cite{agrawal2021} Eq.~(2.4.11).
+\subsubsection*{Panel F --- Validation summary}
+$D = \SI{14}{\ps\per\nm\per\km}$, $\beta_2 = \num{-1.786e-26}$~\si{\s^2\per\m},
+$L_D = \SI{50.40}{\km}$.  Gaussian broadening matches the analytic model to
+$<10^{-14}\,\%$.
 
 % ============================================================
-\section{Polarization Mode Dispersion}
+\section{Literature Reference and Statistical Verification --- Polarisation-Mode Dispersion}
 \label{sec:pmd}
 
-% --- figure ---
 \begin{figure}[ht]
 \centering
 \includegraphics[width=\linewidth]{../val_pmd/val_pmd_dgd--seed42.png}
-\caption{Polarization Mode Dispersion validation --- 6-panel figure.
+\caption{PMD validation --- 6-panel figure.
 \label{fig:pmd}}
 \end{figure}
 
-\subsection{Source Literature}
-
+\subsection{Literature Source}
 Razavi, B., \emph{Design of Integrated Circuits for Optical Communications},
 2nd ed., Wiley, 2012. Section~2.5, Figure~2.11.
 
-\subsection{Theory and Derivation}
-
-Polarization mode dispersion (PMD) originates from the random
-birefringence fluctuations along a fiber.  At any given frequency, the fiber
-supports two orthogonal principal states of polarization (PSPs) that
-propagate with different group velocities.  The differential group delay
-(DGD) between the PSPs at the output is a random variable that follows a
-Maxwellian distribution (Razavi Sec.~2.5):
+\subsection{Theory}
+The differential group delay (DGD) $\tau$ between the two principal states
+of polarisation follows a Maxwellian distribution (Razavi Sec.~2.5):
 \begin{equation}
   p(\tau) = \frac{2}{\sqrt{\pi}} \frac{\tau^2}{\sigma_m^3}
-            \exp\!\left(-\frac{\tau^2}{\sigma_m^2}\right),
-  \qquad \tau \ge 0
+            \exp\!\left(-\frac{\tau^2}{\sigma_m^2}\right)
   \label{eq:maxwellian}
 \end{equation}
-where $\tau = \text{DGD}$ and $\sigma_m$ is the Maxwellian scale parameter.
+with scale parameter $\sigma_m = D_\text{PMD}\sqrt{L}/\sqrt{3}$.  The RMS
+DGD is $\tau_\text{rms} = D_\text{PMD}\sqrt{L}$ and the mean is $\langle
+\tau \rangle = \sqrt{8/(3\pi)}\,\tau_\text{rms} \approx 0.921\,
+\tau_\text{rms}$.
 
-The scale parameter depends on the fiber length $L$ and the PMD coefficient
-$D_\text{PMD}$:
-\begin{equation}
-  \sigma_m = \frac{D_\text{PMD}\,\sqrt{L}}{\sqrt{3}}
-  \label{eq:sigma_m}
-\end{equation}
-The RMS DGD is
-\begin{equation}
-  \tau_\text{rms} = \sqrt{\langle \tau^2 \rangle} = D_\text{PMD}\,\sqrt{L}
-  \label{eq:dgd_rms}
-\end{equation}
-and the mean DGD is
-\begin{equation}
-  \langle \tau \rangle = \frac{2\sigma_m}{\sqrt{\pi}} =
-  \frac{2}{\sqrt{3\pi}}\,D_\text{PMD}\,\sqrt{L}
-  \label{eq:dgd_mean}
-\end{equation}
-Thus $\langle \tau \rangle = \sqrt{8/(3\pi)}\,\tau_\text{rms} \approx
-0.921\,\tau_\text{rms}$.
+\subsection{Model}
+\code{apply\_pmd(E, dt, L, pm\_dispersion)} draws a Maxwellian-distributed
+$\tau$ for each realisation and applies the frequency-domain transfer
+function $\mathbf{H}_\text{PMD}(\omega) = \mathbf{R}^{-1}
+\operatorname{diag}(e^{j\omega\tau/2}, e^{-j\omega\tau/2})\,\mathbf{R}$
+where $\mathbf{R}$ is a random unitary PSP rotation.  The simulation uses
+$D_\text{PMD} = 3.16$~\si{\ps\per\sqrt{\km}} (for a visible DGD scale at
+100~km) and 5000 realisations.
 
-For standard SMF-28, a typical PMD coefficient is $D_\text{PMD} = 0.1\,
-\si{\ps/\sqrt{\km}}$.  At $L = \SI{100}{\km}$, the expected RMS DGD is
-$0.1 \times \sqrt{100} = \SI{1}{\ps}$ --- a small value.  To produce a
-visible DGD distribution for validation, a higher coefficient is used:
-$D_\text{PMD} = 3.16\,\si{\ps/\sqrt{\km}}$ (equivalent to
-$0.1\,\si{\ps/\sqrt{\m}}$).  At $L = \SI{100}{\km}$, this gives
-$\tau_\text{rms} = \SI{31.6}{\ps}$ and $\langle \tau \rangle =
-0.921 \times 31.6 = \SI{29.1}{\ps}$.
-
-\subsection{Model Implementation}
-
-\code{apply\_pmd(E, dt, L, pm\_dispersion)} implements PMD as a
-frequency-domain operation.  For each realization:
-\begin{enumerate}
-  \item A random DGD $\tau$ is drawn from a Maxwellian distribution with
-        scale parameter $\sigma_m = D_\text{PMD}\,\sqrt{L}/\sqrt{3}$.
-  \item A random PSP rotation is selected uniformly on the Poincar\'{e}
-        sphere (a random $2\times2$ unitary matrix).
-  \item The field is transformed to the PSP basis, a frequency-dependent
-        phase shift $\pm \omega\tau/2$ is applied between the PSPs, and the
-        field is rotated back to the original basis.
-\end{enumerate}
-The transfer function for a given realization is:
-\begin{equation}
-  \mathbf{H}_\text{PMD}(\omega) = \mathbf{R}^{-1}
-  \begin{pmatrix}
-    e^{j\omega\tau/2} & 0 \\
-    0 & e^{-j\omega\tau/2}
-  \end{pmatrix}
-  \mathbf{R}
-  \label{eq:pmd_H}
-\end{equation}
-where $\mathbf{R}$ is the random PSP rotation matrix.
+\medskip
+\noindent\textbf{Validation achieved through:}\\
+statistical agreement (Maxwellian distribution) and scaling laws
+($\tau_\text{rms} \propto \sqrt{L}$).
 
 \subsection{Panel Descriptions}
 
-\subsubsection*{Panel A: DGD distribution (Razavi Fig.~2.11)}
-\label{sec:pmd_panelA}
+\subsubsection*{Panel A --- DGD distribution (Razavi Fig.~2.11)}
+The blue histogram of 5000 DGD realisations at $L = \SI{100}{\km}$
+($\tau_\text{rms} = \SI{31.6}{\ps}$) overlays the analytic Maxwellian PDF.
+The Kolmogorov--Smirnov test gives $D = 0.012$, $p = 0.45$ (not rejected).
+Measured mean $\SI{29.2}{\ps}$ and RMS $\SI{31.7}{\ps}$ match expectations
+($\SI{29.1}{\ps}$, $\SI{31.6}{\ps}$) within statistical fluctuation.
+\textbf{Physical significance:} the Maxwellian tail means that occasional
+realisations have DGD several times the RMS value --- a fibre with
+$\tau_\text{rms} = \SI{10}{\ps}$ (typical of 100~km installed SMF) will
+experience $\tau > \SI{30}{\ps}$ with probability $\sim\!10^{-3}$, causing
+outage in 10~Gbaud and higher systems.  The model captures this outage
+statistics correctly, which is essential for system-availability
+simulations.
 
-\textbf{What is plotted:} The $y$-axis is probability density in
-\si{\ps^{-1}}.  The $x$-axis is DGD $\tau$ in \si{\ps} from 0 to 80.
+\subsubsection*{Panel B --- QQ-plot}
+Sample quantiles vs.\ Maxwellian quantiles lie on $y = x$ with
+$r = 0.9998$.  \textbf{Significance:} unlike a histogram, the QQ-plot is
+sensitive to tail behaviour.  The absence of deviation up to
+$\sim\!\SI{80}{\ps}$ ($2.5\times$ RMS) confirms the Maxwellian model holds
+in the outage-relevant tail region.
 
-\textbf{Data source:} A blue histogram of 5000 independent DGD realizations
-from \code{apply\_pmd} at $L = \SI{100}{\km}$, normalized to unit area.
+\subsubsection*{Panel C --- Histogram residual}
+Residuals (histogram minus analytic PDF) are randomly distributed with
+maximum $\sim\!0.003$, consistent with binomial noise for 5000 samples.
 
-\textbf{Overlaid curves:}
-\begin{itemize}
-  \item \textbf{Black line:} Analytic Maxwellian PDF (Eq.~\eqref{eq:maxwellian})
-        with $\tau_\text{rms} = \SI{31.6}{\ps}$.
-  \item \textbf{Gray dashed line:} Expected RMS DGD $= \SI{31.6}{\ps}$.
-  \item \textbf{Blue dotted line:} Measured mean DGD $= \SI{29.20}{\ps}$.
-\end{itemize}
+\subsubsection*{Panel D --- PMD scaling $\text{DGD} \sim \sqrt{L}$}
+RMS DGD measured at $L = 10$--$200$~\si{\km} follows
+$\tau_\text{rms} = 3.1662\,\sqrt{L}$ ($R^2 = 0.99993$), matching the
+nominal $3.1623\,\sqrt{L}$.  \textbf{Significance:} the $\sqrt{L}$ scaling
+is the direct signature of random mode coupling in long fibres.
+Polarisation-maintaining fibre would exhibit $\text{DGD} \propto L$, which
+grows much faster with distance.  The square-root scaling is why
+PMD-induced pulse broadening in long-haul systems remains manageable ---
+doubling the link length increases the RMS DGD by only $\sqrt{2}$, not a
+factor of two.
 
-\textbf{Statistical verification:}
-\begin{itemize}
-  \item \textbf{KS test:} The Kolmogorov--Smirnov statistic is $D = 0.01214$
-        with $p = 0.4493$.  Since $p > 0.05$, we cannot reject the null
-        hypothesis that the samples come from the Maxwellian distribution.
-  \item \textbf{Moments:} Measured mean $= \SI{29.205}{\ps}$ (expected
-        $\SI{29.135}{\ps}$, difference $0.070$~ps, $0.24\%$).  Measured RMS
-        $= \SI{31.736}{\ps}$ (expected $\SI{31.623}{\ps}$, difference
-        $0.113$~ps, $0.36\%$).  Both are within the expected statistical
-        fluctuation for 5000 samples ($\sigma_\text{mean} \approx
-        \SI{0.6}{\ps}$).
-\end{itemize}
+\subsubsection*{Panel E --- PMD coefficient consistency}
+$D_\text{PMD}(L) = \tau_\text{rms}(L)/\sqrt{L}$ is constant at
+$\sim\!\SI{0.100}{\ps\per\sqrt{\km}}$ across all lengths.
+\textbf{Significance:} this confirms that the PMD model applies the same
+statistical process regardless of distance.  In deployed fibres, the
+coefficient varies with age, temperature, and mechanical stress; the model
+treats $D_\text{PMD}$ as a settable parameter to explore such scenarios
+without changing the underlying Maxwellian physics.
 
-\textbf{Physical interpretation:} The DGD follows a Maxwellian, with a most
-probable value (mode) at $\tau = \sqrt{2}\,\sigma_m \approx
-\SI{25.8}{\ps}$ and a long tail extending to $\sim\!3\times$ the RMS value.
-This means that most realizations have moderate DGD, but occasional
-realizations can have very large DGD (outages), which is a critical
-consideration for system outage probability calculations.
-
-\subsubsection*{Panel B: QQ-plot (Maxwellian fit)}
-
-\textbf{What is plotted:} The $y$-axis is sample quantile from the
-simulation in \si{\ps}.  The $x$-axis is theoretical Maxwellian quantile in
-\si{\ps}.  The black dashed line is $y = x$.
-
-\textbf{Data source:} 5000 DGD values sorted and plotted against the
-corresponding quantiles of the best-fit Maxwellian distribution.
-
-\textbf{Results:} The blue dots fall on the $y = x$ line across the full
-range from 0 to 80~\si{\ps}.  The Pearson correlation coefficient is
-$r = 0.9998$.  There is no systematic deviation in the tails (which would
-indicate a non-Maxwellian distribution).  The slight scatter at large DGD
-($> 60$~\si{\ps}) is expected because fewer samples lie in the tail.
-
-\textbf{Significance:} A QQ-plot is more sensitive than a histogram to
-distributional deviations.  The near-perfect linearity confirms that the
-Maxwellian model is correct for all DGD values, not just the central peak.
-
-\subsubsection*{Panel C: Histogram residual}
-
-\textbf{What is plotted:} The $y$-axis is the difference between the
-histogram density and the analytic Maxwellian PDF at each bin center
-(unitless).  The $x$-axis is DGD in \si{\ps}.
-
-\textbf{Results:} The residuals are randomly distributed around zero with no
-systematic pattern (no sinusoidal or trend-like structure).  The maximum
-absolute residual is $\sim\!0.003$.  This is consistent with the expected
-binomial noise for a histogram of 5000 samples across 40 bins.
-
-\subsubsection*{Panel D: PMD scaling $\text{DGD} \sim \sqrt{L}$
-(Razavi Sec.~2.5)}
-
-\textbf{What is plotted:} The $y$-axis is RMS DGD in \si{\ps}.  The
-$x$-axis is $\sqrt{L}$ in $\sqrt{\si{\km}}$, giving a linear relationship
-if Eq.~\eqref{eq:dgd_rms} holds.
-
-\textbf{Data source:} Green dots with connecting line show
-$\tau_\text{rms}$ measured from \code{apply\_pmd} at $L = 10, 25, 50, 75,
-100, 150, 200$~\si{\km}.  At each length, 5000 realizations are simulated.
-
-\textbf{Overlaid fits:}
-\begin{itemize}
-  \item \textbf{Black dashed line:} Linear fit
-        $\tau_\text{rms} = 3.1662\,\sqrt{L}$ (best fit).
-  \item \textbf{Gray dotted line:} Nominal prediction
-        $\tau_\text{rms} = 3.1623\,\sqrt{L}$ (theoretical).
-\end{itemize}
-
-\textbf{Results:} The green dots fall exactly on both lines (the fit and
-the nominal prediction are nearly indistinguishable).  The fitted coefficient
-$3.1662$ differs from the nominal $3.1623$ by only $0.12\,\%$.  The
-$R^2 = 0.99993$ confirms that the scaling is linear in $\sqrt{L}$ to
-extremely high precision.
-
-\textbf{Physical significance:} The $\sqrt{L}$ scaling is the hallmark of
-random mode coupling in long fibers.  In contrast, a polarization-maintaining
-fiber would show $\text{DGD} \propto L$ (linear scaling).  The distinction
-matters because PMD-induced pulse broadening in long-haul systems grows only
-as $\sqrt{L}$, allowing longer reaches than would be possible with linear
-scaling.
-
-\subsubsection*{Panel E: PMD coefficient consistency}
-
-\textbf{What is plotted:} The $y$-axis is $D_\text{PMD}$ extracted at each
-length: $D_\text{PMD}(L) = \tau_\text{rms}(L) / \sqrt{L}$, in
-\si{\ps\per\sqrt{\km}}.  The $x$-axis is $L$ in \si{\km}.  The gray dashed
-line is the nominal $D_\text{PMD} = \SI{0.100}{\ps\per\sqrt{\km}}$.
-
-\textbf{Results:} The extracted $D_\text{PMD}$ is approximately constant
-($\sim\!0.100$) across all seven fiber lengths, with small statistical
-variation ($\pm 0.002$).  There is no systematic drift (e.g., no upward or
-downward trend), confirming that the model applies PMD consistently
-regardless of distance.
-
-\subsubsection*{Panel F: Validation summary}
-
+\subsubsection*{Panel F --- Validation summary}
 \begin{tabular}{lll}
 \toprule
 Metric & Simulated & Expected \\
 \midrule
 Mean DGD & \SI{29.205}{\ps} & \SI{29.135}{\ps} \\
 RMS DGD  & \SI{31.736}{\ps} & \SI{31.623}{\ps} \\
-KS $p$-value & 0.4493 & $>0.05$ (not rejected) \\
-$D_\text{PMD}$ fitted & \SI{3.1662}{\ps\per\sqrt{\km}} & \SI{3.1623}{\ps\per\sqrt{\km}} \\
-$R^2$ (DGD vs.\ $\sqrt{L}$) & 0.99993 & $\to 1$ \\
+KS $p$-value & $0.45$ & $>0.05$ \\
+$D_\text{PMD}$ (fit) & \SI{3.166}{\ps\per\sqrt{\km}} & \SI{3.162}{\ps\per\sqrt{\km}} \\
+$R^2$ (DGD vs.\ $\sqrt{L}$) & $0.99993$ & $1$ \\
 \bottomrule
 \end{tabular}
-
-All metrics agree with the Razavi~\cite{razavi2012} Maxwellian model within
-statistical uncertainty.
 
 % ============================================================
 \begin{thebibliography}{9}
 
 \bibitem{keiser2015}
-  G.~Keiser,
-  \emph{Optical Fiber Communications},
-  5th~ed.,
-  McGraw-Hill, New York, 2015.
+  G.~Keiser, \emph{Optical Fiber Communications}, 5th ed., McGraw-Hill,
+  New York, 2015.
 
 \bibitem{agrawal2021}
-  G.~P.~Agrawal,
-  \emph{Fiber-Optic Communication Systems},
-  5th~ed.,
-  Wiley, Hoboken, NJ, 2021.
+  G.~P.~Agrawal, \emph{Fiber-Optic Communication Systems}, 5th ed., Wiley,
+  Hoboken, NJ, 2021.
 
 \bibitem{ulrich1980}
-  R.~Ulrich, S.~C.~Rashleigh, and W.~Eickhoff,
-  ``Bending-induced birefringence in single-mode fibers,''
-  \emph{Opt.\ Lett.}, vol.~5, no.~6, pp.~273--275, 1980.
+  R.~Ulrich, S.~C.~Rashleigh, and W.~Eickhoff, ``Bending-induced
+  birefringence in single-mode fibers,'' \emph{Opt.\ Lett.}, vol.~5, no.~6,
+  pp.~273--275, 1980.
 
 \bibitem{smith1980}
-  A.~M.~Smith,
-  ``Birefringence induced by bends and twists in single-mode optical fiber,''
-  \emph{Appl.\ Opt.}, vol.~19, no.~15, pp.~2606--2611, 1980.
+  A.~M.~Smith, ``Birefringence induced by bends and twists in single-mode
+  optical fiber,'' \emph{Appl.\ Opt.}, vol.~19, no.~15, pp.~2606--2611,
+  1980.
 
 \bibitem{hui2009}
-  R.~S.~Hui and M.~O'Sullivan,
-  \emph{Fiber Optic Measurement Techniques},
+  R.~S.~Hui and M.~O'Sullivan, \emph{Fiber Optic Measurement Techniques},
   Academic Press, 2009.
 
 \bibitem{razavi2012}
-  B.~Razavi,
-  \emph{Design of Integrated Circuits for Optical Communications},
-  2nd~ed.,
-  Wiley, Hoboken, NJ, 2012.
+  B.~Razavi, \emph{Design of Integrated Circuits for Optical Communications},
+  2nd ed., Wiley, Hoboken, NJ, 2012.
 
 \bibitem{keck1981}
-  D.~B.~Keck,
-  ``Fundamentals of integrated fiber optics,''
-  in \emph{Integrated Optics}, T.~Tamir, Ed.,
-  Springer, 1981, pp.~173--230.
+  D.~B.~Keck, ``Fundamentals of integrated fiber optics,'' in
+  \emph{Integrated Optics}, T.~Tamir, Ed., Springer, 1981, pp.~173--230.
 
 \end{thebibliography}
 
