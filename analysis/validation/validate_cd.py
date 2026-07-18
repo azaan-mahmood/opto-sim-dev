@@ -86,7 +86,7 @@ for i, zf in enumerate(z_test):
     else:
         E_out = apply_cd(E_in.copy(), dt=DT, L=L_km*1000, wavelength=WAVELENGTH)
     I = np.abs(E_out[:, 0])**2
-    ax1.plot(T*1e12, I/I.max(), color=colors_A[i], lw=1.5, label=labels_A[i])
+    ax1.plot(t_arr*1e12, I/I.max(), color=colors_A[i], lw=1.5, label=labels_A[i])
 ax1.set(xlabel='Time (ps)', ylabel='Normalized intensity',
         title='A: Gaussian pulse broadening (Agrawal [6] Fig 2.6)')
 ax1.legend(fontsize=7, loc='upper left')
