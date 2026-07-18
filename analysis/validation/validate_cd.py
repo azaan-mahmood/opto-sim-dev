@@ -131,17 +131,20 @@ H_analytic = np.exp(-1j * beta2 * omega**2 * (2*LD) / 2)  # z = 2*LD
 E_f_in = np.fft.fft(E_in[:, 0])
 E_f_out = np.fft.fft(apply_cd(E_in.copy(), dt=DT, L=2*LD, wavelength=WAVELENGTH)[:, 0])
 H_sim = np.where(np.abs(E_f_in) > 1e-15, E_f_out / E_f_in, 0)
-f_ps = omega / (2*np.pi*1e12)
+f_hz = omega / (2*np.pi)
+
+# Limit to Nyquist (f < 1/(2*DT)) and positive frequencies only
+f_nyquist = 1.0 / (2 * DT)
+idx_pos = (omega > 0) & (f_hz < f_nyquist)
+phase_ana = np.unwrap(np.angle(H_analytic[idx_pos]))
+phase_sim = np.unwrap(np.angle(H_sim[idx_pos]))
+f_THz = f_hz[idx_pos] * 1e-12
 
 ax4 = fig.add_subplot(gs[1, 0])
-idx_pos = omega > 0
-ax4.plot(f_ps[idx_pos], np.angle(H_analytic[idx_pos]), '-k', lw=1.5, alpha=0.6,
-         label='Analytic phase')
-ax4.plot(f_ps[idx_pos], np.angle(H_sim[idx_pos]), ':', c='C3', lw=1,
-         label='apply_cd phase')
-ax4.set(xlabel='Frequency (THz)', ylabel='∠H(ω) (rad)',
-        title='D: CD transfer function phase\n(Agrawal [6] Eq 2.4.11, z = 2L$_D$)',
-        xlim=(0, 4))
+ax4.plot(f_THz, phase_ana, '-k', lw=1.5, alpha=0.6, label='Analytic (unwrapped)')
+ax4.plot(f_THz, phase_sim, ':', c='C3', lw=1, label='apply_cd (unwrapped)')
+ax4.set(xlabel='Frequency (THz)', ylabel='Unwrapped phase (rad)',
+        title='D: CD transfer function phase\n(Agrawal [6] Eq 2.4.11, z = 2L$_D$)')
 ax4.legend(fontsize=8)
 ax4.grid(True, alpha=0.25)
 
