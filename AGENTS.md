@@ -54,7 +54,12 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `cable()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
-- **Birefringence**: Symmetric Jones matrix `diag(exp(±j·Δβ·L/2))` where `Δβ = 2π·Δn/λ` (Agrawal [6] Eq 4.1.2). Δn depends on temperature and bend radius (Ulrich [7] Eq 1). Beat length `L_B = λ/Δn` distinguishes SM (long L_B) vs PM (short L_B) fibre.
+- **Birefringence**: Random-axis SU(2) rotation model via `_random_su2_rotation()`.
+  - Jones matrix: `R(θ, n̂) = cos(θ/2)·I + j·sin(θ/2)·(n̂·σ)` where `n̂` is a uniformly random unit vector on the Poincaré sphere (new axis per bit).
+  - Rotation angle: `θ = min(π, √(L/L_char)·π/2)` — diffusive random walk (Menyuk & Wai 1994, Wai & Menyuk 1996).
+  - Characteristic length: `L_char = L₀·(Δn₀/|Δn|)²`, `L₀ = 75 km` at base Δn₀ = 1.2e-7.
+  - Δn depends on temperature (`T_coeff = -5e-7/°C`) and bend radius (`Δn_bend = 0.135·(r_fiber/R)²`, Ulrich [7]).
+  - At long distances material Δn (~1.2e-7) dominates, giving L_char ≈ 75 km → strong scrambling.
 - **Chromatic dispersion** (disabled by default): FFT-based, `H(Ω) = exp(-j·β₂·Ω²·L/2)` applied to both Ex and Ey (Agrawal [6] Eq 2.4.11). Requires `dt` (sampling interval) and assumes the field is the complex envelope.
 - **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
 - Parameters: `fiber_length (km)`, `E`, `dt` (required for dispersion), `wavelength` (default 1550e-9), `dispersion`, `attenuation_factor`, `temperature`, `bend_radius`, `pm_dispersion`.
@@ -97,10 +102,10 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - Also removed `caption` package (was only needed for `\captionof`, no longer used).
 - `journal_paper_outline.pdf` now compiles at 13 pages with xelatex.
 
-### Fiber Birefringence (FIXED)
-- Bend model now uses `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7], Smith [8], Shibata [9])
-- `bend_radius` parameter (float, metres) replaces old `num_bends` (int)
-- Validated: 0.0000% error against the Ulrich formula
+### Fiber Birefringence (SUPERSEDED — now random-axis model)
+- Old symmetric Jones matrix `diag(exp(±j·Δβ·L/2))` replaced by random-axis SU(2) rotation
+- Bend model `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7]) still used to modulate Δn for L_char
+- `bend_radius` parameter preserved; new `temperature` sensitivity via `T_coeff = -5e-7/°C`
 
 ### BB84 Scripts
 - `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → cable (dispersion flag) → PBS → APD
@@ -113,7 +118,9 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `analysis/val_cd/val_cd--seed42.png`: CD validation, Agrawal Fig 2.6 (0.0000% error)
 - `analysis/val_pmd/val_pmd_dgd--seed42.png`: PMD DGD histogram vs Maxwellian (Razavi Fig 2.11)
 - `analysis/val_att/val_att--seed42.png`: Attenuation vs distance SMF-28 (0.0000% error)
-- `analysis/val_biref/val_biref--seed42.png`: Birefringence L_B vs R (Yuan Fig 1)
+- `analysis/val_biref/val_biref--seed42.png`: Birefringence L_B vs R (Yuan Fig 1) [old model]
+- `analysis/val_birefringence/val_birefringence--seed42.png`: Random-axis birefringence validation (6 panels)
+- `val_system/val_system--seed42.png`: System-level demo: QBER vs distance 0–1000 km, 250 MHz bit rate
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
 - `analysis/qber_vs_bitrate.png`: 0% at 215 MHz → 35% at 10 GHz
 - `analysis/qber_vs_distance_dispersion.png`: QBER climb 0→42% at 10→200 km with dispersion (5 ps pulse)
@@ -167,7 +174,10 @@ opto-sim-dev/
 │   ├── val_cd/                # CD outputs (seed-tagged PNG+CSV)
 │   ├── val_pmd/               # PMD outputs
 │   ├── val_att/               # Attenuation outputs
-│   ├── val_biref/             # Birefringence outputs
+│   ├── val_biref/             # Birefringence L_B vs R (old model)
+│   ├── val_birefringence/     # Random-axis birefringence validation (6-panel)
+│   ├── val_mzm/               # MZM validation outputs
+│   ├── val_system.py          # System-level demo
 │   ├── laser_characterization.py   # Active: CWLaser dashboard (Agg, headless)
 │   ├── qber_vs_distance_dispersion.py  # Dispersion QBER sweep
 │   ├── *.png
@@ -211,12 +221,21 @@ opto-sim-dev/
 ├── CHANGELOG.md
 ├── pyproject.toml
 ├── requirements.txt
+├── val_system/               # System demo outputs (PNG+CSV)
 └── README.md
 ```
 
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `src/channel/fiber.py` | New `_random_su2_rotation()` + updated `apply_birefringence()` — random-axis SU(2) rotation, diffusive angle, per-bit varying axis |
+| `analysis/validation/validate_birefringence.py` | Rewritten for random model: 6 self-consistency checks (power conservation, zero-length identity, temp/wavelength dependence, seeded reproducibility, polarization variance) |
+| `analysis/val_system.py` | NEW: system-level demo with 0–1000 km sweep, 250 MHz bit rate, 6 analysis panels |
+| `paperwork/manuscript.tex` | Updated Section 3.3 (Birefringence), Section 4 (Validation), Section 5 (System Demo); 3 new refs; 21 pages |
+| `val_system/val_system--seed42.png` | Demo figure with full 1000 km sweep |
+| `analysis/val_birefringence/val_birefringence--seed42.png` | Updated 6-panel validation figure |
+| `AGENTS.md` | Updated birefringence model description, known issues, generated graphs, files changed |
+| `CHANGELOG.md` | Added random birefringence + system demo + manuscript entry |
 | `journal_paper_outline.tex` | Removed `mdframed` + `caption` packages; replaced abstract box with `\colorbox{highlightblue!5}{...}`. Compiles to 13 pages (was failing with "Not in outer par mode"). |
 | `AGENTS.md` | Updated files changed, known issues. |
 | `CHANGELOG.md` | Added mdframed fix + journal outline compilation entry. |

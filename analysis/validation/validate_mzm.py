@@ -53,11 +53,23 @@ idx_quad = np.argmin(np.abs(V_scan - V_pi / 2))
 # ----------------------------------------------------------------
 E_pp_ph = mzm_pp.modulate(tile_field(field_ey, N_scan), V_scan)
 E_sd_ph = mzm_sd.modulate(tile_field(field_ey, N_scan), V_scan)
-phi_pp = np.angle(E_pp_ph[:, 1])
-phi_sd = np.unwrap(np.angle(E_sd_ph[:, 1]))
 
-# Push-pull analytic: phase = 0 (cos is real, no chirp)
-# Single-drive analytic: phase = pi * V / (2 * V_pi)
+# Chirp phase: the exp(j*pi*V/(2*V_pi)) part only.
+# E_out for single-drive = cos(pi*V/(2*V_pi)) * exp(j*pi*V/(2*V_pi))
+# np.angle(E_out) mixes the cosine sign with the chirp.
+# Remove the cosine sign: arg(cos) = 0 when cos > 0, pi when cos < 0.
+phi_sd_raw = np.angle(E_sd_ph[:, 1])
+cos_val = np.cos(np.pi * V_scan / (2 * V_pi))
+cos_sign = np.where(cos_val < 0, np.pi, 0.0)
+phi_sd_chirp = np.unwrap(phi_sd_raw - cos_sign)
+
+# Mask null crossings where amplitude is near zero (phase undefined)
+threshold = 0.01
+amp_sd = np.abs(E_sd_ph[:, 1])
+mask_sd = amp_sd > threshold * np.max(amp_sd)
+
+# Push-pull analytic: zero chirp (cos is real, no frequency deviation)
+# Single-drive analytic: chirp = pi * V / (2 * V_pi)
 theory_sd_phase = np.pi * V_scan / (2 * V_pi)
 
 # ----------------------------------------------------------------
@@ -89,7 +101,7 @@ P_il_theory = []
 for il in il_vals_db:
     mzm_il = MZM(mode='push-pull', insertion_loss_db=il)
     E = mzm_il.modulate(field_ey, 0.0)
-    P_il_meas.append(np.mean(np.abs(E)**2))
+    P_il_meas.append(np.sum(np.abs(E)**2))
     P_il_theory.append(10.0 ** (-il / 10.0) * 1.0)
 
 # ----------------------------------------------------------------
@@ -127,10 +139,13 @@ ax1.plot(V_scan / V_pi, theory_pp, '--k', lw=1.5, alpha=0.5, label=r'$\cos^2(\pi
 ax1.plot(V_scan / V_pi, P_sd, ':', c='C1', lw=1.5, label='Single-drive (sim)')
 ax1.axvline(0.5, c='gray', ls=':', lw=0.6, alpha=0.5)
 ax1.axvline(1.0, c='gray', ls=':', lw=0.6, alpha=0.5)
-ax1.annotate('Quadrature\n(V$_{\\pi}$/2)', xy=(0.5, 0.5), fontsize=7,
+ax1.annotate('Quadrature\n(V$_{\\pi}$/2)\nP = 0.5', xy=(0.5, 0.5), fontsize=7,
              ha='center', va='bottom')
-ax1.annotate('Null\n(V$_{\\pi}$)', xy=(1.0, 0.05), fontsize=7,
+ax1.annotate('Null\n(V$_{\\pi}$)\nP = 0', xy=(1.0, 0.05), fontsize=7,
              ha='center', va='top')
+ax1.annotate('Peak\nP = 1.0', xy=(0.0, 1.0), fontsize=7,
+             ha='left', va='bottom', xytext=(0.15, 0.92),
+             arrowprops=dict(arrowstyle='->', color='gray', lw=0.8))
 ax1.set(xlabel=r'$V / V_\pi$', ylabel='Output power (a.u.)',
         title='A: Transfer function\nAgrawal [1] Sec 4.2')
 ax1.legend(fontsize=7)
@@ -138,11 +153,12 @@ ax1.grid(True, alpha=0.25)
 
 # --- Panel B: Phase response (chirp) ---
 ax2 = fig.add_subplot(gs[0, 1])
-ax2.plot(V_scan / V_pi, phi_pp, '-', c='C0', lw=1.5, label='Push-pull (sim)')
-ax2.plot(V_scan / V_pi, phi_sd, '-', c='C1', lw=1.5, label='Single-drive (sim)')
+ax2.axhline(0, c='C0', lw=1.5, label='Push-pull (theory)')
+ax2.plot(V_scan[mask_sd] / V_pi, phi_sd_chirp[mask_sd], '-', c='C1', lw=1.5,
+         label='Single-drive (sim)')
 ax2.plot(V_scan / V_pi, theory_sd_phase, '--k', lw=1.5, alpha=0.5,
          label=r'$\pi V / 2V_\pi$ (theory)')
-ax2.set(xlabel=r'$V / V_\pi$', ylabel='Phase (rad)',
+ax2.set(xlabel=r'$V / V_\pi$', ylabel='Chirp phase (rad)',
         title='B: Phase response (chirp)\nKoyama and Iga [2]')
 ax2.legend(fontsize=7)
 ax2.grid(True, alpha=0.25)
@@ -183,12 +199,13 @@ ax6 = fig.add_subplot(gs[1, 2])
 ax6.axis('off')
 summary = [
     ['Transfer function', r'$\cos^2(\pi V/2V_\pi)$ verified'],
-    ['Null transmission', f'V = V_pi: P_out < 1e-10'],
-    ['Quadrature bias', f'V = V_pi/2: 50% transmission'],
-    ['Chirp (push-pull)', 'Zero phase shift (ideal)'],
-    ['Chirp (single-drive)', 'phi = pi V/2V_pi verified'],
+    ['Peak (V=0)', r'$P_\mathrm{out} = 1.0$'],
+    ['Quadrature (V=V_pi/2)', r'$P_\mathrm{out} = 0.5$'],
+    ['Null (V=V_pi)', r'$P_\mathrm{out} = 0$'],
+    ['Chirp (push-pull)', 'Zero (ideal)'],
+    ['Chirp (single-drive)', r'$\phi = \pi V/2V_\pi$ verified'],
     ['ER degradation', '10 dB ER: null depth = ' + f'{er_null[2]:.3f}'],
-    ['Insertion loss', 'Scales as 10^{-IL/10}'],
+    ['Insertion loss', r'Scales as $10^{-IL/10}$'],
     ['Crystal cut', 'X-cut modulates Ey; Y-cut modulates Ex'],
 ]
 table = ax6.table(cellText=summary, colLabels=['Parameter', 'Value'],
@@ -206,11 +223,11 @@ fig.suptitle('MZM Validation -- Agrawal [1] Sec 4.2, Koyama and Iga [2], Weis an
              fontsize=13, fontweight='bold', y=0.97)
 fig.savefig(os.path.join(OUT, f'val_mzm--seed{SEED}.png'), dpi=200, bbox_inches='tight')
 print(f"Saved: val_mzm--seed{SEED}.png")
-csv_data = np.column_stack([V_scan, P_pp, theory_pp, P_sd,
-                            phi_pp, phi_sd, theory_sd_phase])
+csv_data = np.column_stack([V_scan / V_pi, P_pp, theory_pp, P_sd,
+                            np.zeros_like(V_scan), phi_sd_chirp, theory_sd_phase])
 np.savetxt(os.path.join(OUT, f'val_mzm--seed{SEED}.csv'),
            csv_data, delimiter=',',
-           header='V_over_Vpi,P_pushpull,P_theory,P_singledrive,phi_pp,phi_sd,phi_sd_theory',
+           header='V_over_Vpi,P_pushpull,P_theory,P_singledrive,phi_pp(chirp),phi_sd(chirp),phi_sd_theory',
            comments='')
 print(f"Saved: val_mzm--seed{SEED}.csv")
 plt.close(fig)

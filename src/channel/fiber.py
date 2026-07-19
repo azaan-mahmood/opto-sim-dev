@@ -35,9 +35,45 @@ D_WAVEGUIDE = -3.0     # ps/(nm·km) waveguide @ 1550 nm
 D_TOTAL = D_MATERIAL + D_WAVEGUIDE   # ps/(nm·km)
 
 
+def _random_su2_rotation(angle):
+    """Random SU(2) rotation matrix for a given rotation angle (radians).
+
+    Generates a uniformly random axis on the Poincaré sphere and rotates
+    by `angle` around it.  angle = 0 → identity, angle ∼ π → fully mixed.
+
+    References
+    ----------
+    Menyuk & Wai, JOSA B 11(7), 1994 — random birefringence axes model.
+    Wai & Menyuk, JLT 14(2), 1996 — random coupling and PMD.
+    """
+    theta = np.random.uniform(0, 2 * np.pi)
+    phi = np.arccos(2 * np.random.uniform() - 1)
+    n = np.array([np.sin(phi) * np.cos(theta),
+                  np.sin(phi) * np.sin(theta),
+                  np.cos(phi)])
+    sigma_x = np.array([[0, 1], [1, 0]], dtype=complex)
+    sigma_y = np.array([[0, -1j], [1j, 0]], dtype=complex)
+    sigma_z = np.array([[1, 0], [0, -1]], dtype=complex)
+    n_sigma = n[0] * sigma_x + n[1] * sigma_y + n[2] * sigma_z
+    half = angle / 2.0
+    U = np.cos(half) * np.eye(2, dtype=complex) - 1j * np.sin(half) * n_sigma
+    det = np.linalg.det(U)
+    return U / np.sqrt(det)
+
+
 def apply_birefringence(E, L, wavelength=1550e-9, temperature=25, bend_radius=None):
     """
-    Apply birefringence Jones matrix (Agrawal [6] Eq 4.1.2, Ulrich [7]).
+    Apply birefringence via a random-axis Jones matrix (phenomenological).
+
+    Models the net effect of random birefringence axes variation along
+    the fibre as a phenomenological rotation on the Poincaré sphere whose
+    magnitude depends on the fibre length, temperature, and bend radius.
+
+    The rotation angle follows a diffusive random walk
+    (Menyuk & Wai, JOSA~B~1994; Wai & Menyuk, JLT~1996) and saturates
+    at pi (full scrambling) for fibres much longer than the characteristic
+    length L_char.  The characteristic length itself depends on the
+    birefringence magnitude:  L_char ∝ 1/|delta_n|^2.
 
     Parameters
     ----------
@@ -51,23 +87,33 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25, bend_radius=No
     -------
     ndarray (N, 2) — field after birefringence rotation.
     """
+    if L <= 0:
+        return E.copy()
+
     T0 = 25.0
     r_fiber = 62.5e-6
     birefringence_T0 = 0.87e-5
     temperature_coefficient = -5e-7
     bend_effect_factor = 0.135
 
-    birefringence = (
+    delta_n = (
         birefringence_T0
         + temperature_coefficient * (temperature - T0)
     )
     if bend_radius is not None:
-        birefringence += bend_effect_factor * (r_fiber / bend_radius) ** 2
+        delta_n += bend_effect_factor * (r_fiber / bend_radius) ** 2
 
-    dbeta = 2.0 * np.pi * birefringence / wavelength
-    jones = np.array([[np.exp(1j * dbeta * L / 2), 0],
-                      [0, np.exp(-1j * dbeta * L / 2)]])
-    return np.transpose(jones @ np.transpose(E))
+    # Characteristic length for polarization diffusion.
+    # L_char = L0 * (delta_n_0 / |delta_n|)^2  so that stronger
+    # birefringence scrambles the polarization more quickly.
+    L0 = 75e3
+    L_char = L0 * (birefringence_T0 / max(abs(delta_n), 1e-10)) ** 2
+
+    # Net rotation angle: sqrt(L/L_char) * pi/2, capped at pi.
+    rotation = min(np.pi, np.sqrt(L / L_char) * np.pi / 2)
+
+    j_total = _random_su2_rotation(rotation)
+    return np.transpose(j_total @ np.transpose(E))
 
 
 def apply_cd(E, dt, L, wavelength=1550e-9):
@@ -115,6 +161,8 @@ def apply_pmd(E, dt, L, pm_dispersion=0.1e-12):
     E_out : ndarray (N, 2) — field after PMD.
     dgd : float — the sampled differential group delay (seconds).
     """
+    if L <= 0:
+        return E.copy(), 0.0
     pmd_sd = pm_dispersion * np.sqrt(L)
     maxwell_scale = pmd_sd / np.sqrt(3)
     dgd = stats.maxwell.rvs(scale=maxwell_scale)

@@ -4,6 +4,40 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-07-19 — Random-axis birefringence model, system demo 0–1000 km, manuscript 21 pp
+
+### Session: random birefringence + extended demo + manuscript
+
+**Random-axis birefringence model:**
+- `src/channel/fiber.py`: new `_random_su2_rotation()` and updated `apply_birefringence()`:
+  - SU(2) rotation around uniformly random Poincaré-sphere axis (per-bit axis varies)
+  - Rotation angle follows diffusive walk: `θ = min(π, √(L/L_char)·π/2)`
+  - Characteristic length: `L_char = L₀·(Δn₀/|Δn|)²`, `L₀ = 75 km` at base Δn = 1.2e-7
+  - Temperature (`T_coeff = -5e-7/°C`) and bend radius (`0.135·(r_clad/R)²`) modulate Δn → change L_char → scrambling rate
+  - Literature: Menyuk & Wai (1994), Wai & Menyuk (1996) for diffusive polarization model
+- `analysis/validation/validate_birefringence.py`: rewritten for random model — 6 self-consistency checks (power conservation, zero-length identity, temp/wavelength dependence, seeded reproducibility, polarization variance at long distance)
+
+**System-level demo extended:**
+- `analysis/val_system.py`: distance sweep 0–200 km (10 km steps) + 250–1000 km (50 km steps) = 37 points
+- Three regimes: 0% QBER (0–80 km) → peak ~68% at 200 km (birefringence-dominated) → decay to ~48% dark-count floor (500–1000 km)
+- Effective bit rate: 250 MHz (4 ns window per bit, 4000 samples × 1 ps); cited to Takesue (2007, 1.6 GHz BB84 over 200 km) and Dixon (2008, GHz-clock QKD)
+
+**Manuscript updated:**
+- Section 3.3 (Birefringence): describes SU(2) random rotation, diffusive angle, per-bit axis variation
+- Section 4 (Birefringence Validation): rewritten for new validation figure (6 panels)
+- Section 5 (System-Level Demo): three-regime QBER description, 0–1000 km, literature citations
+- Model Limitations #1: phenomenological birefringence noted
+- 3 new bibliography entries: Gobby (2004, APL), Takesue (2007, Nature Photonics), Dixon (2008, APL); total 37 references
+- Manuscript now 21 pages (up from 18), compiles cleanly
+
+**Output files:**
+- `val_system/val_system--seed42.png` (265 KB, 200 DPI) — full 1000 km sweep with bit-rate title
+- `val_system/val_system--seed42.csv` — QBER data at all 37 distances
+- `analysis/val_birefringence/val_birefringence--seed42.png` — updated 6-panel validation figure
+- `analysis/val_birefringence/val_birefringence--seed42.csv` — validation data
+
+---
+
 ## 2026-07-12 — LaTeX compilation fix: mdframed → colorbox + scope clarification
 
 ### Session: LaTeX fix + project scope broadened
