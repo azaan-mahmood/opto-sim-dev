@@ -111,25 +111,6 @@ ax5.legend(fontsize=8)
 ax5.grid(True, alpha=0.25)
 ax5.set_ylim(ALPHA_NOMINAL - 0.01*ALPHA_NOMINAL, ALPHA_NOMINAL + 0.01*ALPHA_NOMINAL)
 
-# --- Panel F: tabular summary ---
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-# Instead of a table, show a concise summary of the validation result
-test_points = [0, 20, 50, 100, 150, 200]
-row_data = []
-for L in test_points:
-    idx = np.argmin(np.abs(distances_km - L))
-    row_data.append([f'{L}', f'{P_out_meas[idx]:.8e}',
-                     f'{P_out_theory[idx]:.8e}',
-                     f'{errors_pct[idx]:.6e}'])
-col_labels = ['L (km)', 'P_meas (a.u.)', 'P_theory (a.u.)', 'Error (%)']
-table = ax6.table(cellText=row_data, colLabels=col_labels,
-                  loc='center', cellLoc='center', fontsize=7)
-table.auto_set_column_width(col=list(range(len(col_labels))))
-table.auto_set_font_size(False)
-table.set_fontsize(7)
-ax6.set_title('F: Validation summary', fontsize=10, pad=10)
-
 fig.suptitle('Fiber Attenuation - Validation vs Keiser [1] Eq 3.6',
              fontsize=13, fontweight='bold', y=0.98)
 fig.savefig(os.path.join(OUT, f'val_attenuation--seed{SEED}.png'), dpi=200, bbox_inches='tight')
@@ -143,4 +124,17 @@ np.savetxt(os.path.join(OUT, csv_name),
            header='distance_km,power_meas,power_theory,error_pct,loss_dB,loss_fit_dB',
            comments='')
 print(f"Saved: {csv_name}")
+
+import csv
+table_csv = os.path.join(OUT, f'val_attenuation--seed{SEED}_table.csv')
+test_points = [0, 20, 50, 100, 150, 200]
+with open(table_csv, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['L (km)', 'P_meas (a.u.)', 'P_theory (a.u.)', 'Error (%)'])
+    for L in test_points:
+        idx = np.argmin(np.abs(distances_km - L))
+        writer.writerow([f'{L}', f'{P_out_meas[idx]:.8e}',
+                         f'{P_out_theory[idx]:.8e}',
+                         f'{errors_pct[idx]:.6e}'])
+print(f"Saved: val_attenuation--seed{SEED}_table.csv")
 plt.close(fig)

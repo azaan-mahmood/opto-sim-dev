@@ -172,26 +172,6 @@ ax5.set(xlabel='Fibre length (km)',
 ax5.legend(fontsize=8)
 ax5.grid(True, alpha=0.25)
 
-# --- Panel F: tabular summary ---
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-summary = [
-    ['Parameter', 'Value', 'Expected'],
-    ['Mean DGD (ps)', f'{mean_dgd:.3f}', f'{expected_mean:.3f}'],
-    ['RMS DGD (ps)', f'{rms_dgd:.3f}', f'{expected_rms:.3f}'],
-    ['KS D-stat', f'{ks.statistic:.5f}', '< 0.05 typical'],
-    ['KS p-value', f'{ks.pvalue:.4f}', '> 0.05 (not rejected)'],
-    ['PMD coeff (ps/√km)', f'{slope_ps_per_sqrtkm:.4f}',
-     f'{nominal_ps_per_sqrtkm:.4f}'],
-    ['DGD∝√L R²', f'{r2_pmd:.6f}', '≈ 1.0'],
-]
-table = ax6.table(cellText=summary[1:], colLabels=summary[0],
-                  loc='center', cellLoc='center', fontsize=7)
-table.auto_set_column_width(col=list(range(3)))
-table.auto_set_font_size(False)
-table.set_fontsize(7)
-ax6.set_title('F: Validation summary', fontsize=10, pad=10)
-
 fig.suptitle('Polarization Mode Dispersion - Validation vs Razavi [5] Sec 2.5',
              fontsize=13, fontweight='bold', y=0.97)
 fig.savefig(os.path.join(OUT, f'val_pmd_dgd--seed{SEED}.png'), dpi=200, bbox_inches='tight')
@@ -201,4 +181,18 @@ csv_name = f'val_pmd_dgd--seed{SEED}.csv'
 np.savetxt(os.path.join(OUT, csv_name), dgds_ps, delimiter=',',
            header='dgd_ps_from_apply_pmd', comments='')
 print(f"Saved: {csv_name}")
+
+import csv
+table_csv = os.path.join(OUT, f'val_pmd--seed{SEED}_table.csv')
+with open(table_csv, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['Parameter', 'Value', 'Expected'])
+    writer.writerow(['Mean DGD (ps)', f'{mean_dgd:.3f}', f'{expected_mean:.3f}'])
+    writer.writerow(['RMS DGD (ps)', f'{rms_dgd:.3f}', f'{expected_rms:.3f}'])
+    writer.writerow(['KS D-stat', f'{ks.statistic:.5f}', '< 0.05 typical'])
+    writer.writerow(['KS p-value', f'{ks.pvalue:.4f}', '> 0.05 (not rejected)'])
+    writer.writerow(['PMD coeff (ps/sqrt(km))', f'{slope_ps_per_sqrtkm:.4f}',
+                     f'{nominal_ps_per_sqrtkm:.4f}'])
+    writer.writerow(['DGD sqrt(L) R2', f'{r2_pmd:.6f}', '~ 1.0'])
+print(f"Saved: val_pmd--seed{SEED}_table.csv")
 plt.close(fig)

@@ -194,31 +194,6 @@ ax5.set(xlabel=r'$V / V_\pi$', ylabel='Power (a.u.)',
 ax5.legend(fontsize=7)
 ax5.grid(True, alpha=0.25)
 
-# --- Panel F: Validation summary ---
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-summary = [
-    ['Transfer function', r'$\cos^2(\pi V/2V_\pi)$ verified'],
-    ['Peak (V=0)', r'$P_\mathrm{out} = 1.0$'],
-    ['Quadrature (V=V_pi/2)', r'$P_\mathrm{out} = 0.5$'],
-    ['Null (V=V_pi)', r'$P_\mathrm{out} = 0$'],
-    ['Chirp (push-pull)', 'Zero (ideal)'],
-    ['Chirp (single-drive)', r'$\phi = \pi V/2V_\pi$ verified'],
-    ['ER degradation', '10 dB ER: null depth = ' + f'{er_null[2]:.3f}'],
-    ['Insertion loss', r'Scales as $10^{-IL/10}$'],
-    ['Crystal cut', 'X-cut modulates Ey; Y-cut modulates Ex'],
-]
-table = ax6.table(cellText=summary, colLabels=['Parameter', 'Value'],
-                  loc='center', cellLoc='left', fontsize=7)
-table.auto_set_column_width(col=list(range(2)))
-table.auto_set_font_size(False)
-table.set_fontsize(7)
-for (row, col), cell in table.get_celld().items():
-    if row == 0:
-        cell.set_facecolor('#40466e')
-        cell.set_text_props(color='w', fontweight='bold')
-ax6.set_title('F: Validation summary', fontsize=10, pad=10)
-
 fig.suptitle('MZM Validation -- Agrawal [1] Sec 4.2, Koyama and Iga [2], Weis and Gaylord [3]',
              fontsize=13, fontweight='bold', y=0.97)
 fig.savefig(os.path.join(OUT, f'val_mzm--seed{SEED}.png'), dpi=200, bbox_inches='tight')
@@ -230,4 +205,20 @@ np.savetxt(os.path.join(OUT, f'val_mzm--seed{SEED}.csv'),
            header='V_over_Vpi,P_pushpull,P_theory,P_singledrive,phi_pp(chirp),phi_sd(chirp),phi_sd_theory',
            comments='')
 print(f"Saved: val_mzm--seed{SEED}.csv")
+
+import csv
+table_csv = os.path.join(OUT, f'val_mzm--seed{SEED}_table.csv')
+with open(table_csv, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['Parameter', 'Value'])
+    writer.writerow(['Transfer function', 'cos^2(pi*V/(2*V_pi)) verified'])
+    writer.writerow(['Peak (V=0)', 'P_out = 1.0'])
+    writer.writerow(['Quadrature (V=V_pi/2)', 'P_out = 0.5'])
+    writer.writerow(['Null (V=V_pi)', 'P_out = 0'])
+    writer.writerow(['Chirp (push-pull)', 'Zero (ideal)'])
+    writer.writerow(['Chirp (single-drive)', 'phi = pi*V/(2*V_pi) verified'])
+    writer.writerow(['ER degradation', f'10 dB ER: null depth = {er_null[2]:.3f}'])
+    writer.writerow(['Insertion loss', 'Scales as 10^(-IL/10)'])
+    writer.writerow(['Crystal cut', 'X-cut modulates Ey; Y-cut modulates Ex'])
+print(f"Saved: val_mzm--seed{SEED}_table.csv")
 plt.close(fig)

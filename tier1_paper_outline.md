@@ -6,12 +6,14 @@ Quantum Key Distribution Simulation**
 
 Authors: Azaan Mahmood, [co-author(s)] — [affiliation]
 
-Target venue: **OFC** (4-page limit) or **CLEO** (JTuA, 3 pages).
-The paper needs 4 figures (one per impairment).
+Target venue: **Journal paper** (not conference).
+Primary: SoftwareX (open-source software + validation).
+Alternatives: Optics Express, Journal of Lightwave Technology.
+6-panel validation figures per impairment; ~10–15 pages.
 
 ---
 
-Abstract (100–150 words)
+Abstract (150–250 words)
 ------------------------
 We present a validated physical-layer fiber channel model for QKD
 simulation.  The complex-envelope electric field is propagated through
@@ -55,9 +57,9 @@ impairment is separately validated against literature data.
 polarisation and optical power: `mean(|E|^2)` = power in Watts,
 calibrated once at the laser output.
 
-----------------------  NEW PAGE (OFC page 2) -----------------------
+----------------------  SECTION 2 -----------------------
 
-2. Fiber Model (1 page)
+2. Fiber Model
 ------------------------
 
 Each impairment is applied sequentially to the complex-envelope field:
@@ -155,9 +157,9 @@ Each impairment is applied sequentially to the complex-envelope field:
 | Attenuation   | Keiser Eq 3.6     | P(L)/P(0)       | 0.0000 % err  |
 | Birefringence | Ulrich Eq 1       | slope dn_bend   | 0.0000 % err  |
 
-----------------------  NEW PAGE (OFC page 3) -----------------------
+----------------------  SECTION 4 -----------------------
 
-4. Literature Cross-Check (0.5 page)
+4. Literature Cross-Check
 -------------------------------------
 
 Every equation in the model is cited to a specific literature source.
@@ -214,12 +216,20 @@ outputs), and ready for Tier-2 studies of environmental sensitivity
 Figures Needed
 --------------
 
+Each impairment gets a 6-panel figure (A–F): simulation results,
+analytic overlay, error metrics, parameter sweeps, literature cross-check,
+and summary.
+
 | Fig | Content | Source script |
 |-----|---------|---------------|
-| 1   | CD pulse broadening — analytic curve + simulation markers | validate_cd.py |
-| 2   | PMD DGD histogram with Maxwellian overlay | validate_pmd.py |
-| 3   | Attenuation P/P_0 vs distance — simulation + OTDR data | validate_attenuation.py |
-| 4   | Birefringence dn_bend vs (r/R)^2 — simulation + Ulrich | validate_birefringence.py |
+| 1   | CD pulse broadening — 6-panel (Agrawal Fig 2.6) | validate_cd.py |
+| 2   | PMD DGD histogram — 6-panel (Razavi Fig 2.11) | validate_pmd.py |
+| 3   | Attenuation P/P_0 vs distance — 6-panel (Keiser Eq 3.6) | validate_attenuation.py |
+| 4   | Birefringence random-axis model — 6-panel (Menyuk/Wai) | validate_birefringence.py |
+| 5   | APD responsivity & excess noise — 6-panel (Kasap Eq 4.19/4.45) | validate_apd.py |
+| 6   | CW Laser RIN & phase noise — 6-panel (Coldren/Henry) | validate_cwlaser.py |
+| 7   | MZM transfer function — 6-panel (Weis & Gaylord) | validate_mzm.py |
+| 8   | System-level QBER vs distance — 6-panel | val_system.py |
 
 ---
 
@@ -254,3 +264,5 @@ Additional material for arXiv / extended version
     literature_verification_report.md) as a supplementary document
   - Complete test coverage report (48 tests, all passing)
   - run_all.py + validation outputs for reproduction
+  - Code repository: github.com/AzaanMahmood/opto-sim-dev (open-source,
+    MIT license, seeded reproducibility, seed-tagged outputs)

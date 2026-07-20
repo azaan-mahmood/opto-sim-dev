@@ -150,32 +150,11 @@ ax4.grid(True, alpha=0.25)
 ax5 = fig.add_subplot(gs[1, 1])
 ax5.plot(psi_vals, Ex_mag, '-', c='C0', lw=1.5, label=r'$|E_x|$')
 ax5.plot(psi_vals, Ey_mag, '-', c='C1', lw=1.5, label=r'$|E_y|$')
-ax5.plot(psi_vals, norm_check, '--k', lw=1, alpha=0.5, label=r'$\sqrt{|E_x|^2+|E_y|^2}$')
+ax5.plot(psi_vals, norm_check, '--k', lw=1, alpha=0.5, label=r'$\sqrt{|E_x|^2 + |E_y|^2}$')
 ax5.set(xlabel='Azimuth $\\psi$ (rad)', ylabel='Magnitude',
         title='E: Polarization Jones vector\n(Yariv [3] Ch. 6)')
 ax5.legend(fontsize=7)
 ax5.grid(True, alpha=0.25)
-
-# --- Panel F: Validation summary ---
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-summary = [
-    ['Power calibration', f'max error = {p_err.max():.2e} %'],
-    ['Phase diffusion coeff', f'$D_\\phi = {D_phi:.2e}$ rad$^2$/s'],
-    ['Phase increments', f'Gaussian, std = {inc_theory_std:.2e} rad'],
-    ['RIN resonance', 'f_RO = 5 GHz, damping = 1.88e10 rad/s'],
-    ['Polarization', 'Unit norm, linear/circular verified'],
-]
-table = ax6.table(cellText=summary, colLabels=['Parameter', 'Value'],
-                  loc='center', cellLoc='left', fontsize=8)
-table.auto_set_column_width(col=list(range(2)))
-table.auto_set_font_size(False)
-table.set_fontsize(8)
-for (row, col), cell in table.get_celld().items():
-    if row == 0:
-        cell.set_facecolor('#40466e')
-        cell.set_text_props(color='w', fontweight='bold')
-ax6.set_title('F: Validation summary', fontsize=10, pad=10)
 
 fig.suptitle('CW Laser Validation — Henry [1], Coldren [2], Yariv [3]',
              fontsize=13, fontweight='bold', y=0.97)
@@ -187,4 +166,16 @@ np.savetxt(os.path.join(OUT, f'val_cwlaser--seed{SEED}.csv'),
            header='power_dbm,P_theory_W,P_meas_W,error_pct',
            comments='')
 print(f"Saved: val_cwlaser--seed{SEED}.csv")
+
+import csv
+table_csv = os.path.join(OUT, f'val_cwlaser--seed{SEED}_table.csv')
+with open(table_csv, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['Parameter', 'Value'])
+    writer.writerow(['Power calibration', f'max error = {p_err.max():.2e} %'])
+    writer.writerow(['Phase diffusion coeff', f'D_phi = {D_phi:.2e} rad^2/s'])
+    writer.writerow(['Phase increments', f'Gaussian, std = {inc_theory_std:.2e} rad'])
+    writer.writerow(['RIN resonance', 'f_RO = 5 GHz, damping = 1.88e10 rad/s'])
+    writer.writerow(['Polarization', 'Unit norm, linear/circular verified'])
+print(f"Saved: val_cwlaser--seed{SEED}_table.csv")
 plt.close(fig)

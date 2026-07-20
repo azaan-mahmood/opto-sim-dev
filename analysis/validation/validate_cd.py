@@ -177,30 +177,6 @@ ax5.annotate(f'D_total = D_mat + D_wg\n= {D_MATERIAL} + ({D_WAVEGUIDE})\n= {D_to
              xy=(0.95, 0.95), xycoords='axes fraction', ha='right', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel F: tabular summary ---
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-summary_rows = [
-    ['D_total', f'{D_total} ps/(nm*km)'],
-    ['D_material', f'{D_MATERIAL} ps/(nm*km)'],
-    ['D_waveguide', f'{D_WAVEGUIDE} ps/(nm*km)'],
-    ['beta2', f'{beta2:.3e} s^2/m'],
-    ['Dispersion length L_D', f'{LD/1e3:.2f} km'],
-    ['Max error', f'{errors_pct.max():.6e} %'],
-    ['Gaussian broadening', 'Matches analytic: all < 0.001 %'],
-]
-table = ax6.table(cellText=summary_rows,
-                  colLabels=['Parameter', 'Value'],
-                  loc='center', cellLoc='left', fontsize=8)
-table.auto_set_column_width(col=list(range(2)))
-table.auto_set_font_size(False)
-table.set_fontsize(8)
-for (row, col), cell in table.get_celld().items():
-    if row == 0:
-        cell.set_facecolor('#40466e')
-        cell.set_text_props(color='w', fontweight='bold')
-ax6.set_title('F: Validation summary', fontsize=10, pad=10)
-
 fig.suptitle('Chromatic Dispersion - Validation vs Agrawal [6] Sec 2.4',
              fontsize=13, fontweight='bold', y=0.97)
 fig.savefig(os.path.join(OUT, f'val_cd--seed{SEED}.png'), dpi=200, bbox_inches='tight')
@@ -214,4 +190,18 @@ np.savetxt(os.path.join(OUT, csv_name),
            header='z_over_LD,distance_km,sigma_rms_ps,analytic_sigma_ps,error_pct',
            comments='')
 print(f"Saved: {csv_name}")
+
+import csv
+table_csv = os.path.join(OUT, f'val_cd--seed{SEED}_table.csv')
+with open(table_csv, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['Parameter', 'Value'])
+    writer.writerow(['D_total', f'{D_total} ps/(nm*km)'])
+    writer.writerow(['D_material', f'{D_MATERIAL} ps/(nm*km)'])
+    writer.writerow(['D_waveguide', f'{D_WAVEGUIDE} ps/(nm*km)'])
+    writer.writerow(['beta2', f'{beta2:.3e} s^2/m'])
+    writer.writerow(['Dispersion length L_D', f'{LD/1e3:.2f} km'])
+    writer.writerow(['Max error', f'{errors_pct.max():.6e} %'])
+    writer.writerow(['Gaussian broadening', 'Matches analytic: all < 0.001 %'])
+print(f"Saved: val_cd--seed{SEED}_table.csv")
 plt.close(fig)

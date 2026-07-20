@@ -9,13 +9,12 @@ Uses MZM-carved Gaussian pulses (matching bb84_test_dispersion.py) to
 provide sufficient spectral bandwidth for CD and PMD to induce measurable
 QBER.
 
-Produces a 6-panel figure:
-  A: QBER vs fibre distance (0--150 km)
+Produces a 5-panel figure:
+  A: QBER vs fibre distance (0--1000 km)
   B: QBER vs pulse width (5--50 ps) at the critical distance (75 km)
   C: QBER vs fibre temperature (0--60 C) at 75 km
   D: QBER vs PMD coefficient (0.0--0.3 ps/sqrt(km)) at 75 km
   E: QBER vs bend radius (2 mm -- 5 cm) at 75 km
-  F: Combined-impairment summary table at 100 km
 
 All panels use seeded RNG for reproducibility.
 """
@@ -177,28 +176,6 @@ print("\nPanel E: QBER vs bend radius (75 km)")
 bends = np.array([0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05])
 qber_bend = sweep('bend_radius', bends, dict(fiber_length=CRIT_DIST))
 
-# ── Panel F: Combined impairment summary ──────────────────────────
-print("\nPanel F: Combined impairment scenarios")
-scenarios = {
-    'No impairments':   dict(dispersion=False, fiber_length=10,
-                             pm_dispersion=0.0, bend_radius=None),
-    'Atten. only':      dict(dispersion=False, fiber_length=100,
-                             pm_dispersion=0.0, bend_radius=None),
-    'CD only':          dict(dispersion=True, fiber_length=100,
-                             pm_dispersion=0.0, bend_radius=None),
-    'PMD only':         dict(dispersion=True, fiber_length=100,
-                             pm_dispersion=0.1e-12, bend_radius=None),
-    'CD+PMD':           dict(dispersion=True, fiber_length=100,
-                             pm_dispersion=0.1e-12, bend_radius=None),
-    'CD+PMD+bend':      dict(dispersion=True, fiber_length=100,
-                             pm_dispersion=0.1e-12, bend_radius=0.01),
-}
-sc_qbers = {}
-for name, kw in scenarios.items():
-    q = simulate_bb84_full(NUM_BITS, seed=SEED, pulse_sigma=30e-12, **kw)
-    sc_qbers[name] = q
-    print(f"  {name:20s}  QBER={q*100:5.1f}%")
-
 # ── Save CSV ──────────────────────────────────────────────────────
 csv_path = os.path.join(OUT, f'val_system--seed{SEED}.csv')
 with open(csv_path, 'w') as f:
@@ -215,15 +192,13 @@ with open(csv_path, 'w') as f:
         f.write(f"D,pmd_coeff_ps_sqrt_km,{p},{q:.6f}\n")
     for r, q in zip(bends, qber_bend):
         f.write(f"E,bend_radius_m,{r},{q:.6f}\n")
-    for n, q in sc_qbers.items():
-        f.write(f"F,scenario,{n},{q:.6f}\n")
 print(f"Saved: {csv_path}")
 
 # ── Figure ────────────────────────────────────────────────────────
-fig = plt.figure(figsize=(18, 12))
-gs = fig.add_gridspec(2, 3, hspace=0.35, wspace=0.35)
+fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+axes = axes.flatten()
 
-ax1 = fig.add_subplot(gs[0, 0])
+ax1 = axes[0]
 ax1.plot(distances, qber_on * 100, 's-', color='C3', lw=1.5, ms=5,
          label='All impairments')
 ax1.plot(distances, qber_off * 100, 'o-', color='C0', lw=1.5, ms=5,
@@ -237,7 +212,7 @@ ax1.legend(fontsize=8)
 ax1.grid(True, alpha=0.3)
 ax1.set_ylim(-5, 105)
 
-ax2 = fig.add_subplot(gs[0, 1])
+ax2 = axes[1]
 ax2.plot(pws_ps, qber_pulse * 100, 'D-', color='C2', lw=1.5, ms=5)
 ax2.set_xlabel('Pulse $\\sigma$ (ps)')
 ax2.set_ylabel('QBER (%)')
@@ -245,7 +220,7 @@ ax2.set_title(f'B: QBER vs Pulse Width ({CRIT_DIST} km)', fontweight='bold')
 ax2.grid(True, alpha=0.3)
 ax2.set_ylim(-5, 105)
 
-ax3 = fig.add_subplot(gs[0, 2])
+ax3 = axes[2]
 ax3.plot(temps, qber_temp * 100, '^-', color='C1', lw=1.5, ms=5)
 ax3.set_xlabel('Temperature ($^\\circ$C)')
 ax3.set_ylabel('QBER (%)')
@@ -253,7 +228,7 @@ ax3.set_title(f'C: QBER vs Temperature ({CRIT_DIST} km)', fontweight='bold')
 ax3.grid(True, alpha=0.3)
 ax3.set_ylim(-5, 105)
 
-ax4 = fig.add_subplot(gs[1, 0])
+ax4 = axes[3]
 ax4.plot(pmds, qber_pmd * 100, 'v-', color='C4', lw=1.5, ms=5)
 ax4.set_xlabel('PMD coeff. (ps/$\\sqrt{\\mathrm{km}}$)')
 ax4.set_ylabel('QBER (%)')
@@ -261,7 +236,7 @@ ax4.set_title(f'D: QBER vs PMD Coeff. ({CRIT_DIST} km)', fontweight='bold')
 ax4.grid(True, alpha=0.3)
 ax4.set_ylim(-5, 105)
 
-ax5 = fig.add_subplot(gs[1, 1])
+ax5 = axes[4]
 ax5.plot(bends * 1000, qber_bend * 100, 'o-', color='C5', lw=1.5, ms=5)
 ax5.set_xlabel('Bend radius (mm)')
 ax5.set_ylabel('QBER (%)')
@@ -270,19 +245,7 @@ ax5.grid(True, alpha=0.3)
 ax5.invert_xaxis()
 ax5.set_ylim(-5, 105)
 
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-ax6.set_title('F: Combined Impairment Scenarios', fontweight='bold')
-td = [[n, f'{q*100:.1f}%'] for n, q in sc_qbers.items()]
-tbl = ax6.table(cellText=td, colLabels=['Scenario', 'QBER'],
-                cellLoc='center', loc='center', colWidths=[0.65, 0.25])
-tbl.auto_set_font_size(False)
-tbl.set_fontsize(9)
-tbl.scale(1.0, 1.6)
-for (r, c), cell in tbl.get_celld().items():
-    if r == 0:
-        cell.set_facecolor('#D6EAF8')
-        cell.set_text_props(fontweight='bold')
+axes[5].set_visible(False)
 
 fig.suptitle(
     'System-Level BB84 Demonstration -- Independent Components, Combined Impairments\n'

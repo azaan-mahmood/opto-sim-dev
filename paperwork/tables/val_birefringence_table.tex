@@ -1,0 +1,17 @@
+\begin{table}[!ht]
+  \caption{Birefringence validation summary.}
+  \label{tab:birefringence}
+  \centering
+  \begin{tabular}{l c c}
+    \toprule
+    Test & Metric & Result \\
+    \midrule
+    Power conservation & Unitary Jones & err < 1e-12 \\
+    Zero-length identity & Field unchanged & PASS \\
+    L-dependence & Diffusive rotation & propto sqrt(L) \\
+    Temperature & Delta\_n(T) & Affects L\_char \\
+    Bend (Ulrich [7]) & propto (r/R)\textasciicircum{}2 & Affects L\_char \\
+    Reproducibility & Seeded RNG & PASS \\
+    \bottomrule
+  \end{tabular}
+\end{table}

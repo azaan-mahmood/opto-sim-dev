@@ -167,43 +167,28 @@ ax4.annotate(f'@ 1550 nm: L_B = {L_B_1550:.2f} mm\n'
              xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel E: Deterministic Δn components (temperature + bend) ---
+# --- Panel E: Total Δn = base + temp + bend for each R ---
 ax5 = fig.add_subplot(gs[1, 1])
 T_range = np.linspace(-20, 60, 50)
-dn_T = temp_coeff * (T_range - T0_C)
-ax5.plot(T_range, (biref_T0 + dn_T) * 1e6, '-', c='C1', lw=1.5, label='Temp. (no bend)')
-for R_mm in [2, 5, 10, 20]:
-    dn_b = bend_factor * (r_fiber / (R_mm * 1e-3)) ** 2
-    ax5.axhline((biref_T0 + dn_b) * 1e6, ls='--', lw=0.8,
-                label=f'Bend R={R_mm} mm', alpha=0.6)
-ax5.axhline(biref_T0 * 1e6, c='k', ls=':', lw=1, label='Base')
-ax5.set(xlabel='Temperature (C)', ylabel=r'$\Delta n$ ($\times 10^{-6}$)',
-        title='E: Deterministic $\\Delta n$ components')
+colors = ['C1', 'C4', 'C2', 'C3', 'C0']
+for i, R_mm in enumerate([np.inf, 20, 10, 5, 2]):
+    if np.isinf(R_mm):
+        dn_total = biref_T0 + temp_coeff * (T_range - T0_C)
+        label = 'No bend (R=$\\infty$)'
+        ls = '-'
+        lw = 1.5
+    else:
+        dn_b = bend_factor * (r_fiber / (R_mm * 1e-3)) ** 2
+        dn_total = biref_T0 + temp_coeff * (T_range - T0_C) + dn_b
+        label = f'R = {R_mm} mm'
+        ls = '--'
+        lw = 1.0
+    ax5.plot(T_range, dn_total * 1e6, ls, c=colors[i], lw=lw, label=label, alpha=0.8)
+ax5.axhline(biref_T0 * 1e6, c='k', ls=':', lw=0.8, alpha=0.5, label='Base $\\Delta n_0$')
+ax5.set(xlabel='Temperature ($^{\\circ}$C)', ylabel=r'$\Delta n$ ($\times 10^{-6}$)',
+        title='E: Total $\\Delta n$ = base + temp + bend\n(Ulrich [7] model)')
 ax5.legend(fontsize=6, ncol=2)
 ax5.grid(True, alpha=0.25)
-
-# --- Panel F: Validation summary ---
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-summary = [
-    ['Power conservation', 'Unitary Jones', 'err < 1e-12'],
-    ['Zero-length identity', 'Field unchanged', 'PASS'],
-    ['L-dependence', 'Diffusive rotation', r'$\propto \sqrt{L}$'],
-    ['Temperature', r'$\Delta n(T)$', 'Affects L_char'],
-    ['Bend (Ulrich [7])', r'$\propto (r/R)^2$', 'Affects L_char'],
-    ['Reproducibility', 'Seeded RNG', 'PASS'],
-]
-table = ax6.table(cellText=summary,
-                  colLabels=['Test', 'Metric', 'Result'],
-                  loc='center', cellLoc='center', fontsize=7)
-table.auto_set_column_width(col=list(range(3)))
-table.auto_set_font_size(False)
-table.set_fontsize(7)
-for (row, col), cell in table.get_celld().items():
-    if row == 0:
-        cell.set_facecolor('#40466e')
-        cell.set_text_props(color='w', fontweight='bold')
-ax6.set_title('F: Validation summary', fontsize=10, pad=10)
 
 fig.suptitle('Fiber Birefringence - Random-Axis Model Validation\n'
              '(Menyuk & Wai 1994; Wai & Menyuk 1996; Ulrich 1980; Agrawal 2021)',
@@ -216,4 +201,17 @@ np.savetxt(os.path.join(OUT, csv_name),
            np.column_stack([distances_km, mean_ex]),
            delimiter=',', header='distance_km,mean_Ex_power', comments='')
 print(f"Saved: {csv_name}")
+
+import csv
+table_csv = os.path.join(OUT, f'val_birefringence--seed{SEED}_table.csv')
+with open(table_csv, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['Test', 'Metric', 'Result'])
+    writer.writerow(['Power conservation', 'Unitary Jones', 'err < 1e-12'])
+    writer.writerow(['Zero-length identity', 'Field unchanged', 'PASS'])
+    writer.writerow(['L-dependence', 'Diffusive rotation', 'propto sqrt(L)'])
+    writer.writerow(['Temperature', 'Delta_n(T)', 'Affects L_char'])
+    writer.writerow(['Bend (Ulrich [7])', 'propto (r/R)^2', 'Affects L_char'])
+    writer.writerow(['Reproducibility', 'Seeded RNG', 'PASS'])
+print(f"Saved: val_birefringence--seed{SEED}_table.csv")
 plt.close(fig)

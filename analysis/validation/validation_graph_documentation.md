@@ -95,11 +95,14 @@ and applies it to the field via matrix multiplication.
 - **Black dashed line:** Ulrich theory: `delta_n = delta_n_T0 + 0.135 * (r_fiber/R)^2`.
 - **What the graph states:** The extracted delta_n values fall exactly on the Ulrich theory curve across the full bend radius range (2 mm to 20 mm). The maximum extraction error is 0.0000%. This validates that the bend-induced birefringence follows the Ulrich model.
 
-### Panel E: Beat length vs wavelength
+### Panel E: Total Δn vs temperature (all bend radii)
 
-- **Purple line:** Beat length `L_B = lambda / delta_n` as a function of wavelength, computed from the intrinsic birefringence `delta_n = 0.87e-5`.
-- **Gray dashed lines:** Reference markers at 1550 nm and 1310 nm.
-- **What the graph states:** The beat length increases linearly with wavelength. At 1550 nm, L_B = 178.16 mm; at 1310 nm, L_B = 150.57 mm. These values are consistent with standard single-mode fiber (long beat length indicates weak birefringence, as expected).
+- **Blue line (R=∞):** Base material birefringence Δn₀ + temperature contribution only (no bend). At 25°C, Δn ≈ 1.2e-7.
+- **Orange line (R=20 mm):** Total Δn = base + temp + bend(20 mm). At 25°C, Δn ≈ 1.3e-5.
+- **Green line (R=10 mm):** Total Δn = base + temp + bend(10 mm). At 25°C, Δn ≈ 5.4e-5.
+- **Red line (R=5 mm):** Total Δn = base + temp + bend(5 mm). At 25°C, Δn ≈ 2.2e-4.
+- **Purple line (R=2 mm):** Total Δn = base + temp + bend(2 mm). At 25°C, Δn ≈ 1.3e-3.
+- **What the graph states:** The total birefringence is dominated by bend contributions for tight bends (R < 10 mm). The temperature dependence is barely visible on this scale because Δn_bend >> Δn_temp. The R=∞ curve shows only the intrinsic material birefringence with temperature modulation. This validates that the Ulrich bend model and temperature coefficient combine correctly.
 
 ### Panel F: Validation summary
 

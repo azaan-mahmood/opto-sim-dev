@@ -632,9 +632,11 @@ CSV outputs, and are run via \texttt{run\_all.py} in isolated subprocesses.
   $\sum\Delta\phi^2$ vs $D_\phi t$).  C: Phase increment PDF (Gaussian fit).
   D: RIN spectral density with relaxation-oscillation peak at 5~GHz
   (Coldren Eq.~5.3.38).  E: Polarisation Jones vector ($|E_x|$, $|E_y|$,
-  norm).  F: Summary table.}
+  norm).}
   \label{fig:cwlaser}
 \end{figure}
+
+\input{tables/val_cwlaser_table.tex}
 
 Figure~\ref{fig:cwlaser}A shows the power calibration.  The measured
 $\langle|E|^2\rangle$ from \texttt{sample\_field()} reproduces the
@@ -668,10 +670,11 @@ angles $\psi \in [0, \pi]$.
   B: Phase response (chirp) -- push-pull has zero chirp; single-drive has
   linear chirp $\phi = \pi V/2V_\pi$.  C: Extinction ratio effect (ideal,
   20~dB, 10~dB).  D: Insertion loss scaling as $10^{-\text{IL}/10}$.
-  E: Crystal cut -- X-cut modulates Ey; Y-cut modulates Ex.
-  F: Summary table.}
+  E: Crystal cut -- X-cut modulates Ey; Y-cut modulates Ex.}
   \label{fig:mzm}
 \end{figure}
+
+\input{tables/val_mzm_table.tex}
 
 Figure~\ref{fig:mzm}A validates the transfer function.  Both push-pull
 and single-drive configurations reproduce the $\cos^2(\pi V/2V_\pi)$
@@ -711,6 +714,8 @@ the LiNbO$_3$ Pockels coefficients~\cite{weis}.
   \label{fig:cd}
 \end{figure}
 
+\input{tables/val_cd_table.tex}
+
 Figure~\ref{fig:cd} validates the FFT-based chromatic dispersion model.
 A 30~ps Gaussian pulse is propagated through \texttt{cable()} at distances
 $z/L_D = 0.0$, 0.5, 1.0, 2.0, where $L_D = T_0^2/|\beta_2| =
@@ -746,20 +751,7 @@ Razavi~\cite{razavi} Fig.~2.11.  The DGD is recorded directly from
 \texttt{cable()} across 10,000 fibre realisations at 100~km with
 $\text{PMD}_{\text{coeff}} = 0.1$~ps/$\sqrt{\text{km}}$.
 
-\begin{table}[!ht]
-  \caption{PMD validation results.}
-  \label{tab:pmd}
-  \centering
-  \begin{tabular}{l c c c}
-    \toprule
-    Metric & Measured & Expected & Error \\
-    \midrule
-    Mean DGD (ps) & 29.21 & 29.14 & 0.3\% \\
-    RMS DGD (ps)  & 31.73 & 31.62 & 0.3\% \\
-    KS $p$-value  & 0.42  & ---   & $>$0.05 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\input{tables/val_pmd_table.tex}
 
 The Kolmogorov--Smirnov test confirms the Maxwellian distribution
 ($p = 0.42$, well above the 0.05 threshold).  The mean DGD error is
@@ -775,6 +767,8 @@ $\text{DGD}$ vs $\sqrt{L}$ fit is 0.999987.
   1550~nm ($\alpha = 0.182$~dB/km).  Error: $<10^{-13}\%$ across 0--200~km.}
   \label{fig:att}
 \end{figure}
+
+\input{tables/val_attenuation_table.tex}
 
 Figure~\ref{fig:att} validates the attenuation model (Keiser~\cite{keiser}
 Eq.~3.6).  The measured $P_{\text{out}}/P_{\text{in}}$ reproduces
@@ -799,10 +793,11 @@ validation.
   D: Beat length $L_B = \lambda/\Delta n_0$ vs wavelength (Agrawal
   Eq.~4.1.2).
   E: Deterministic $\Delta n$ components showing temperature dependence
-  and bend contributions.
-  F: Validation summary.}
+  and bend contributions.}
   \label{fig:biref}
 \end{figure}
+
+\input{tables/val_birefringence_table.tex}
 
 Figure~\ref{fig:biref} validates the random-axis birefringence model
 (Menyuk~\cite{menyuk}, Wai~\cite{wai}).  Panel~A shows the mean output
@@ -819,7 +814,7 @@ Panel~D shows the beat length $L_B = \lambda/\Delta n_0$ across the
 800--1700~nm window.  Panel~E displays the deterministic $\Delta n$
 components: the linear temperature dependence and the asymptotic
 bend contributions at several bend radii.  All six self-consistency
-checks in Panel~F pass, including power conservation (unitary Jones
+checks pass, including power conservation (unitary Jones
 matrix, $<10^{-12}$ error) and seed-dependent randomness.
 
 \subsection{APD Validation}
@@ -832,9 +827,11 @@ matrix, $<10^{-12}$ error) and seed-dependent randomness.
   Kasap Eq.~4.23).  C: RMS noise vs bandwidth (shot + thermal,
   Kasap Eqs.~4.42--4.46).  D: Thermal noise floor
   ($\sqrt{4k_B T B/R_L}$, Johnson--Nyquist).  E: Photon detection
-  ($\bar{n} = Pt\eta/h\nu$, Saleh and Teich Eq.~17.1-10).  F: Summary.}
+  ($\bar{n} = Pt\eta/h\nu$, Saleh and Teich Eq.~17.1-10).}
   \label{fig:apd}
 \end{figure}
+
+\input{tables/val_apd_table.tex}
 
 Figure~\ref{fig:apd}A validates the responsivity.  The measured $R$ across
 800--1700~nm reproduces $\eta e\lambda/hc$ at all wavelengths.  At
@@ -867,7 +864,7 @@ with CD, PMD, birefringence, and attenuation $\rightarrow$ APD).
 The demonstration uses 3000 bits per measurement point with seeded RNG
 (seed 42) for reproducibility.  The effective bit rate is 250~MHz
 (4~ns window per bit), well within the range of demonstrated high-speed
-BB84 systems~\cite{takesue,dixon}.  Six panels (Fig.~\ref{fig:system})
+BB84 systems~\cite{takesue,dixon}.  Five panels (Fig.~\ref{fig:system})
 explore the parameter space of the optical channel over
 0--1000~km of fibre.
 
@@ -884,10 +881,11 @@ explore the parameter space of the optical channel over
   $\Delta n(T)$ crosses zero.
   D: QBER vs PMD coefficient at 75~km.
   E: QBER vs bend radius at 75~km --- tight bends ($R < 10$~mm) produce
-  strong bend birefringence that scrambles the polarisation.
-  F: Summary table of combined impairment scenarios at 100~km.}
+  strong bend birefringence that scrambles the polarisation.}
   \label{fig:system}
 \end{figure}
+
+\input{tables/val_system_table.tex}
 
 \paragraph{Panel A: QBER vs distance.}
 The QBER traces a three-regime curve across 0--1000~km.
@@ -950,7 +948,7 @@ bend radius increases beyond 20~mm, the bend contribution becomes
 negligible compared to $\Delta n_0$, and the QBER returns to the
 distance-dependent baseline (~19\% at 75~km with a 50~mm bend).
 
-\paragraph{Panel F: Combined impairment scenarios.}
+\paragraph{Combined impairment scenarios (Table~\ref{tab:summary}).}
 At 100~km with 30~ps pulses, the birefringence-dominated QBER is
 ~43\% across all scenarios that include fibre transmission, with
 the tight-bend scenario (R = 1~cm) producing 70\%.  The CD-only and
@@ -960,7 +958,7 @@ while the birefringence dominates the error rate.  For scenarios
 using shorter pulses, the CD and PMD contributions would be
 significantly larger, as shown in Panel B.
 
-The six panels together confirm that the independently validated
+The five panels together confirm that the independently validated
 components compose correctly and produce physically sensible behaviour
 across the full parameter space.  The smooth QBER curves, the diffusive
 transition with distance, the V-shaped temperature response, and the
@@ -1082,7 +1080,6 @@ cannot support.
 The framework is available under an open-source licence at
 \texttt{https://github.com/azaan-mahmood/opto-sim-dev}.
 
-\bibliographystyle{ieeetr}
 \begin{thebibliography}{34}
 
 \bibitem{netSquid}

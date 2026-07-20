@@ -137,31 +137,9 @@ ax5.loglog(P_phot * 1e9, n_photons, 'o', c='C4', ms=4, label='Detected (sim)')
 ax5.loglog(P_phot * 1e9, n_theory, '--k', lw=1.5, alpha=0.5,
            label=r'$P \cdot t \cdot \eta / h\nu$')
 ax5.set(xlabel='Power (nW)', ylabel='Detected photons',
-        title='E: Photon detection\nAgrawal [2] Eq 4.1.2')
+        title='E: Photon detection\nSaleh and Teich [3] Eq 17.1-10')
 ax5.legend(fontsize=7)
 ax5.grid(True, alpha=0.25)
-
-# --- Panel F: Validation summary ---
-ax6 = fig.add_subplot(gs[1, 2])
-ax6.axis('off')
-summary = [
-    ['Responsivity', f'$R = {det.R*1e3:.3f}$ mA/W at 1550 nm'],
-    ['Signal current', f'$I = M \\cdot R \\cdot P$ linear verified'],
-    ['Shot noise', f'$\\propto \\sqrt{{B}}$ and $\\propto \\sqrt{{P}}$ verified'],
-    ['Thermal noise', f'$\\sqrt{{4k_B T B / R_L}}$ verified'],
-    ['Photon detection', f'Poisson process, $\\eta = {det.qe}$'],
-    ['Excess noise', f'$F = {det.enf}$ applied to shot terms'],
-]
-table = ax6.table(cellText=summary, colLabels=['Parameter', 'Value'],
-                  loc='center', cellLoc='left', fontsize=8)
-table.auto_set_column_width(col=list(range(2)))
-table.auto_set_font_size(False)
-table.set_fontsize(8)
-for (row, col), cell in table.get_celld().items():
-    if row == 0:
-        cell.set_facecolor('#40466e')
-        cell.set_text_props(color='w', fontweight='bold')
-ax6.set_title('F: Validation summary', fontsize=10, pad=10)
 
 fig.suptitle('APD Validation -- Kasap [1] Ch. 4, Agrawal [2] Ch. 4, Saleh and Teich [3] Ch. 17',
              fontsize=13, fontweight='bold', y=0.97)
@@ -173,4 +151,17 @@ np.savetxt(os.path.join(OUT, f'val_apd--seed{SEED}.csv'),
            header='power_W,I_signal_sim,I_signal_theory',
            comments='')
 print(f"Saved: val_apd--seed{SEED}.csv")
+
+import csv
+table_csv = os.path.join(OUT, f'val_apd--seed{SEED}_table.csv')
+with open(table_csv, 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['Parameter', 'Value'])
+    writer.writerow(['Responsivity', f'R = {det.R*1e3:.3f} mA/W at 1550 nm'])
+    writer.writerow(['Signal current', 'I = M * R * P linear verified'])
+    writer.writerow(['Shot noise', 'propto sqrt(B) and propto sqrt(P) verified'])
+    writer.writerow(['Thermal noise', 'sqrt(4*k_B*T*B/R_L) verified'])
+    writer.writerow(['Photon detection', f'Poisson process, eta = {det.qe}'])
+    writer.writerow(['Excess noise', f'F = {det.enf} applied to shot terms'])
+print(f"Saved: val_apd--seed{SEED}_table.csv")
 plt.close(fig)

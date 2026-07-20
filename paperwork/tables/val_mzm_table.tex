@@ -1,0 +1,20 @@
+\begin{table}[!ht]
+  \caption{MZM validation summary.}
+  \label{tab:mzm}
+  \centering
+  \begin{tabular}{l l}
+    \toprule
+    Parameter & Value \\
+    \midrule
+    Transfer function & cos\textasciicircum{}2(pi*V/(2*V\_pi)) verified \\
+    Peak (V=0) & P\_out = 1.0 \\
+    Quadrature (V=V\_pi/2) & P\_out = 0.5 \\
+    Null (V=V\_pi) & P\_out = 0 \\
+    Chirp (push-pull) & Zero (ideal) \\
+    Chirp (single-drive) & phi = pi*V/(2*V\_pi) verified \\
+    ER degradation & 10 dB ER: null depth = 0.100 \\
+    Insertion loss & Scales as 10\textasciicircum{}(-IL/10) \\
+    Crystal cut & X-cut modulates Ey; Y-cut modulates Ex \\
+    \bottomrule
+  \end{tabular}
+\end{table}

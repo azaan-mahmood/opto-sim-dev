@@ -1,0 +1,7 @@
+Test,Metric,Result
+Power conservation,Unitary Jones,err < 1e-12
+Zero-length identity,Field unchanged,PASS
+L-dependence,Diffusive rotation,propto sqrt(L)
+Temperature,Delta_n(T),Affects L_char
+Bend (Ulrich [7]),propto (r/R)^2,Affects L_char
+Reproducibility,Seeded RNG,PASS
