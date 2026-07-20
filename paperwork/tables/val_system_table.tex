@@ -1,17 +1,25 @@
 \begin{table}[!ht]
-  \caption{System-level combined impairment scenarios at 100~km.}
+  \caption{System-level combined impairment scenarios at 100~km.
+  Values shown for the corrected phenomenological birefringence model
+  (Menyuk~\cite{menyuk}, Wai~\cite{wai}) with the old symmetric-diagonal
+  model values in parentheses for comparison.}
   \label{tab:system}
   \centering
-  \begin{tabular}{l l}
+  \begin{tabular}{l c c}
     \toprule
-    Scenario & QBER \\
+    Scenario & QBER (new) & QBER (old) \\
     \midrule
-    No Impairments & 0.0\% \\
-    Attenuation Only & 42.7\% \\
-    CD Only & 45.2\% \\
-    PMD Only & 43.0\% \\
-    CD + PMD & 43.0\% \\
-    CD + PMD + Bend (R=1cm) & 70.1\% \\
+    No Impairments & 41.9\% & 0.0\% \\
+    Attenuation Only & 42.5\% & 42.7\% \\
+    CD Only & 42.0\% & 45.2\% \\
+    PMD Only & 44.5\% & 43.0\% \\
+    CD + PMD & 44.5\% & 43.0\% \\
+    CD + PMD + Bend (R=1cm) & 70.6\% & 70.1\% \\
+    CD + PMD + Attenuation + Bend & 69.9\% & --- \\
+    \midrule
+    \multicolumn{3}{l}{\emph{Attenuation dominance at long range:}} \\
+    Attenuation Only @ 500~km & 50.6\% & --- \\
+    Attenuation Only @ 1000~km & 50.0\% & --- \\
     \bottomrule
   \end{tabular}
 \end{table}
