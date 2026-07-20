@@ -19,6 +19,23 @@ All timestamps are local time (UTC+5).
 
 **Tests:** 48/48 pass.
 
+## 2026-07-20 — Hybrid birefringence dispatch (sectional + phenomenological)
+
+### Session: dual-model dispatch, bug fixes, performance tuning
+
+**Hybrid birefringence model:**
+- `apply_birefringence()` dispatches automatically via `model='auto'`:
+  - **Short fibres** (L < `SECTIONAL_LIMIT` = 2 km, `model='sectional'`): multi-section ordered product of random-axis SU(2) matrices, L_B ≈ 31 m (Agrawal §4.1). For DV-QKD and DPS QKD.
+  - **Long fibres** (L >= 2 km, `model='phenomenological'`): single SU(2) rotation with `θ = min(π, √(L/L_char)·π/2)` (Menyuk & Wai 1994), L₀ = 75 km. For long-haul BB84 with distance-dependent QBER.
+  - Auto-dispatch required because multi-section model converges to uniform SU(2) within ~1 km regardless of parameters, producing flat ~50% QBER.
+- Fixed: duplicate return statement, `section_length` default to 1.0, `cable()` indentation, unused `L0` in validation
+
+**System demo results (hybrid mode):**
+- 0–70 km: 0% QBER → 80 km: 23% → 200 km: 68% (peak) → 500+ km: ~45–53% (dark count floor)
+- Temperature: V-shaped null at ~35–50°C; pulse width: 21.7% (5 ps) → 1.7% (30 ps); bend radius: 69.2% (2 mm) → 19.6% (5 cm)
+
+**Performance:** `section_length=1.0` → 67 ms/call (2 hrs sweep), `section_length=100.0` → 1 ms/call (2 min sweep). Sectional model defaults to 100 m sections.
+
 ## 2026-07-19 — Random-axis birefringence model, system demo 0–1000 km, manuscript 21 pp
 
 ### Session: random birefringence + extended demo + manuscript

@@ -23,7 +23,6 @@ biref_T0 = 5.0e-8
 temp_coeff = -3.0e-9
 bend_factor = 0.135
 REALIZATIONS = 50
-L0 = 75e3  # characteristic length at base delta_n
 
 # --- Self-consistency checks ---
 def test_power_conservation():

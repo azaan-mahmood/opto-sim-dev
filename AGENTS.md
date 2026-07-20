@@ -54,12 +54,10 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `cable()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
-- **Birefringence**: Random-axis SU(2) rotation model via `_random_su2_rotation()`.
-  - Jones matrix: `R(θ, n̂) = cos(θ/2)·I + j·sin(θ/2)·(n̂·σ)` where `n̂` is a uniformly random unit vector on the Poincaré sphere (new axis per bit).
-  - Rotation angle: `θ = min(π, √(L/L_char)·π/2)` — diffusive random walk (Menyuk & Wai 1994, Wai & Menyuk 1996).
-  - Characteristic length: `L_char = L₀·(Δn₀/|Δn|)²`, `L₀ = 75 km` at base Δn₀ = 1.2e-7.
-  - Δn depends on temperature (`T_coeff = -5e-7/°C`) and bend radius (`Δn_bend = 0.135·(r_fiber/R)²`, Ulrich [7]).
-  - At long distances material Δn (~1.2e-7) dominates, giving L_char ≈ 75 km → strong scrambling.
+- **Birefringence**: Hybrid dual-model dispatch (automatic based on fibre length):
+  - **Short fibres** (L < `SECTIONAL_LIMIT` = 2 km, `model='sectional'`): Multi-section ordered product of random-axis SU(2) matrices. `N = round(L / section_length)` sections, each with independent random axis and phase `Δβ·Δz = 2π·|Δn|·Δz/λ`. Physically correct beat length (L_B ≈ 31 m, Δn₀ = 5×10⁻⁸) with temperature (`T_coeff = -3×10⁻⁹/°C`) and bend (Ulrich [7]) modulation, stochastic residual, and clamping. Suitable for DV-QKD and DPS QKD. Performance scales as O(N) — fast at default section_length=100 m.
+  - **Long fibres** (L >= 2 km, `model='phenomenological'`): Single SU(2) rotation with angle `θ = min(π, √(L/L_char)·π/2)` (Menyuk & Wai 1994). `L_char = L₀·(Δn₀/|Δn|)²` with L₀ = 75 km, Δn₀ = 0.87×10⁻⁵, `T_coeff = -5×10⁻⁷/°C`. Produces gradual distance-dependent QBER for long-haul BB84. Switched automatically because the multi-section model converges to uniform SU(2) within ~1 km regardless of parameters.
+  - Dispatch: `apply_birefringence(model='auto')` or `cable(model='auto')`; override with `'sectional'` or `'phenomenological'`. `SECTIONAL_LIMIT = 2000 m`.
 - **Chromatic dispersion** (disabled by default): FFT-based, `H(Ω) = exp(-j·β₂·Ω²·L/2)` applied to both Ex and Ey (Agrawal [6] Eq 2.4.11). Requires `dt` (sampling interval) and assumes the field is the complex envelope.
 - **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
 - Parameters: `fiber_length (km)`, `E`, `dt` (required for dispersion), `wavelength` (default 1550e-9), `dispersion`, `attenuation_factor`, `temperature`, `bend_radius`, `pm_dispersion`.
@@ -102,10 +100,13 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - Also removed `caption` package (was only needed for `\captionof`, no longer used).
 - `journal_paper_outline.pdf` now compiles at 13 pages with xelatex.
 
-### Fiber Birefringence (SUPERSEDED — now random-axis model)
-- Old symmetric Jones matrix `diag(exp(±j·Δβ·L/2))` replaced by random-axis SU(2) rotation
-- Bend model `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7]) still used to modulate Δn for L_char
-- `bend_radius` parameter preserved; new `temperature` sensitivity via `T_coeff = -5e-7/°C`
+### Fiber Birefringence — Hybrid dispatch
+- Two models:
+  - **Sectional** (L < 2 km): first-principles multi-section, L_B ≈ 31 m (Agrawal §4.1)
+  - **Phenomenological** (L >= 2 km): `θ = min(π, √(L/L_char)·π/2)`, L₀ = 75 km
+- Auto-dispatch via `model='auto'`; override with `model='sectional'` or `'phenomenological'`
+- Old symmetric Jones matrix `diag(exp(±j·Δβ·L/2))` superseded (retained in git history)
+- Bend model `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7]) shared by both models
 
 ### BB84 Scripts
 - `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → cable (dispersion flag) → PBS → APD
@@ -228,14 +229,17 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `src/channel/fiber_sectional.py` | Hybrid dispatch: `apply_birefringence()` auto-routes to `_sectional` (L < 2 km) or `_phenomenological` (L >= 2 km). Fixed duplicate return, section_length=1.0 default, cable() indentation. Added `model` param to cable(). |
+| `analysis/validation/validate_birefringence.py` | Removed unused `L0 = 75e3`. Validates both models via auto-dispatch. |
+| `analysis/val_system.py` | Updated outputs (QBER: 0%→68% at 200 km, dark-count floor ~45% at 1000 km) |
+| `AGENTS.md` | Hybrid birefringence description, dispatch threshold, updated files changed |
+| `CHANGELOG.md` | Added hybrid dispatch entry |
 | `src/channel/fiber.py` | New `_random_su2_rotation()` + updated `apply_birefringence()` — random-axis SU(2) rotation, diffusive angle, per-bit varying axis |
-| `analysis/validation/validate_birefringence.py` | Rewritten for random model: 6 self-consistency checks (power conservation, zero-length identity, temp/wavelength dependence, seeded reproducibility, polarization variance) |
-| `analysis/val_system.py` | NEW: system-level demo with 0–1000 km sweep, 250 MHz bit rate, 6 analysis panels |
-| `paperwork/manuscript.tex` | Updated Section 3.3 (Birefringence), Section 4 (Validation), Section 5 (System Demo); 3 new refs; 21 pages |
+| `analysis/validation/validate_birefringence.py` | Rewritten for random model: 6 self-consistency checks |
+| `analysis/val_system.py` | NEW: system-level demo with 0–1000 km sweep, 250 MHz bit rate |
+| `paperwork/manuscript.tex` | Updated Sections 3.3/4/5; 3 new refs; 21 pages |
 | `val_system/val_system--seed42.png` | Demo figure with full 1000 km sweep |
 | `analysis/val_birefringence/val_birefringence--seed42.png` | Updated 6-panel validation figure |
-| `AGENTS.md` | Updated birefringence model description, known issues, generated graphs, files changed |
-| `CHANGELOG.md` | Added random birefringence + system demo + manuscript entry |
 | `journal_paper_outline.tex` | Removed `mdframed` + `caption` packages; replaced abstract box with `\colorbox{highlightblue!5}{...}`. Compiles to 13 pages (was failing with "Not in outer par mode"). |
 | `AGENTS.md` | Updated files changed, known issues. |
 | `CHANGELOG.md` | Added mdframed fix + journal outline compilation entry. |
