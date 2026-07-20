@@ -51,13 +51,13 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - No `frequency` parameter — optical frequency derived from `c/λ`
 
 ### Fiber (`src/channel/fiber.py`)
-- `cable()` no longer takes `pin` or returns `pout`
+- `propagate()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
 - **Birefringence**: Hybrid dual-model dispatch (automatic based on fibre length):
   - **Short fibres** (L < `SECTIONAL_LIMIT` = 2 km, `model='sectional'`): Multi-section ordered product of random-axis SU(2) matrices. `N = round(L / section_length)` sections, each with independent random axis and phase `Δβ·Δz = 2π·|Δn|·Δz/λ`. Physically correct beat length (L_B ≈ 31 m, Δn₀ = 5×10⁻⁸) with temperature (`T_coeff = -3×10⁻⁹/°C`) and bend (Ulrich [7]) modulation, stochastic residual, and clamping. Suitable for DV-QKD and DPS QKD. Performance scales as O(N) — fast at default section_length=100 m.
   - **Long fibres** (L >= 2 km, `model='phenomenological'`): Single SU(2) rotation with angle `θ = min(π, √(L/L_char)·π/2)` (Menyuk & Wai 1994). `L_char = L₀·(Δn₀/|Δn|)²` with L₀ = 75 km, Δn₀ = 0.87×10⁻⁵, `T_coeff = -5×10⁻⁷/°C`. Produces gradual distance-dependent QBER for long-haul BB84. Switched automatically because the multi-section model converges to uniform SU(2) within ~1 km regardless of parameters.
-  - Dispatch: `apply_birefringence(model='auto')` or `cable(model='auto')`; override with `'sectional'` or `'phenomenological'`. `SECTIONAL_LIMIT = 2000 m`.
+  - Dispatch: `apply_birefringence(model='auto')` or `propagate(model='auto')`; override with `'sectional'` or `'phenomenological'`. `SECTIONAL_LIMIT = 2000 m`.
 - **Chromatic dispersion** (disabled by default): FFT-based, `H(Ω) = exp(-j·β₂·Ω²·L/2)` applied to both Ex and Ey (Agrawal [6] Eq 2.4.11). Requires `dt` (sampling interval) and assumes the field is the complex envelope.
 - **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
 - Parameters: `fiber_length (km)`, `E`, `dt` (required for cd/pmd), `wavelength`. Impairments independently toggled: `birefringence`, `cd`, `pmd`, `attenuation` (all bool, defaults True/None/None/True). Legacy `dispersion` flag sets both `cd` and `pmd` when not explicitly provided. `attenuation_factor`, `temperature`, `bend_radius`, `pm_dispersion`, `section_length`, `model`.
@@ -109,7 +109,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - Bend model `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7]) shared by both models
 
 ### BB84 Scripts
-- `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → cable (dispersion flag) → PBS → APD
+- `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → propagate (dispersion flag) → PBS → APD
 - Both accept `--dispersion` CLI flag (default False for backward compatibility in ideal/bitrate scripts)
 - `bb84_test_dispersion.py`: MZM-carved Gaussian pulses (5–30 ps σ) for broadband field generation; dispersion=True by default
 - QBER with CW laser (1 MHz linewidth) is 0% regardless of dispersion flag — near-monochromatic field is CD/PMD-agnostic
@@ -229,13 +229,13 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
-| `src/channel/fiber.py` | Hybrid dispatch: `apply_birefringence()` auto-routes to `_sectional` (L < 2 km) or `_phenomenological` (L >= 2 km). Fixed duplicate return, section_length=1.0 default, cable() indentation. Added `model` param to cable(). |
+| `src/channel/fiber.py` | Hybrid dispatch: `apply_birefringence()` auto-routes to `_sectional` (L < 2 km) or `_phenomenological` (L >= 2 km). Fixed duplicate return, section_length=1.0 default, propagate() indentation. Added `model` param to propagate(). |
 | `analysis/validation/validate_birefringence.py` | Removed unused `L0 = 75e3`. Validates both models via auto-dispatch. |
 | `analysis/val_system.py` | Updated outputs (QBER: 0%→68% at 200 km, dark-count floor ~45% at 1000 km) |
 | `AGENTS.md` | Hybrid birefringence description, dispatch threshold, updated files changed |
 | `CHANGELOG.md` | Added hybrid dispatch entry |
 | `src/channel/fiber.py` | New `_random_su2_rotation()` + updated `apply_birefringence()` — random-axis SU(2) rotation, diffusive angle, per-bit varying axis |
-| `analysis/validation/validate_birefringence.py` | Rewritten for random model: 6 self-consistency checks |
+| `analysis/validation/validate_birefringence.py` | Dual-model validation: 13 self-consistency checks (sectional + phenomenological + auto-dispatch) |
 | `analysis/val_system.py` | NEW: system-level demo with 0–1000 km sweep, 250 MHz bit rate |
 | `paperwork/manuscript.tex` | Updated Sections 3.3/4/5; 3 new refs; 21 pages |
 | `val_system/val_system--seed42.png` | Demo figure with full 1000 km sweep |

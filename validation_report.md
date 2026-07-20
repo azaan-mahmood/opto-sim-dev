@@ -55,7 +55,7 @@ KS test p = 0.0239 (p < 0.05 at 5% significance). The DGD histogram marginally f
 
 ## [WARNING]
 
-Cross-correlation DGD extraction is indirect and noisy. The script infers DGD from the output field rather than recording the actual DGD value that stats.maxwell.rvs() sampled inside cable(). This conflates measurement error with model error. Fix: add a return parameter to cable() or record DGD separately.
+Cross-correlation DGD extraction is indirect and noisy. The script infers DGD from the output field rather than recording the actual DGD value that stats.maxwell.rvs() sampled inside propagate(). This conflates measurement error with model error. Fix: add a return parameter to propagate() or record DGD separately.
 
 
 ## 3. Attenuation Validation
@@ -74,7 +74,7 @@ Measured error: 0.0000% at all 41 distance points (0-200 km). The implementation
 
 ## [WARNING]
 
-Pure self-consistency check: the script verifies cable() matches the formula, but does not overlay external experimental data (e.g., OTDR traces from Keiser or Thorlabs app notes). The roadmap (tier_1_attack_plan.md Task 3) suggests overlaying OTDR data for external validation.
+Pure self-consistency check: the script verifies propagate() matches the formula, but does not overlay external experimental data (e.g., OTDR traces from Keiser or Thorlabs app notes). The roadmap (tier_1_attack_plan.md Task 3) suggests overlaying OTDR data for external validation.
 
 ## [WARNING]
 
@@ -95,7 +95,7 @@ Birefringence delta_n = delta_n0 + T_coeff * (T - T0) + 0.135 * (r_f/R)^2 (Ulric
 
 ## Validation Result: CONDITIONAL PASS
 
-Self-consistency error: 0.0000% for all three coefficients (base, temperature, bend). The cable() function exactly reproduces the coefficients declared in fiber.py.
+Self-consistency error: 0.0000% for all three coefficients (base, temperature, bend). The propagate() function exactly reproduces the coefficients declared in fiber.py.
 
 ## Issues:
 
@@ -182,7 +182,7 @@ The old "bend_effect_factor * num_bends" model treated each bend as a fixed Delt
 
 ## Fix 3: Fix PMD DGD extraction in validate_pmd.py (lines 41-48)
 
-Replace cross-correlation DGD extraction with direct recording of the DGD value sampled by stats.maxwell.rvs() inside cable(). This eliminates discretization noise at DT = 0.5 ps and produces a clean Maxwellian histogram for the KS test.
+Replace cross-correlation DGD extraction with direct recording of the DGD value sampled by stats.maxwell.rvs() inside propagate(). This eliminates discretization noise at DT = 0.5 ps and produces a clean Maxwellian histogram for the KS test.
 
 ## Fix 4: Derive D_total dynamically in validate_cd.py (line 21)
 

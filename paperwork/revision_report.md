@@ -358,7 +358,7 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
         delta_n += bend_effect_factor * (r_fiber / bend_radius) ** 2
 
     # Stochastic residual — prevents unphysical cancellation
-    # (drawn once per cable() call, ~10% of Δn₀)
+    # (drawn once per propagate() call, ~10% of Δn₀)
     delta_n += np.random.normal(0, 0.1 * birefringence_T0)
 
     # Clamp |Δn| to prevent L_B → ∞ (physical: even "zero-stress"
@@ -418,7 +418,7 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
 | Panel D (QBER vs PMD) | Unchanged | Unchanged | None |
 | Panel E (QBER vs bend radius) | Unchanged | Unchanged | None |
 
-No changes needed to the sweep logic in `val_system.py` — the underlying `cable()` → `apply_birefringence()` swap is transparent to the caller.
+No changes needed to the sweep logic in `val_system.py` — the underlying `propagate()` → `apply_birefringence()` swap is transparent to the caller.
 
 ### B6. Impact on Test Suite (`tests/test_fiber.py`)
 

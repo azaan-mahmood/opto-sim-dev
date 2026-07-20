@@ -12,7 +12,7 @@ def run_qber_vs_distance_experiment():
     for dist in distances:
         print(f"Simulating for distance: {dist} km...")
         try:
-            # Note: Set dispersion=True in cable() within bb84_ideal.py to see real effects, 
+            # Note: Set dispersion=True in propagate() within bb84_ideal.py to see real effects, 
             # currently it defaults to dispersion=False in bb84_ideal.py
             results = simulate_bb84(num_bits=num_bits, fiber_length=dist, show_pol=False)
             qber = results[7] # QBER is the 8th item returned

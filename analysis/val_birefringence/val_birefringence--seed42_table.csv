@@ -1,7 +1,14 @@
-Test,Metric,Result
-Power conservation,Unitary Jones,err < 1e-12
-Zero-length identity,Field unchanged,PASS
-L-dependence,Diffusive rotation,propto sqrt(L)
-Temperature,mean|Ex|^2 vs T,Softened minimum
-Bend (Ulrich [7]),mean|Ex|^2 vs R,Affects scrambling
-Reproducibility,Seeded RNG,PASS
+Test,Model,Result
+Power conservation,sectional,err < 1e-12
+Temperature sensitivity,sectional,PASS
+Wavelength sensitivity,sectional,PASS
+Seed randomness,sectional,PASS
+Poincaré scrambling,sectional,std > 0.05
+Power conservation,phenomenological,err < 1e-12
+Temperature sensitivity,phenomenological,PASS
+Wavelength sensitivity,phenomenological,PASS
+Seed randomness,phenomenological,PASS
+Poincaré scrambling,phenomenological,std > 0.05
+Zero-length identity,both,PASS
+Auto-dispatch,auto,2000 m threshold
+enabled=False,both,PASS

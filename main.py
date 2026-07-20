@@ -1,7 +1,7 @@
 from src.deprecated import sslaser as laser
 from src.visualization.stokes import compute_stokes_parameters, poincare, cos_sim
 from src.visualization import polarimeter
-from src.channel import polarizer, PhaseModulator, cable
+from src.channel import polarizer, PhaseModulator, propagate
 import numpy as np
 
 source = laser.SolidStateLaser(
@@ -46,7 +46,7 @@ print(f"------------------Stokes after QC---------------------")
 # NOTE: dispersion=True requires the complex envelope (sample_field()).
 # The over-period field below has only ~5 fs of data — CD on this has
 # no modulation bandwidth to disperse.  Pass a placeholder dt for now.
-E = cable(100, E, dt=1e-12, dispersion=True)
+E = propagate(100, E, dt=1e-12, dispersion=True)
 stokes, polarization = compute_stokes_parameters(E)
 S0, S1, S2, S3 = stokes
 psi, chi = polarization

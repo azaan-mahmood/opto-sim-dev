@@ -22,7 +22,7 @@ Date: 2026-07-08 | Project: opto-sim-dev | Commit: ebf4971 | All 48 tests passin
 
 Anomalies:
 
-- **_dgd_sampled side-effect** (L:29, L:154): Module-level list accumulates DGD from every `cable()` call with `dispersion=True`. Tests and scripts that call `cable()` will append values. Validation scripts clear it first, but running tests + validation in the same process would mix values. **Fix**: use a separate subprocess (as `run_all.py` already does) or add a reset function.
+- **_dgd_sampled side-effect** (L:29, L:154): Module-level list accumulates DGD from every `propagate()` call with `dispersion=True`. Tests and scripts that call `propagate()` will append values. Validation scripts clear it first, but running tests + validation in the same process would mix values. **Fix**: use a separate subprocess (as `run_all.py` already does) or add a reset function.
 
 ---
 
@@ -157,7 +157,7 @@ Anomaly: `t = np.linspace(0, 2π/frequency, 1000)` hardcodes 1000 points (L:16).
 | Maxwellian DGD distribution | **PASS**: KS p=0.31 at 5000 realizations |
 | Mean DGD = 29.3 ps (expected 29.1 ps) | **PASS**: error 0.6% |
 | RMS DGD = 31.8 ps (expected 31.6 ps) | **PASS**: error 0.5% |
-| DGD recorded directly from cable() | **PASS** (Fix 3 applied) |
+| DGD recorded directly from propagate() | **PASS** (Fix 3 applied) |
 
 Gap:
 - **Ensemble size**: Currently 5000 realizations.  The paper target is
@@ -177,7 +177,7 @@ Gap:
 | Check | Result |
 |---|---|
 | P_out/P_in = 10^{-αL/10} | **PASS**: 0.0000% error at 0-200 km |
-| Validates via cable() output | **PASS** |
+| Validates via propagate() output | **PASS** |
 
 Gap:
 - **No external OTDR data overlay** — currently a pure self-consistency check.

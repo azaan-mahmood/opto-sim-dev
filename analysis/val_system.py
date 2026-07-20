@@ -26,7 +26,7 @@ import os, sys, time, argparse, random
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.lasers.cwlaser import CWLaser
-from src.channel import cable, optics
+from src.channel import propagate, optics
 from src.channel.phase_modulator import PhaseModulator
 from src.channel.mzm import MZM
 from src.detectors.apd import apd
@@ -96,7 +96,7 @@ def simulate_bb84_full(num_bits, fiber_length=50, pulse_sigma=30e-12,
         E = optics.polarizer(E, '45')
         E = pm_alice.modulate(E_field=E, V=phase_alice)
 
-        E = cable(
+        E = propagate(
             fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
             attenuation_factor=0.182, temperature=temperature,
             bend_radius=bend_radius, pm_dispersion=pm_dispersion,

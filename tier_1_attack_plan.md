@@ -17,7 +17,7 @@ Validate every physical model in the fibre channel against published experimenta
 
 **Method:**
 - Launch Gaussian pulse through MZM (σ = 5–30 ps)
-- Pass through `cable()` at z/L_D = 0.5, 1.0, 2.0
+- Pass through `propagate()` at z/L_D = 0.5, 1.0, 2.0
 - Fit output |E|² to Gaussian, measure σ(z)
 - Compare to analytic: σ(z) = σ₀·√(1 + (z/L_D)²)
 
@@ -93,5 +93,5 @@ Validate every physical model in the fibre channel against published experimenta
 
 ## Key Decisions
 - PMD: Validate current Rayleigh sampling first, compare to Maxwellian literature — fix only if needed
-- No `cable()` API changes expected (unless PMD fix changes DGD sampling)
+- No `propagate()` API changes expected (unless PMD fix changes DGD sampling)
 - All scripts accept `--seed` for reproducibility

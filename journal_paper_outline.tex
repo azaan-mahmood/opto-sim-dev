@@ -193,7 +193,7 @@ $E$ so that $\langle|E|^2\rangle = P_{\text{laser}}$).  All downstream
 components derive power from $\langle|E|^2\rangle$ --- no separate
 \texttt{pin}/\texttt{pout} tracking.
 
-\scriptref{src/channel/fiber.py:cable(); src/lasers/cwlaser.py:sample\_field()}
+\scriptref{src/channel/fiber.py:propagate(); src/lasers/cwlaser.py:sample\_field()}
 
 \subsection{2.2 Birefringence (Beat-Length Model)}
 \label{sec:biref}
@@ -387,7 +387,7 @@ Fig.~\ref{fig:pipeline}:
   atten [alpha, L] $\rightarrow$ E\_out.  Created with
   matplotlib.patches or tikz.}
 
-\scriptref{src/channel/fiber.py:cable(), lines 42--93 (docstring
+\scriptref{src/channel/fiber.py:propagate(), lines 42--93 (docstring
   ordering matches implementation)}
 
 % ============================================================
@@ -404,7 +404,7 @@ and CSV files.
 
 \textbf{Method:} Generate a Gaussian pulse $E_{\text{in}} = 
 \exp(-t^2/2T_0^2)$ with $T_0 = 30$~ps.  Propagate through
-\texttt{cable()} at $z/L_D = \{0.0, 0.5, 1.0, 2.0\}$ where
+\texttt{propagate()} at $z/L_D = \{0.0, 0.5, 1.0, 2.0\}$ where
 $L_D = T_0^2/|\beta_2|$ is the dispersion length.  Compute the RMS
 width $\sigma(z) = \sqrt{\langle(t - \langle t\rangle)^2\rangle}$.
 Compare with Agrawal [6] Eq 3.2.6:
@@ -441,7 +441,7 @@ $\sigma(z)/\sigma_0 = \sqrt{1 + (z/L_D)^2}$ overlaid.
 
 \textbf{Method:} $N = 10\,000$ fiber realisations at $L = 100$~km,
 $\text{PMD}_{\text{coeff}} = 0.1$~ps/$\sqrt{\text{km}}$.
-DGD recorded directly from \texttt{cable()} via \texttt{\_dgd\_sampled}
+DGD recorded directly from \texttt{propagate()} via \texttt{\_dgd\_sampled}
 list (no cross-correlation extraction).  Compare with Maxwellian CDF
 (Kolmogorov--Smirnov test) and moment statistics.
 
@@ -727,7 +727,7 @@ QBER variation ($>1$\%).
     become relevant.  Valid for typical QKD powers ($-20$ to
     $0$~dBm), but not for high-power calibration.
   \item \textbf{Single-segment PMD:} The PMD vector is drawn once per
-    \texttt{cable()} call.  A multi-segment model would allow frequency
+    \texttt{propagate()} call.  A multi-segment model would allow frequency
     correlation and second-order PMD --- relevant for high-bandwidth
     signals ($>10$~GHz).
   \item \textbf{CWLaser phase noise is pure Wiener:} No $1/f$ phase noise

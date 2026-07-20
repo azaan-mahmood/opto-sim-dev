@@ -128,7 +128,7 @@ Each impairment is applied sequentially to the complex-envelope field:
     validation uses 5000 with KS p=0.31)
   - Mean DGD = 29.3 ps vs expected 29.1 ps (error 0.6 %)
   - RMS DGD = 31.8 ps vs expected 31.6 ps (error 0.5 %)
-  - DGD recorded directly from cable() — no cross-correlation
+  - DGD recorded directly from propagate() — no cross-correlation
     extraction (improved in commit 65f078f)
 
 **Figure 3 — Attenuation: power vs distance (Keiser Fig 3.X)**

@@ -19,22 +19,32 @@ All timestamps are local time (UTC+5).
 
 **Tests:** 48/48 pass.
 
-## 2026-07-20 — Rename fiber_sectional → fiber, individual impairment flags
+## 2026-07-20 — Rename fiber_sectional → fiber, cable → propagate, individual impairment flags, rework birefringence validation
 
-### Session: file rename, independent impairment toggles
+### Session: renames, independent impairment toggles, split-model validation
 
 **File rename:** `src/channel/fiber_sectional.py` → `src/channel/fiber.py`
 - Updated all imports: `__init__.py`, `test_fiber.py`, 4 validation scripts
 - Updated references in `journal_paper_outline.tex` and `AGENTS.md`
 
-**Independent impairment flags in `cable()`:**
+**Function rename:** `cable()` → `propagate()` in `src/channel/fiber.py`
+- Updated all call sites: `analysis/val_system.py`, `tests/test_fiber.py`, all 3 BB84 protocol scripts, `main.py`
+- Updated `__init__.py` export
+- Updated AGENTS.md and CHANGELOG.md
+
+**Independent impairment flags in `propagate()`:**
 - `birefringence` (default True), `cd` (default None → uses `dispersion`), `pmd` (default None → uses `dispersion`), `attenuation` (default True)
 - Backward compatible: `dispersion=True` still enables cd+pmd; `dispersion=False` (default) disables them
-- New patterns: `cable(..., birefringence=False, attenuation=False)` → no impairments;
-  `cable(..., birefringence=False)` → attenuation only;
-  `cable(..., attenuation=False)` → birefringence only
+- New patterns: `propagate(..., birefringence=False, attenuation=False)` → no impairments;
+  `propagate(..., birefringence=False)` → attenuation only;
+  `propagate(..., attenuation=False)` → birefringence only
 - `apply_birefringence()` also gets `enabled=True` parameter
 - `dt` required only when `cd=True` or `pmd=True` (not just `dispersion=True`)
+
+**Birefringence validation reworked (`validate_birefringence.py`):**
+- Now validates both models explicitly: sectional (L < 2 km) and phenomenological (L ≥ 2 km) in separate test functions
+- Added auto-dispatch test: verifies model selection at boundary
+- Self-consistency checks now labelled per-model
 
 **Tests:** 48/48 pass, validation clean.
 
@@ -47,7 +57,7 @@ All timestamps are local time (UTC+5).
   - **Short fibres** (L < `SECTIONAL_LIMIT` = 2 km, `model='sectional'`): multi-section ordered product of random-axis SU(2) matrices, L_B ≈ 31 m (Agrawal §4.1). For DV-QKD and DPS QKD.
   - **Long fibres** (L >= 2 km, `model='phenomenological'`): single SU(2) rotation with `θ = min(π, √(L/L_char)·π/2)` (Menyuk & Wai 1994), L₀ = 75 km. For long-haul BB84 with distance-dependent QBER.
   - Auto-dispatch required because multi-section model converges to uniform SU(2) within ~1 km regardless of parameters, producing flat ~50% QBER.
-- Fixed: duplicate return statement, `section_length` default to 1.0, `cable()` indentation, unused `L0` in validation
+- Fixed: duplicate return statement, `section_length` default to 1.0, `propagate()` indentation, unused `L0` in validation
 
 **System demo results (hybrid mode):**
 - 0–70 km: 0% QBER → 80 km: 23% → 200 km: 68% (peak) → 500+ km: ~45–53% (dark count floor)

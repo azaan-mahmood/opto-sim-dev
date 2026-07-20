@@ -1,7 +1,7 @@
 import argparse
 import numpy as np
 from src.lasers.cwlaser import CWLaser
-from src.channel import cable, optics
+from src.channel import propagate, optics
 from src.channel.phase_modulator import PhaseModulator
 from src.channel.mzm import MZM
 from src.visualization import fields, polarimeter
@@ -90,7 +90,7 @@ def simulate_bb84_dispersion(num_bits, fiber_length=100, pulse_sigma=30e-12,
             polarimeter(E, title=f"Alice: bit {alice_bit}, basis {alice_basis}")
 
         # Fiber with dispersion (now physically meaningful for broadband pulses)
-        E = cable(
+        E = propagate(
             fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
             attenuation_factor=0.182, temperature=25, bend_radius=None
         )

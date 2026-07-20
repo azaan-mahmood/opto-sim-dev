@@ -1,7 +1,7 @@
 import argparse
 import numpy as np
 from src.lasers.cwlaser import CWLaser
-from src.channel import cable, optics
+from src.channel import propagate, optics
 from src.channel.phase_modulator import PhaseModulator
 from src.visualization import fields, polarimeter
 from src.detectors import apd
@@ -82,7 +82,7 @@ def simulate_bb84(num_bits, fiber_length=100, dispersion=False, show_pol=False, 
 
         # Channel transmission (QC). Dispersion now works because
         # sample_field returns the complex envelope (not the optical carrier).
-        E = cable(
+        E = propagate(
             fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
             attenuation_factor=0.182, temperature=25, bend_radius=None
         )

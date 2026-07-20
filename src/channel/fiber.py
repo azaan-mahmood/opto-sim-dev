@@ -327,11 +327,11 @@ def apply_attenuation(E, L_km, attenuation_factor=0.182):
     return E * np.sqrt(att_lin)
 
 
-def cable(fiber_length, E, dt=None, wavelength=1550e-9,
-          dispersion=False, attenuation_factor=0.182,
-          temperature=25, bend_radius=None, pm_dispersion=0.1e-12,
-          section_length=1.0, model='auto',
-          birefringence=True, cd=None, pmd=None, attenuation=True):
+def propagate(fiber_length, E, dt=None, wavelength=1550e-9,
+              dispersion=False, attenuation_factor=0.182,
+              temperature=25, bend_radius=None, pm_dispersion=0.1e-12,
+              section_length=1.0, model='auto',
+              birefringence=True, cd=None, pmd=None, attenuation=True):
     """Transmission through an optical fibre.
 
     Each impairment can be independently enabled/disabled via individual
