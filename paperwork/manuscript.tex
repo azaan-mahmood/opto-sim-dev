@@ -1084,25 +1084,16 @@ distance-dependent baseline (~19\% at 75~km with a 50~mm bend).
 
 \paragraph{Combined impairment scenarios (Table~\ref{tab:system}).}
 The system-level QBER at 100~km for each impairment combination is
-shown in Table~\ref{tab:system}, with the old symmetric-diagonal
-birefringence model values in parentheses for comparison.  Under the
-corrected phenomenological model (Menyuk~\cite{menyuk},
-Wai~\cite{wai}), the birefringence alone produces 41.9\%~QBER
-($\theta = \sqrt{100/75}\cdot\pi/2 \approx 1.81$~rad at 100~km),
-whereas the old symmetric-diagonal model happened to give 0\% at
-exactly 100~km due to its deterministic modulo-$2\pi$ oscillation ---
-at a different length it would produce 100\%.  The corrected model
-yields a smooth, physically consistent QBER that varies continuously
-with distance.
-
-The CD-only, PMD-only, and CD+PMD scenarios all cluster around
-42--45\%~QBER, confirming that the narrow-band 30~ps pulse is
-insensitive to CD and PMD at this distance; the birefringence
-dominates the error rate.  Attenuation alone at 100~km adds less than
-1\% to the baseline birefringence QBER (42.5\% vs 41.9\%).  The tight
-bend (R = 1~cm) drives the QBER to ~70\% in all bend-inclusive
-scenarios, including CD+PMD+Attenuation+Bend, consistent with the
-bend-induced birefringence dominating the net rotation angle.
+shown in Table~\ref{tab:system}.  The birefringence alone produces
+41.9\%~QBER ($\theta = \sqrt{100/75}\cdot\pi/2 \approx 1.81$~rad at
+100~km), and the CD-only, PMD-only, and CD+PMD scenarios all cluster
+around this baseline, confirming that the narrow-band 30~ps pulse is
+insensitive to CD and PMD at this distance.  Attenuation alone at
+100~km adds less than 1\% to the baseline birefringence QBER (42.5\%
+vs 41.9\%).  The tight bend (R = 1~cm) drives the QBER to ~70\% in
+all bend-inclusive scenarios, including
+CD+PMD+Attenuation+Bend, consistent with the bend-induced
+birefringence dominating the net rotation angle.
 
 At 500~km and beyond, the 91--182~dB path loss
 (Keiser~\cite{keiser} Eq.~3.6) attenuates the signal below the APD

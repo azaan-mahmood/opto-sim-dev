@@ -112,6 +112,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → propagate (dispersion flag) → PBS → APD
 - Both accept `--dispersion` CLI flag (default False for backward compatibility in ideal/bitrate scripts)
 - `bb84_test_dispersion.py`: MZM-carved Gaussian pulses (5–30 ps σ) for broadband field generation; dispersion=True by default
+- `bb84_duplinskiy.py`: Replication of Duplinskiy et al. (Opt. Express 2017). Uses SPAD (not APD), VOA for Bob's internal loss. μ=0.1, 10 MHz, 20 ns gate, ID230 specs. QBER vs distance sweep in `analysis/val_duplinskiy/`.
 - QBER with CW laser (1 MHz linewidth) is 0% regardless of dispersion flag — near-monochromatic field is CD/PMD-agnostic
 - QBER with 5 ps MZM-carved pulses + dispersion at 100 km: **15.0 %** (z/LD ≈ 87, PMD >> pulse width)
 
@@ -122,6 +123,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `analysis/val_biref/val_biref--seed42.png`: Birefringence L_B vs R (Yuan Fig 1) [old model]
 - `analysis/val_birefringence/val_birefringence--seed42.png`: Random-axis birefringence validation (6 panels)
 - `val_system/val_system--seed42.png`: System-level demo: QBER vs distance 0–1000 km, 250 MHz bit rate
+- `analysis/val_duplinskiy/qber_vs_distance--seed42.png`: Duplinskiy BB84 replication, QBER vs distance 0–100 km
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
 - `analysis/qber_vs_bitrate.png`: 0% at 215 MHz → 35% at 10 GHz
 - `analysis/qber_vs_distance_dispersion.png`: QBER climb 0→42% at 10→200 km with dispersion (5 ps pulse)
@@ -178,6 +180,7 @@ opto-sim-dev/
 │   ├── val_biref/             # Birefringence L_B vs R (old model)
 │   ├── val_birefringence/     # Random-axis birefringence validation (6-panel)
 │   ├── val_mzm/               # MZM validation outputs
+│   ├── val_duplinskiy/        # Duplinskiy BB84 replication outputs
 │   ├── val_system.py          # System-level demo
 │   ├── laser_characterization.py   # Active: CWLaser dashboard (Agg, headless)
 │   ├── qber_vs_distance_dispersion.py  # Dispersion QBER sweep
@@ -199,7 +202,8 @@ opto-sim-dev/
 │   │   └── ndyag.py
 │   ├── detectors/
 │   │   ├── __init__.py
-│   │   └── apd.py
+│   │   ├── apd.py
+│   │   └── spad.py              # Geiger-mode SPAD (ID230 specs)
 │   ├── channel/               # Optical channel components (renamed from opto_eq)
 │   │   ├── __init__.py
 │   │   ├── fiber.py
@@ -215,7 +219,8 @@ opto-sim-dev/
 │   │   ├── __init__.py
 │   │   ├── bb84_ideal.py           # CW laser, optional dispersion
 │   │   ├── bb84_high_bitrate.py    # Bitrate-sweep variant
-│   │   └── bb84_test_dispersion.py # MZM-carved pulses, dispersion=on by default
+│   │   ├── bb84_test_dispersion.py # MZM-carved pulses, dispersion=on by default
+│   │   └── bb84_duplinskiy.py      # Duplinskiy et al. replication (SPAD, VOA)
 │   └── common/                # README images only
 ├── research_roadmap.md
 ├── AGENTS.md
@@ -229,6 +234,14 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `src/detectors/spad.py` | NEW: Geiger-mode SPAD, inherits from APD. Dead time, DCR, afterpulsing, gated detection. ID230 specs. |
+| `src/detectors/__init__.py` | Added `spad` export |
+| `src/channel/optics.py` | Added `voa(E, attenuation_dB)` for variable optical attenuation |
+| `src/protocols/bb84_duplinskiy.py` | NEW: Duplinskiy et al. BB84 replication. SPAD + VOA, μ=0.1, 10 MHz, 20 ns gate. |
+| `analysis/val_duplinskiy/sweep_distance.py` | NEW: Distance sweep 0–100 km, QBER vs distance curve |
+| `analysis/val_duplinskiy/qber_vs_distance--seed42.png` | Distance sweep figure |
+| `paperwork/manuscript.tex` | Updated system-level scenarios, removed old model references |
+| `paperwork/tables/val_system_table.tex` | 9-row system impairment table |
 | `src/channel/fiber.py` | Hybrid dispatch: `apply_birefringence()` auto-routes to `_sectional` (L < 2 km) or `_phenomenological` (L >= 2 km). Fixed duplicate return, section_length=1.0 default, propagate() indentation. Added `model` param to propagate(). |
 | `analysis/validation/validate_birefringence.py` | Removed unused `L0 = 75e3`. Validates both models via auto-dispatch. |
 | `analysis/val_system.py` | Updated outputs (QBER: 0%→68% at 200 km, dark-count floor ~45% at 1000 km) |

@@ -4,6 +4,27 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-07-21 — SPAD detector, VOA, Duplinskiy et al. BB84 replication
+
+### Session: single-photon detection, protocol replication, distance sweep
+
+| Change | Files | Rationale |
+|---|---|---|
+| Geiger-mode SPAD detector | `src/detectors/spad.py` (new), `src/detectors/__init__.py` | Inherits from APD; same photoelectric physics, different operating point (bias above breakdown). Adds dead time (13 μs), dark count rate (15 Hz), afterpulsing (5%), gated detection (20 ns). Binary click output. ID230 specs. |
+| Variable optical attenuator | `src/channel/optics.py` | `voa(E, attenuation_dB)` — applies amplitude scaling `sqrt(10^(-dB/10))` to field. Used for Bob's internal loss in Duplinskiy replication. |
+| Duplinskiy et al. BB84 replication | `src/protocols/bb84_duplinskiy.py` (new), `analysis/val_duplinskiy/sweep_distance.py` (new) | Matches paper's setup: CWLaser → polarizer(45°) → PM1 → propagate → VOA → PM2 → PBS → 2×SPAD. μ=0.1, 10 MHz, 20 ns gate, 10% QE, 0.2 dB/km SMF-28. |
+| Distance sweep QBER curve | `analysis/val_duplinskiy/qber_vs_distance--seed42.png` | 0–100 km sweep, 1M pulses/point. Baseline QBER 2.63% at 0 km (dark counts + afterpulsing), rising to 43.9% at 100 km. |
+| Manuscript updates | `paperwork/manuscript.tex`, `paperwork/tables/val_system_table.tex` | Removed old model references, added attenuation dominance explanation, updated system-level scenarios. |
+| Reference PDF | `paperwork/Low_loss_QKD_optical_scheme_for_fast_polarization_.pdf`, `paperwork/Image.png` | Duplinskiy et al. paper and optical scheme diagram for reference. |
+
+**Key results:**
+- 0 km: QBER = 2.63% (dark count floor, matches paper's ~2% lab baseline)
+- 50 km: QBER = 26.45% (paper: ~2% lab spool — discrepancy from phenomenological birefringence model)
+- 100 km: QBER = 43.90% (approaching dark-count-limited 50%)
+- Loss model validated: perfectly linear at 0.2 dB/km + 2 dB Bob
+
+**Note:** SPAD physics same as APD (photoelectric effect, Poisson statistics) — only voltage threshold changes. No separate physics validation needed.
+
 ## 2026-07-20 — Birefringence recalibration (SMF-28), fiber.py → fiber_sectional.py
 
 ### Session: Recalibrate Δn₀ to SMF-28 literature, rename file

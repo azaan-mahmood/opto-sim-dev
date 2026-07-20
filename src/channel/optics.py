@@ -86,6 +86,22 @@ def polarization_controller(E, qwp1=0, hwp=0,qwp2=0):
     return E
 
 
+def voa(E, attenuation_dB):
+    """Variable optical attenuator.
+
+    Parameters
+    ----------
+    E : ndarray (N, 2) — complex-envelope field.
+    attenuation_dB : float — attenuation in dB (positive = loss).
+
+    Returns
+    -------
+    ndarray (N, 2) — attenuated field.
+    """
+    atten_lin = 10.0 ** (-attenuation_dB / 10.0)
+    return E * np.sqrt(atten_lin)
+
+
 def polarizer(E, polarization):
     if polarization == 'H':
         J_H = np.array([
