@@ -541,13 +541,21 @@ longer than $\sim$100~km, consistent with the behaviour of field-deployed
 QKD systems that require continuous polarisation tracking.
 
 The multi-section model is physically correct for short fibres
-(L $<$ 2~km) where the detailed polarisation evolution matters,
-but becomes computationally expensive at long-haul distances and
-converges to a uniform SU(2) distribution within approximately
-1~km regardless of parameters.  For long-haul BB84 simulation
-(L $\ge$ 2~km) we therefore replace the ordered product with a
-single SU(2) rotation whose angle follows the phenomenological
-$\sqrt{L}$ law (Menyuk~\&~Wai~1994):
+(L $<$ 2~km) where the detailed polarisation evolution is resolved.
+However, the ordered product of many random SU(2) rotations
+converges to a uniform (Haar) distribution on the Poincar\'e
+sphere within approximately 1~km regardless of the birefringence
+strength --- once the number of sections exceeds a few hundred,
+the net rotation is uniformly distributed and the output
+polarisation is fully scrambled.  This makes the multi-section
+model unsuitable for long-haul BB84 simulation: the QBER would
+saturate at $\sim$50\% within the first kilometre, showing no
+distance-dependent structure beyond that point.
+
+For long-haul BB84 simulation (L $\ge$ 2~km) we therefore replace
+the ordered product with a single SU(2) rotation whose angle
+follows the phenomenological $\sqrt{L}$ law
+(Menyuk~\&~Wai~1994):
 
 \begin{equation}
   \theta = \min\!\left(\pi,\; \frac{\pi}{2}\sqrt{\frac{L}{L_{\text{char}}}}\right),\qquad
