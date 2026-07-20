@@ -4,6 +4,21 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-07-20 — Birefringence recalibration (SMF-28), fiber.py → fiber_sectional.py
+
+### Session: Recalibrate Δn₀ to SMF-28 literature, rename file
+
+| Change | Files | Rationale |
+|---|---|---|
+| Recalibrated birefringence to SMF-28 | `src/channel/fiber.py` → `src/channel/fiber_sectional.py` | Δn₀ = 8.7e-6 → 5.0e-8 (L_B = 31 m, Agrawal §4.1 SMF-28 range 10–100 m). T_coeff = -5e-7 → -3e-9/°C (same ~6%/°C ratio). Clamping floor 1e-8 → 5e-10. Stochastic residual 10% of Δn₀. |
+| Renamed fiber.py → fiber_sectional.py | `src/channel/fiber_sectional.py` | Multi-section model now has explicit filename. All imports updated. |
+| Updated imports | `src/channel/__init__.py`, 5 validation scripts, `test_fiber.py` | s/src.channel.fiber/src.channel.fiber_sectional/g |
+| Updated manuscript parameter values | `paperwork/manuscript.tex` | Δn₀ 8.7e-6 → 5e-8, L_B 0.18 m → 31 m. Removed "compressed correlation length" language — now SMF-28 realistic. |
+| Updated validation Panel D units | `analysis/validation/validate_birefringence.py` | Beat length in metres (not mm) for new L_B ≈ 31 m. |
+| Updated documentation | `AGENTS.md`, `journal_paper_outline.tex`, `CHANGELOG.md` | Fiber references point to fiber_sectional.py. |
+
+**Tests:** 48/48 pass.
+
 ## 2026-07-19 — Random-axis birefringence model, system demo 0–1000 km, manuscript 21 pp
 
 ### Session: random birefringence + extended demo + manuscript

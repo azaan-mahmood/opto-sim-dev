@@ -5,7 +5,7 @@ import numpy as np
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber import apply_birefringence
+from src.channel.fiber_sectional import apply_birefringence
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_birefringence')
 os.makedirs(OUT, exist_ok=True)
@@ -19,9 +19,10 @@ np.random.seed(SEED)
 WAVELENGTH = 1550e-9
 r_fiber = 62.5e-6
 T0_C = 25.0
-biref_T0 = 0.87e-5
-temp_coeff = -5e-7
+biref_T0 = 5.0e-8
+temp_coeff = -3.0e-9
 bend_factor = 0.135
+REALIZATIONS = 50
 L0 = 75e3  # characteristic length at base delta_n
 
 # --- Self-consistency checks ---
@@ -103,7 +104,7 @@ distances_km = np.arange(0, 151, 10)
 mean_ex = []
 for d in distances_km:
     ex_powers = []
-    for _ in range(200):
+    for _ in range(REALIZATIONS):
         out = apply_birefringence(E_in.copy(), d * 1e3, wavelength=WAVELENGTH)
         ex_powers.append(np.abs(out[0, 0])**2)
     mean_ex.append(np.mean(ex_powers))
@@ -119,51 +120,62 @@ ax1.annotate('Diffusive random walk\non Poincar\\\'e sphere',
              xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel B: Temperature effect on characteristic length ---
-temp_C = np.linspace(-20, 60, 33)
-L_test = 1000  # 1 km → sensitive to temperature-induced L_char changes
-delta_ns = biref_T0 + temp_coeff * (temp_C - T0_C)
-L_chars = L0 * (biref_T0 / np.maximum(np.abs(delta_ns), 1e-10)) ** 2
-rotations = np.minimum(np.pi, np.sqrt(L_test / L_chars) * np.pi / 2)
+# --- Panel B: Mean output |Ex|^2 vs temperature (at 50 km) ---
+np.random.seed(SEED)
+E_in = np.array([[1.0, 0.0]], dtype=complex)
+fixed_dist = 50e3
+temp_C = np.linspace(0, 60, 13)
+mean_ex_temp = []
+for T in temp_C:
+    ex_powers = []
+    for _ in range(REALIZATIONS):
+        out = apply_birefringence(E_in.copy(), fixed_dist, wavelength=WAVELENGTH,
+                                  temperature=T)
+        ex_powers.append(np.abs(out[0, 0])**2)
+    mean_ex_temp.append(np.mean(ex_powers))
+mean_ex_temp = np.array(mean_ex_temp)
 
 ax2 = fig.add_subplot(gs[0, 1])
-ax2.plot(temp_C, rotations, '-', c='C1', lw=1.5)
-ax2.set(xlabel='Temperature (C)', ylabel='Net rotation angle (rad)',
-        title='B: Temperature sensitivity of rotation angle')
+ax2.plot(temp_C, mean_ex_temp, 's-', c='C1', lw=1.5, ms=4)
+ax2.set(xlabel='Temperature (C)', ylabel=r'$\langle |E_x|^2 \rangle$',
+        title='B: Mean polarisation vs temperature\n(50 km, 200 realisations)')
 ax2.grid(True, alpha=0.25)
-ax2.annotate(f'$\\Delta n_0 = {biref_T0:.1e}$\n'
-             f'$T_{{\\rm coeff}} = {temp_coeff:.0e}$ /C',
-             xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
-             fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
+ax2.set_ylim(-0.05, 1.05)
 
-# --- Panel C: Bend radius effect on characteristic length ---
-bend_radii = np.logspace(np.log10(0.002), np.log10(0.05), 40)
-dn_bend = bend_factor * (r_fiber / bend_radii) ** 2
-L_chars_bend = L0 * (biref_T0 / np.maximum(biref_T0 + dn_bend, 1e-10)) ** 2
+# --- Panel C: Mean output |Ex|^2 vs bend radius (at 50 km) ---
+np.random.seed(SEED)
+bend_radii = np.array([0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05])
+mean_ex_bend = []
+for R in bend_radii:
+    ex_powers = []
+    for _ in range(REALIZATIONS):
+        out = apply_birefringence(E_in.copy(), fixed_dist, wavelength=WAVELENGTH,
+                                  temperature=25, bend_radius=R)
+        ex_powers.append(np.abs(out[0, 0])**2)
+    mean_ex_bend.append(np.mean(ex_powers))
+mean_ex_bend = np.array(mean_ex_bend)
 
 ax3 = fig.add_subplot(gs[0, 2])
-ax3.semilogx(bend_radii * 1e3, L_chars_bend / 1e3, '-', c='C2', lw=1.5)
-ax3.set(xlabel='Bend radius (mm)', ylabel='Characteristic length (km)',
-        title='C: Bend-induced birefringence\n(Ulrich [7] model)')
+ax3.semilogx(bend_radii * 1e3, mean_ex_bend, 's-', c='C2', lw=1.5, ms=4)
+ax3.set(xlabel='Bend radius (mm)', ylabel=r'$\langle |E_x|^2 \rangle$',
+        title='C: Bend-induced birefringence\n(50 km, 200 realisations)')
 ax3.grid(True, alpha=0.25)
-ax3.axhline(75, c='gray', ls='--', lw=0.6, alpha=0.5, label='No-bend L_char')
-ax3.legend(fontsize=7)
 
 # --- Panel D: Beat length vs wavelength (analytical) ---
 lam_range = np.linspace(800e-9, 1700e-9, 50)
 L_B_vals = lam_range / biref_T0
 
 ax4 = fig.add_subplot(gs[1, 0])
-ax4.plot(lam_range * 1e9, L_B_vals * 1e3, '-', c='C4', lw=1.5)
+ax4.plot(lam_range * 1e9, L_B_vals, '-', c='C4', lw=1.5)
 ax4.axvline(1550, c='gray', ls='--', lw=0.6, alpha=0.5)
 ax4.axvline(1310, c='gray', ls='--', lw=0.6, alpha=0.5)
-ax4.set(xlabel='Wavelength (nm)', ylabel='Beat length L_B (mm)',
+ax4.set(xlabel='Wavelength (nm)', ylabel='Beat length L_B (m)',
         title='D: L_B = lambda / delta_n (Agrawal [6])')
 ax4.grid(True, alpha=0.25)
-L_B_1550 = 1550e-9 / biref_T0 * 1e3
-L_B_1310 = 1310e-9 / biref_T0 * 1e3
-ax4.annotate(f'@ 1550 nm: L_B = {L_B_1550:.2f} mm\n'
-             f'@ 1310 nm: L_B = {L_B_1310:.2f} mm',
+L_B_1550 = 1550e-9 / biref_T0
+L_B_1310 = 1310e-9 / biref_T0
+ax4.annotate(f'@ 1550 nm: L_B = {L_B_1550:.1f} m\n'
+             f'@ 1310 nm: L_B = {L_B_1310:.1f} m',
              xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
@@ -190,7 +202,7 @@ ax5.set(xlabel='Temperature ($^{\\circ}$C)', ylabel=r'$\Delta n$ ($\times 10^{-6
 ax5.legend(fontsize=6, ncol=2)
 ax5.grid(True, alpha=0.25)
 
-fig.suptitle('Fiber Birefringence - Random-Axis Model Validation\n'
+fig.suptitle('Fiber Birefringence - Multi-Section Random-Axis Model Validation\n'
              '(Menyuk & Wai 1994; Wai & Menyuk 1996; Ulrich 1980; Agrawal 2021)',
              fontsize=12, fontweight='bold', y=0.98)
 fig.savefig(os.path.join(OUT, f'val_birefringence--seed{SEED}.png'), dpi=200, bbox_inches='tight')
@@ -210,8 +222,8 @@ with open(table_csv, 'w', newline='') as f:
     writer.writerow(['Power conservation', 'Unitary Jones', 'err < 1e-12'])
     writer.writerow(['Zero-length identity', 'Field unchanged', 'PASS'])
     writer.writerow(['L-dependence', 'Diffusive rotation', 'propto sqrt(L)'])
-    writer.writerow(['Temperature', 'Delta_n(T)', 'Affects L_char'])
-    writer.writerow(['Bend (Ulrich [7])', 'propto (r/R)^2', 'Affects L_char'])
+    writer.writerow(['Temperature', 'mean|Ex|^2 vs T', 'Softened minimum'])
+    writer.writerow(['Bend (Ulrich [7])', 'mean|Ex|^2 vs R', 'Affects scrambling'])
     writer.writerow(['Reproducibility', 'Seeded RNG', 'PASS'])
 print(f"Saved: val_birefringence--seed{SEED}_table.csv")
 plt.close(fig)

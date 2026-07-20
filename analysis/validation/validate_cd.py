@@ -6,7 +6,7 @@ from scipy import stats as sp_stats
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber import apply_cd, D_TOTAL, D_MATERIAL, D_WAVEGUIDE
+from src.channel.fiber_sectional import apply_cd, D_TOTAL, D_MATERIAL, D_WAVEGUIDE
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_cd')
 os.makedirs(OUT, exist_ok=True)

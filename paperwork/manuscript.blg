@@ -1,0 +1,84 @@
+This is BibTeX, Version 0.99e
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: manuscript.aux
+Reallocating 'name_of_file' (item size: 1) to 7 items.
+The style file: ieeetr.bst
+I found no \bibdata command---while reading file manuscript.aux
+Warning--I didn't find a database entry for "netSquid"
+Warning--I didn't find a database entry for "simulaqron"
+Warning--I didn't find a database entry for "qutip"
+Warning--I didn't find a database entry for "optisystem"
+Warning--I didn't find a database entry for "vpiphotonics"
+Warning--I didn't find a database entry for "optsim"
+Warning--I didn't find a database entry for "coopmans2021"
+Warning--I didn't find a database entry for "sequence"
+Warning--I didn't find a database entry for "quisp"
+Warning--I didn't find a database entry for "qunetsim"
+Warning--I didn't find a database entry for "squanch"
+Warning--I didn't find a database entry for "buhari2012"
+Warning--I didn't find a database entry for "lumerical"
+Warning--I didn't find a database entry for "qkdnetsim"
+Warning--I didn't find a database entry for "qkdsimht"
+Warning--I didn't find a database entry for "henry"
+Warning--I didn't find a database entry for "coldren"
+Warning--I didn't find a database entry for "yariv"
+Warning--I didn't find a database entry for "agrawal5"
+Warning--I didn't find a database entry for "koyama"
+Warning--I didn't find a database entry for "weis"
+Warning--I didn't find a database entry for "menyuk"
+Warning--I didn't find a database entry for "wai"
+Warning--I didn't find a database entry for "ulrich"
+Warning--I didn't find a database entry for "smith"
+Warning--I didn't find a database entry for "shibata"
+Warning--I didn't find a database entry for "hui"
+Warning--I didn't find a database entry for "keck"
+Warning--I didn't find a database entry for "razavi"
+Warning--I didn't find a database entry for "keiser"
+Warning--I didn't find a database entry for "kasap"
+Warning--I didn't find a database entry for "saleh"
+Warning--I didn't find a database entry for "agrawal"
+Warning--I didn't find a database entry for "takesue"
+Warning--I didn't find a database entry for "dixon"
+Warning--I didn't find a database entry for "gobby"
+You've used 0 entries,
+            1876 wiz_defined-function locations,
+            513 strings with 3720 characters,
+and the built_in function-call counts, 20 in all, are:
+= -- 0
+> -- 0
+< -- 0
++ -- 0
+- -- 0
+* -- 2
+:= -- 9
+add.period$ -- 0
+call.type$ -- 0
+change.case$ -- 0
+chr.to.int$ -- 0
+cite$ -- 0
+duplicate$ -- 0
+empty$ -- 1
+format.name$ -- 0
+if$ -- 1
+int.to.chr$ -- 0
+int.to.str$ -- 0
+missing$ -- 0
+newline$ -- 3
+num.names$ -- 0
+pop$ -- 0
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 1
+stack$ -- 0
+substring$ -- 0
+swap$ -- 0
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 0
+while$ -- 0
+width$ -- 0
+write$ -- 2
+(There was 1 error message)

@@ -6,7 +6,7 @@ import os, sys, argparse
 from scipy import stats as sp_stats
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber import apply_attenuation
+from src.channel.fiber_sectional import apply_attenuation
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_attenuation')
 os.makedirs(OUT, exist_ok=True)

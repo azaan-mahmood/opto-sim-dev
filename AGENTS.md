@@ -50,7 +50,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `detect_photons()` uses `power/(h·ν) · t · η` (Agrawal Eq 4.1.2, Saleh & Teich Eq 17.1-10)
 - No `frequency` parameter — optical frequency derived from `c/λ`
 
-### Fiber (`src/channel/fiber.py`)
+### Fiber (`src/channel/fiber_sectional.py`)
 - `cable()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
@@ -82,7 +82,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - S1,S2,S3 normalized by S0; S0 set to 1.0
 - `chi = 0.5·arcsin(S3)` (S3 already normalized, S0=1)
 
-### Chromatic Dispersion (`src/channel/fiber.py`)
+### Chromatic Dispersion (`src/channel/fiber_sectional.py`)
 - **FIXED**: FFT-based model `H(Ω) = exp(-j·β₂·Ω²·L/2)` via `np.fft.fftfreq` (Agrawal [6] Eq 2.4.11)
 - Verified against Gaussian pulse broadening: ratio error < 0.06 % at z = 0.5–2.0× LD
 - Requires `dt` (sampling interval) — callers must pass this for `dispersion=True`

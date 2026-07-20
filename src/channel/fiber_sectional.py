@@ -61,19 +61,18 @@ def _random_su2_rotation(angle):
     return U / np.sqrt(det)
 
 
-def apply_birefringence(E, L, wavelength=1550e-9, temperature=25, bend_radius=None):
+def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
+                        bend_radius=None, section_length=100.0):
     """
-    Apply birefringence via a random-axis Jones matrix (phenomenological).
+    Multi-section birefringence via ordered product of random-axis
+    Jones matrices (first-principles model).
 
-    Models the net effect of random birefringence axes variation along
-    the fibre as a phenomenological rotation on the Poincaré sphere whose
-    magnitude depends on the fibre length, temperature, and bend radius.
-
-    The rotation angle follows a diffusive random walk
-    (Menyuk & Wai, JOSA~B~1994; Wai & Menyuk, JLT~1996) and saturates
-    at pi (full scrambling) for fibres much longer than the characteristic
-    length L_char.  The characteristic length itself depends on the
-    birefringence magnitude:  L_char ∝ 1/|delta_n|^2.
+    The fibre is divided into N sections of length `section_length`.
+    Each section has an independent random birefringence axis and
+    a deterministic phase retardation Δβ·Δz = 2π·|Δn|·Δz/λ.
+    The total Jones matrix is the ordered product of all section
+    matrices, which naturally produces diffusive polarisation
+    evolution and Maxwellian statistics for long fibres.
 
     Parameters
     ----------
@@ -82,20 +81,28 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25, bend_radius=No
     wavelength : float — centre wavelength in metres (default 1550 nm).
     temperature : float — ambient temperature in °C (default 25).
     bend_radius : float or None — bend radius in metres (default None).
+    section_length : float — section length in metres (default 100.0).
 
     Returns
     -------
     ndarray (N, 2) — field after birefringence rotation.
+
+    References
+    ----------
+    Menyuk & Wai, JOSA B 11(7), 1994.
+    Wai & Menyuk, JLT 14(2), 1996.
+    Agrawal, Fiber-Optic Comm. Systems, 5th ed., §4.1–4.2.
     """
     if L <= 0:
         return E.copy()
 
     T0 = 25.0
     r_fiber = 62.5e-6
-    birefringence_T0 = 0.87e-5
-    temperature_coefficient = -5e-7
+    birefringence_T0 = 5.0e-8      # Agrawal §4.1: L_B ≈ 31 m for SMF-28
+    temperature_coefficient = -3.0e-9   # ≈6 %/°C (same ratio as old params)
     bend_effect_factor = 0.135
 
+    # Total birefringence: residual + temperature + bend
     delta_n = (
         birefringence_T0
         + temperature_coefficient * (temperature - T0)
@@ -103,17 +110,48 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25, bend_radius=No
     if bend_radius is not None:
         delta_n += bend_effect_factor * (r_fiber / bend_radius) ** 2
 
-    # Characteristic length for polarization diffusion.
-    # L_char = L0 * (delta_n_0 / |delta_n|)^2  so that stronger
-    # birefringence scrambles the polarization more quickly.
-    L0 = 75e3
-    L_char = L0 * (birefringence_T0 / max(abs(delta_n), 1e-10)) ** 2
+    # Stochastic residual — prevents unphysical cancellation
+    delta_n += np.random.normal(0, 0.1 * birefringence_T0)
 
-    # Net rotation angle: sqrt(L/L_char) * pi/2, capped at pi.
-    rotation = min(np.pi, np.sqrt(L / L_char) * np.pi / 2)
+    # Clamp |Δn| to prevent L_B → ∞ (safety net below residual floor)
+    delta_n = np.sign(delta_n) * max(abs(delta_n), 5e-10)
 
-    j_total = _random_su2_rotation(rotation)
-    return np.transpose(j_total @ np.transpose(E))
+    # Number of sections
+    N = max(1, int(np.round(L / section_length)))
+    dz = L / N
+
+    # Phase retardation per section
+    delta_beta_dz = 2 * np.pi * abs(delta_n) * dz / wavelength
+    half = delta_beta_dz / 2.0
+    cos_half = np.cos(half)
+    sin_half = np.sin(half)
+
+    # Generate all N random axes at once (vectorized)
+    theta = np.random.uniform(0, 2 * np.pi, size=N)
+    phi = np.arccos(2 * np.random.uniform(size=N) - 1)
+    n0 = np.sin(phi) * np.cos(theta)
+    n1 = np.sin(phi) * np.sin(theta)
+    n2 = np.cos(phi)
+
+    # Build all N SU(2) matrices: shape (N, 2, 2)
+    J = np.empty((N, 2, 2), dtype=complex)
+    J[:, 0, 0] = cos_half - 1j * sin_half * n2
+    J[:, 0, 1] = -1j * sin_half * (n0 - 1j * n1)
+    J[:, 1, 0] = -1j * sin_half * (n0 + 1j * n1)
+    J[:, 1, 1] = cos_half + 1j * sin_half * n2
+
+    # Normalise each matrix to SU(2)
+    det = J[:, 0, 0] * J[:, 1, 1] - J[:, 0, 1] * J[:, 1, 0]
+    J /= np.sqrt(det)[:, np.newaxis, np.newaxis]
+
+    # Ordered product: J_total = J_N @ ... @ J_2 @ J_1
+    J_total = np.eye(2, dtype=complex)
+    for k in range(N):
+        J_total = J[k] @ J_total
+
+    return np.transpose(J_total @ np.transpose(E))
+
+    return np.transpose(J_total @ np.transpose(E))
 
 
 def apply_cd(E, dt, L, wavelength=1550e-9):
@@ -202,7 +240,8 @@ def apply_attenuation(E, L_km, attenuation_factor=0.182):
 
 def cable(fiber_length, E, dt=None, wavelength=1550e-9,
           dispersion=False, attenuation_factor=0.182,
-          temperature=25, bend_radius=None, pm_dispersion=0.1e-12):
+          temperature=25, bend_radius=None, pm_dispersion=0.1e-12,
+           section_length=100.0):
     """
     Transmission through an optical fibre.
 
@@ -223,6 +262,7 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
     temperature : float — °C (default 25).
     bend_radius : float or None — m (default None).
     pm_dispersion : float — s/sqrt(m) (default 0.1e-12).
+    section_length : float — birefringence section length in m (default 100).
 
     Returns
     -------
@@ -230,7 +270,8 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
     """
     L = fiber_length * 1000
 
-    E = apply_birefringence(E, L, wavelength, temperature, bend_radius)
+    E = apply_birefringence(E, L, wavelength, temperature, bend_radius,
+                            section_length)
 
     if dispersion:
         if dt is None:
