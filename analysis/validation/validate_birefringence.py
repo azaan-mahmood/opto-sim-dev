@@ -6,6 +6,7 @@ import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.channel.fiber import apply_birefringence, SECTIONAL_LIMIT
+from src.visualization.stokes import compute_stokes_parameters
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_birefringence')
 os.makedirs(OUT, exist_ok=True)
@@ -348,3 +349,71 @@ with open(table_csv, 'w', newline='') as f:
     writer.writerow(['enabled=False', 'both', 'PASS'])
 print(f"Saved: val_birefringence--seed{SEED}_table.csv")
 plt.close(fig)
+
+# ============================================================
+# Convergence figure: Poincaré sphere scatter plots for the
+# multi-section (sectional) model at increasing distances,
+# showing the transition from ordered → uniform SU(2).
+# ============================================================
+from mpl_toolkits.mplot3d import Axes3D
+
+np.random.seed(SEED)
+E_in = np.array([[1.0, 0.0]], dtype=complex)
+N_REAL = 500
+conv_distances = [0.01, 0.1, 1.0, 10.0]  # km
+
+fig2 = plt.figure(figsize=(12, 10))
+gs2 = fig2.add_gridspec(2, 2, hspace=0.30, wspace=0.30)
+titles = [
+    f'A: L = {d} km — few sections, clustered' if d == 0.1
+    else     f'B: L = {d} km — partial scrambling' if d == 0.1
+    else f'C: L = {d} km — near-uniform' if d == 1.0
+    else f'D: L = {d} km — uniform SU(2) (Haar)'
+    for d in conv_distances
+]
+
+for idx, (d_km, title) in enumerate(zip(conv_distances, titles)):
+    ax = fig2.add_subplot(gs2[idx // 2, idx % 2], projection='3d')
+    S_vals = []
+    for _ in range(N_REAL):
+        out = apply_birefringence(E_in.copy(), d_km * 1e3, wavelength=WAVELENGTH,
+                                  model='sectional')
+        (S0, S1, S2, S3), _ = compute_stokes_parameters(out)
+        S_vals.append([S1, S2, S3])
+    S_vals = np.array(S_vals)
+    mean_S = np.mean(S_vals, axis=0)
+    ax.scatter(S_vals[:, 0], S_vals[:, 1], S_vals[:, 2],
+               s=4, alpha=0.5, c='C3', marker='.')
+    ax.scatter([mean_S[0]], [mean_S[1]], [mean_S[2]],
+               s=80, c='k', marker='o', label=f'Mean = ({mean_S[0]:.3f}, {mean_S[1]:.3f}, {mean_S[2]:.3f})')
+    ax.set_xlim(-1.1, 1.1); ax.set_ylim(-1.1, 1.1); ax.set_zlim(-1.1, 1.1)
+    ax.set_xlabel('S1'); ax.set_ylabel('S2'); ax.set_zlabel('S3')
+    ax.set_title(title, fontsize=9, fontweight='bold')
+    ax.legend(fontsize=7, loc='upper left')
+    ax.set_box_aspect([1, 1, 1])
+
+fig2.suptitle('Convergence of Multi-Section Model to Uniform SU(2) on Poincare Sphere\n'
+              f'({N_REAL} realisations per distance, input Ex=1, Ey=0)',
+              fontsize=12, fontweight='bold', y=0.98)
+fig2.savefig(os.path.join(OUT, f'val_birefringence_poincare--seed{SEED}.png'),
+             dpi=200, bbox_inches='tight')
+print(f"Saved: val_birefringence_poincare--seed{SEED}.png")
+plt.close(fig2)
+
+# Quantitative convergence check: mean Stokes vector → (0,0,0) as L increases
+conv_results = []
+for d_km in conv_distances:
+    np.random.seed(SEED)
+    S_all = []
+    for _ in range(N_REAL):
+        out = apply_birefringence(E_in.copy(), d_km * 1e3, wavelength=WAVELENGTH,
+                                  model='sectional')
+        (_, S1, S2, S3), _ = compute_stokes_parameters(out)
+        S_all.append([S1, S2, S3])
+    S_all = np.array(S_all)
+    mean_norm = np.linalg.norm(np.mean(S_all, axis=0))
+    conv_results.append(mean_norm)
+    print(f"  L={d_km:3.1f} km: |mean(S)| = {mean_norm:.4f}  (0 -> uniform, 1 -> single state)")
+assert conv_results[0] > 0.15, f"Short fibre should have non-zero mean Stokes: {conv_results[0]}"
+assert conv_results[-1] < 0.10, f"Long fibre should have near-zero mean Stokes: {conv_results[-1]}"
+print(f"  [PASS] Poincare sphere convergence: |mean(S)| = {conv_results[0]:.3f} -> {conv_results[-1]:.3f}")

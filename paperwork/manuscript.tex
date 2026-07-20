@@ -937,6 +937,22 @@ conservation (unitary Jones matrix, $<10^{-12}$ error), seed-dependent
 randomness, zero-length identity, auto-dispatch routing, and the
 \texttt{enabled=False} bypass.
 
+\begin{figure}[!ht]
+  \centering
+  \includegraphics[width=0.75\textwidth]{../analysis/val_birefringence/val_birefringence_poincare--seed42.png}
+  \caption{Convergence of the multi-section model to uniform SU(2)
+  on the Poincar\'e sphere (500 realisations per distance, input
+  $E_x=1,\;E_y=0$, $\Delta n_0 = 5\times10^{-8}$).
+  At $L = 0.01$~km the points cluster near the input state
+  $(S_1,S_2,S_3)=(1,0,0)$; by $L = 1$~km the distribution is
+  nearly uniform ($|\langle\mathbf{S}\rangle| = 0.02$), and
+  further propagation does not change the statistics.  The QBER
+  under this model therefore saturates at $\sim$50\% within the
+  first kilometre, motivating the phenomenological model for
+  long-haul BB84.}
+  \label{fig:biref-conv}
+\end{figure}
+
 \subsection{APD Validation}
 
 \begin{figure}[!ht]
