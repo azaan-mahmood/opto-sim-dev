@@ -206,7 +206,7 @@ split-step engines, supporting coherent and direct-detection systems.
 It interfaces with MATLAB and SPICE for co-simulation, but like other
 commercial tools, its internal models are not independently verifiable.
 
-\subsubsection{QKD-Specific Simulators}
+\subsubsection{QKD-Specific Simulators}\label{sec:qkd-sim}
 
 QKDNetSim~\cite{qkdnetsim} (NS-3 module) focuses on QKD network
 management, key relay, and post-processing emulation using ETSI
@@ -540,6 +540,36 @@ polarisation compensation, the QBER approaches 50\% for fibres much
 longer than $\sim$100~km, consistent with the behaviour of field-deployed
 QKD systems that require continuous polarisation tracking.
 
+The multi-section model is physically correct for short fibres
+(L $<$ 2~km) where the detailed polarisation evolution matters,
+but becomes computationally expensive at long-haul distances and
+converges to a uniform SU(2) distribution within approximately
+1~km regardless of parameters.  For long-haul BB84 simulation
+(L $\ge$ 2~km) we therefore replace the ordered product with a
+single SU(2) rotation whose angle follows the phenomenological
+$\sqrt{L}$ law (Menyuk~\&~Wai~1994):
+
+\begin{equation}
+  \theta = \min\!\left(\pi,\; \frac{\pi}{2}\sqrt{\frac{L}{L_{\text{char}}}}\right),\qquad
+  L_{\text{char}} = L_0 \left(\frac{\Delta n_0}{|\Delta n|}\right)^2
+  \label{eq:biref-phenom}
+\end{equation}
+
+with $L_0 = 75$~km, $\Delta n_0 = 0.87\times10^{-5}$, and the same
+temperature coefficient ($-5\times10^{-7}/^\circ$C) and bend model
+as the multi-section model.  The rotation angle $\theta$ grows
+from 0 at $L \ll L_{\text{char}}$ to $\pi$ at $L \gg L_{\text{char}}$,
+producing a gradual distance-dependent QBER that matches the
+qualitative behaviour of long-haul BB84 links without resolving
+the sub-km polarisation structure.
+
+The dispatch between the two models is automatic: the function
+\texttt{propagate()} selects the multi-section model for
+$L < 2000$~m and the phenomenological model for $L \ge 2000$~m,
+and the user may override this choice via the \texttt{model}
+parameter (\texttt{'sectional'}, \texttt{'phenomenological'},
+or \texttt{'auto'}).
+
 \subsubsection{Chromatic Dispersion}
 
 Chromatic dispersion is applied via an FFT-based transfer function
@@ -593,6 +623,22 @@ Attenuation follows the exponential loss law (Keiser~\cite{keiser} Eq.~3.6):
 \end{equation}
 
 with $\alpha = 0.182$~dB/km at 1550~nm (Corning SMF-28 Ultra).
+
+\subsubsection{Impairment Control}
+
+The four impairments are applied sequentially by the function
+\texttt{propagate()} in the order: birefringence $\to$ CD $\to$
+PMD $\to$ attenuation.  Each impairment can be independently
+enabled or disabled via keyword arguments:
+\texttt{birefringence} (default True), \texttt{cd} (default None,
+aliased to the legacy \texttt{dispersion} flag), \texttt{pmd}
+(default None, also aliased to \texttt{dispersion}), and
+\texttt{attenuation} (default True).  A call to
+\texttt{propagate(L,\ E,\ birefringence=False,\ attenuation=False)}
+applies no impairments, returning the field unchanged;
+\texttt{propagate(L,\ E,\ birefringence=False)} applies attenuation
+only; and \texttt{propagate(L,\ E,\ cd=True,\ dt=1e-12)} applies
+birefringence, CD, and attenuation without PMD.
 
 \subsection{Avalanche Photodiode}
 
@@ -825,43 +871,63 @@ validation.
 \begin{figure}[!ht]
   \centering
   \includegraphics[width=0.75\textwidth]{../analysis/val_birefringence/val_birefringence--seed42.png}
-  \caption{Birefringence validation (multi-section random-axis model).
-  A: Mean output $|E_x|^2$ vs fibre length\ --- the diffusive random walk
-  gradually scrambles the polarisation from $|E_x|^2 = 1$ to the
-  uniformly mixed limit $|E_x|^2 = 0.5$.
-  B: Mean output $|E_x|^2$ vs temperature at 50~km\ --- the softened
-  minimum (QBER $\neq 0$) reflects the stochastic residual birefringence
-  and clamping floor.
-  C: Mean output $|E_x|^2$ vs bend radius at 50~km\ --- tight bends
-  ($R < 10$~mm) produce strong bend birefringence that scrambles the
-  polarisation.
-  D: Beat length $L_B = \lambda/\Delta n_0$ vs wavelength (Agrawal
-  Eq.~4.1.2).
-  E: Deterministic $\Delta n$ components showing temperature dependence
+  \caption{Birefringence validation (dual-model: sectional and
+  phenomenological).
+  A: Sectional model --- mean output $|E_x|^2$ vs fibre length
+  (0--1.5~km), showing the multi-section random walk that gradually
+  scrambles the polarisation from $|E_x|^2 = 1$ toward $0.5$.
+  B: Phenomenological model --- mean output $|E_x|^2$ vs fibre length
+  (0--200~km), showing the gradual $\sqrt{L}$-dependent rotation that
+  produces a distance-dependent QBER for long-haul BB84.
+  C: Phenomenological model --- mean output $|E_x|^2$ vs temperature
+  at 50~km; the curve is inverted (peak at $\sim$40$^\circ$C) because
+  $|E_x|^2$ is plotted rather than the rotation angle $\theta$ itself,
+  which would show a V-shaped minimum at the null.
+  D: Phenomenological model --- mean output $|E_x|^2$ vs bend radius
+  at 50~km (Ulrich~\cite{ulrich}).
+  E: Beat length $L_B = \lambda/\Delta n_0$ vs wavelength (Agrawal
+  Eq.~4.1.2) for the sectional model's $\Delta n_0 = 5\times10^{-8}$.
+  F: Deterministic $\Delta n$ components showing temperature dependence
   and bend contributions.}
   \label{fig:biref}
 \end{figure}
 
 \input{tables/val_birefringence_table.tex}
 
-Figure~\ref{fig:biref} validates the multi-section random-axis birefringence
-model (Menyuk~\cite{menyuk}, Wai~\cite{wai}).  Panel~A shows the mean output
-$|E_x|^2$ for 50 random fibre realisations at each distance, confirming
-the diffusive transition from ordered (short fibre) to scrambled
-(long fibre) polarisation.  Panel~B shows the mean output $|E_x|^2$ vs
-temperature at 50~km; the minimum is softened by the stochastic residual
-$\Delta n_{\text{stoch}}$ and clamping floor, preventing the unphysical
-null of the previous single-section model.  Panel~C confirms the bend
-birefringence law (Ulrich~\cite{ulrich} Eq.~1):
-$\Delta n_{\text{bend}} = 0.135\,(r_{\text{clad}}/R)^2$; tight bends
-below 10~mm produce strong scrambling at 50~km.
-Panel~D shows the beat length $L_B = \lambda/\Delta n_0$ across the
-800--1700~nm window ($L_B \approx 31$~m at 1550~nm, consistent with
-SMF-28).  Panel~E displays the deterministic $\Delta n$
-components: the linear temperature dependence and the asymptotic
-bend contributions at several bend radii.  All six self-consistency
-checks pass, including power conservation (unitary Jones
-matrix, $<10^{-12}$ error) and seed-dependent randomness.
+Figure~\ref{fig:biref} validates the dual birefringence model (sectional
+for $L < 2$~km, phenomenological for $L \ge 2$~km; see
+\S3.3.1).  Panel~A shows the multi-section random-axis model
+(Menyuk~\cite{menyuk}, Wai~\cite{wai}) on a short scale (0--1.5~km),
+where the ordered product of independent SU(2) rotations produces a
+diffusive random walk on the Poincar\'e sphere.  Panel~B shows the
+phenomenological model on a long scale (0--200~km); the single SU(2)
+rotation angle $\theta = \min(\pi,\ \frac{\pi}{2}\sqrt{L/L_{\text{char}}})$
+produces a gradual depolarisation that matches the qualitative behaviour
+of long-haul BB84 links.
+
+Panel~C shows the temperature sensitivity (phenomenological model,
+50~km).  The rotation angle $\theta$ reaches a minimum when
+$\Delta n \approx 0$ at $\sim$40$^\circ$C, but because the plot shows
+the output power $|E_x|^2$ rather than $\theta$ itself, the curve
+appears as an inverted V ($\Lambda$ shape): at the null temperature,
+$\theta \approx 0$ and the input polarisation is preserved
+($|E_x|^2 \approx 1$); away from the null, $\theta$ grows and the
+polarisation scrambles ($|E_x|^2 \to 0.5$).  The direct plot of
+$\theta$ vs $T$ would be V-shaped, with the minimum at the same
+temperature.
+
+Panel~D confirms the bend birefringence law
+(Ulrich~\cite{ulrich} Eq.~1): $\Delta n_{\text{bend}} =
+0.135\,(r_{\text{clad}}/R)^2$; tight bends below 10~mm produce strong
+scrambling at 50~km.  Panel~E shows the beat length
+$L_B = \lambda/\Delta n_0$ across the 800--1700~nm window
+($L_B \approx 31$~m at 1550~nm, consistent with SMF-28).
+Panel~F displays the deterministic $\Delta n$ components: the linear
+temperature dependence and the asymptotic bend contributions at several
+bend radii.  All 13 self-consistency checks pass, including power
+conservation (unitary Jones matrix, $<10^{-12}$ error), seed-dependent
+randomness, zero-length identity, auto-dispatch routing, and the
+\texttt{enabled=False} bypass.
 
 \subsection{APD Validation}
 
@@ -966,15 +1032,17 @@ sufficiently narrow that CD and PMD are negligible, and the residual
 QBER is entirely due to birefringence at the 75~km operating point.
 
 \paragraph{Panel C: QBER vs temperature.}
-The QBER exhibits a broad minimum around 30--40$^\circ$C,
-where the temperature-induced birefringence partially cancels the
-residual birefringence.  The temperature coefficient
-$T_{\text{coeff}} = -3\times10^{-9}/^\circ$C preserves the same
-fractional sensitivity ($\sim6\%/^\circ$C) as the previous model,
-and the stochastic residual $\Delta n_{\text{stoch}}$ (drawn per fibre
-call) together with the clamping floor at $5\times10^{-10}$ prevent
-unphysical cancellation, leaving a finite residual birefringence that
-maintains a baseline scrambling rate.
+The QBER at 75~km exhibits a broad minimum around 40$^\circ$C,
+where the temperature-induced birefringence crosses zero
+($\Delta n(T \approx 42^\circ\text{C}) \approx 0$).  At this point
+the phenomenological rotation angle $\theta \approx 0$, the
+polarisation is minimally disturbed, and the QBER drops to a few
+percent.  Away from the null, $|\Delta n|$ grows, the rotation
+$\theta \propto 1/\sqrt{|\Delta n|}$ increases, and the QBER rises.
+The temperature coefficient
+$T_{\text{coeff}} = -5\times10^{-7}/^\circ$C (phenomenological model)
+gives a fractional sensitivity of $\sim$5.7\%, consistent with the
+multi-section model's 6\% change per $^\circ$C.
 
 \paragraph{Panel D: QBER vs PMD coefficient.}
 The QBER at 75~km increases linearly with the PMD coefficient from

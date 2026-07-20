@@ -1,17 +1,25 @@
 \begin{table}[!ht]
-  \caption{Birefringence validation summary.}
+  \caption{Birefringence validation summary (13 self-consistency checks).}
   \label{tab:birefringence}
   \centering
-  \begin{tabular}{l c c}
+  \small
+  \begin{tabular}{l l c}
     \toprule
-    Test & Metric & Result \\
+    Test & Model & Result \\
     \midrule
-    Power conservation & Unitary Jones & err < 1e-12 \\
-    Zero-length identity & Field unchanged & PASS \\
-    L-dependence & Diffusive rotation & propto sqrt(L) \\
-    Temperature & mean|Ex|\textasciicircum{}2 vs T & Softened minimum \\
-    Bend (Ulrich [7]) & mean|Ex|\textasciicircum{}2 vs R & Affects scrambling \\
-    Reproducibility & Seeded RNG & PASS \\
+    Power conservation & Sectional & err < 1e-12 \\
+    Temperature sensitivity & Sectional & PASS \\
+    Wavelength sensitivity & Sectional & PASS \\
+    Seed randomness & Sectional & PASS \\
+    Poincar\'e scrambling & Sectional (1.5 km) & std > 0.05 \\
+    Power conservation & Phenomenological & err < 1e-12 \\
+    Temperature sensitivity & Phenomenological & PASS \\
+    Wavelength sensitivity & Phenomenological & PASS \\
+    Seed randomness & Phenomenological & PASS \\
+    Poincar\'e scrambling & Phenomenological (100 km) & std > 0.05 \\
+    Zero-length identity & Both & PASS \\
+    Auto-dispatch threshold & \texttt{SECTIONAL\_LIMIT} = 2000 m & PASS \\
+    \texttt{enabled=False} bypass & Both & PASS \\
     \bottomrule
   \end{tabular}
 \end{table}
