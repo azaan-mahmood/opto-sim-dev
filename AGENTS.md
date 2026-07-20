@@ -50,7 +50,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `detect_photons()` uses `power/(h·ν) · t · η` (Agrawal Eq 4.1.2, Saleh & Teich Eq 17.1-10)
 - No `frequency` parameter — optical frequency derived from `c/λ`
 
-### Fiber (`src/channel/fiber_sectional.py`)
+### Fiber (`src/channel/fiber.py`)
 - `cable()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
@@ -60,7 +60,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
   - Dispatch: `apply_birefringence(model='auto')` or `cable(model='auto')`; override with `'sectional'` or `'phenomenological'`. `SECTIONAL_LIMIT = 2000 m`.
 - **Chromatic dispersion** (disabled by default): FFT-based, `H(Ω) = exp(-j·β₂·Ω²·L/2)` applied to both Ex and Ey (Agrawal [6] Eq 2.4.11). Requires `dt` (sampling interval) and assumes the field is the complex envelope.
 - **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
-- Parameters: `fiber_length (km)`, `E`, `dt` (required for dispersion), `wavelength` (default 1550e-9), `dispersion`, `attenuation_factor`, `temperature`, `bend_radius`, `pm_dispersion`.
+- Parameters: `fiber_length (km)`, `E`, `dt` (required for cd/pmd), `wavelength`. Impairments independently toggled: `birefringence`, `cd`, `pmd`, `attenuation` (all bool, defaults True/None/None/True). Legacy `dispersion` flag sets both `cd` and `pmd` when not explicitly provided. `attenuation_factor`, `temperature`, `bend_radius`, `pm_dispersion`, `section_length`, `model`.
 
 ### Mach-Zehnder Modulator (`src/channel/mzm.py`)
 - Physics-based MZI built from `PhaseModulator` instances per arm
@@ -80,7 +80,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - S1,S2,S3 normalized by S0; S0 set to 1.0
 - `chi = 0.5·arcsin(S3)` (S3 already normalized, S0=1)
 
-### Chromatic Dispersion (`src/channel/fiber_sectional.py`)
+### Chromatic Dispersion (`src/channel/fiber.py`)
 - **FIXED**: FFT-based model `H(Ω) = exp(-j·β₂·Ω²·L/2)` via `np.fft.fftfreq` (Agrawal [6] Eq 2.4.11)
 - Verified against Gaussian pulse broadening: ratio error < 0.06 % at z = 0.5–2.0× LD
 - Requires `dt` (sampling interval) — callers must pass this for `dispersion=True`
@@ -229,7 +229,7 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
-| `src/channel/fiber_sectional.py` | Hybrid dispatch: `apply_birefringence()` auto-routes to `_sectional` (L < 2 km) or `_phenomenological` (L >= 2 km). Fixed duplicate return, section_length=1.0 default, cable() indentation. Added `model` param to cable(). |
+| `src/channel/fiber.py` | Hybrid dispatch: `apply_birefringence()` auto-routes to `_sectional` (L < 2 km) or `_phenomenological` (L >= 2 km). Fixed duplicate return, section_length=1.0 default, cable() indentation. Added `model` param to cable(). |
 | `analysis/validation/validate_birefringence.py` | Removed unused `L0 = 75e3`. Validates both models via auto-dispatch. |
 | `analysis/val_system.py` | Updated outputs (QBER: 0%→68% at 200 km, dark-count floor ~45% at 1000 km) |
 | `AGENTS.md` | Hybrid birefringence description, dispatch threshold, updated files changed |

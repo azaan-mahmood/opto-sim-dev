@@ -6,7 +6,7 @@ from scipy import stats
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber_sectional import apply_pmd
+from src.channel.fiber import apply_pmd
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_pmd')
 os.makedirs(OUT, exist_ok=True)

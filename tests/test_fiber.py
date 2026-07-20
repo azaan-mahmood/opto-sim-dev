@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from src.channel.fiber_sectional import cable
+from src.channel.fiber import cable
 
 
 @pytest.fixture

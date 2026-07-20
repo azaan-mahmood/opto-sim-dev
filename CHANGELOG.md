@@ -19,6 +19,25 @@ All timestamps are local time (UTC+5).
 
 **Tests:** 48/48 pass.
 
+## 2026-07-20 — Rename fiber_sectional → fiber, individual impairment flags
+
+### Session: file rename, independent impairment toggles
+
+**File rename:** `src/channel/fiber_sectional.py` → `src/channel/fiber.py`
+- Updated all imports: `__init__.py`, `test_fiber.py`, 4 validation scripts
+- Updated references in `journal_paper_outline.tex` and `AGENTS.md`
+
+**Independent impairment flags in `cable()`:**
+- `birefringence` (default True), `cd` (default None → uses `dispersion`), `pmd` (default None → uses `dispersion`), `attenuation` (default True)
+- Backward compatible: `dispersion=True` still enables cd+pmd; `dispersion=False` (default) disables them
+- New patterns: `cable(..., birefringence=False, attenuation=False)` → no impairments;
+  `cable(..., birefringence=False)` → attenuation only;
+  `cable(..., attenuation=False)` → birefringence only
+- `apply_birefringence()` also gets `enabled=True` parameter
+- `dt` required only when `cd=True` or `pmd=True` (not just `dispersion=True`)
+
+**Tests:** 48/48 pass, validation clean.
+
 ## 2026-07-20 — Hybrid birefringence dispatch (sectional + phenomenological)
 
 ### Session: dual-model dispatch, bug fixes, performance tuning

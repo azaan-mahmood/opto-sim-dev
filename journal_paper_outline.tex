@@ -193,7 +193,7 @@ $E$ so that $\langle|E|^2\rangle = P_{\text{laser}}$).  All downstream
 components derive power from $\langle|E|^2\rangle$ --- no separate
 \texttt{pin}/\texttt{pout} tracking.
 
-\scriptref{src/channel/fiber_sectional.py:cable(); src/lasers/cwlaser.py:sample\_field()}
+\scriptref{src/channel/fiber.py:cable(); src/lasers/cwlaser.py:sample\_field()}
 
 \subsection{2.2 Birefringence (Beat-Length Model)}
 \label{sec:biref}
@@ -258,7 +258,7 @@ Yuan~2016 measures femtosecond-laser-fabricated stress rods, not fiber
 bending.  Replaced in commit 65f078f.  Retained as reference [4] for
 the stress-birefringence background.
 
-\scriptref{src/channel/fiber_sectional.py, lines 96--129;
+\scriptref{src/channel/fiber.py, lines 96--129;
   analysis/validation/validate\_birefringence.py}
 
 \subsection{2.3 Chromatic Dispersion}
@@ -298,7 +298,7 @@ both $E_x$ and $E_y$ (CD is isotropic in standard SMF).
     ($\leq 18.0$~ps/(nm$\cdot$km) at 1550~nm)
 \end{itemize}
 
-\scriptref{src/channel/fiber_sectional.py, lines 132--159;
+\scriptref{src/channel/fiber.py, lines 132--159;
   analysis/validation/validate\_cd.py}
 
 \subsection{2.4 Polarisation-Mode Dispersion}
@@ -346,7 +346,7 @@ samples a 2D magnitude (Rayleigh) rather than a 3D vector magnitude
 This systematically underestimates the high-DGD tail (rare events that
 drive outage probability).  \emph{Corrected} in commit 24d4751.
 
-\scriptref{src/channel/fiber_sectional.py, lines 161--182;
+\scriptref{src/channel/fiber.py, lines 161--182;
   analysis/validation/validate\_pmd.py}
 
 \subsection{2.5 Attenuation}
@@ -367,7 +367,7 @@ Default $\alpha = 0.182$~dB/km at 1550~nm (Corning SMF-28 Ultra).
 Field scaling: $\langle|E_{\text{out}}|^2\rangle = 10^{-\alpha L/10}
 \langle|E_{\text{in}}|^2\rangle$ by construction.
 
-\scriptref{src/channel/fiber_sectional.py, lines 184--188;
+\scriptref{src/channel/fiber.py, lines 184--188;
   analysis/validation/validate\_attenuation.py}
 
 \subsection{2.6 Application Order}
@@ -387,7 +387,7 @@ Fig.~\ref{fig:pipeline}:
   atten [alpha, L] $\rightarrow$ E\_out.  Created with
   matplotlib.patches or tikz.}
 
-\scriptref{src/channel/fiber_sectional.py:cable(), lines 42--93 (docstring
+\scriptref{src/channel/fiber.py:cable(), lines 42--93 (docstring
   ordering matches implementation)}
 
 % ============================================================

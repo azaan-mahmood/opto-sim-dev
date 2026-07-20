@@ -5,7 +5,7 @@ import numpy as np
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber_sectional import apply_birefringence
+from src.channel.fiber import apply_birefringence
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_birefringence')
 os.makedirs(OUT, exist_ok=True)

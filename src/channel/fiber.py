@@ -206,7 +206,8 @@ def _apply_birefringence_phenomenological(E, L, wavelength=1550e-9,
 
 
 def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
-                        bend_radius=None, section_length=1.0, model='auto'):
+                        bend_radius=None, section_length=1.0, model='auto',
+                        enabled=True):
     """Apply birefringence to optical field.
 
     Dispatches to the multi-section or phenomenological model based on
@@ -222,11 +223,14 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
     section_length : float — section length for multi-section model (m).
     model : str — 'auto' (default, dispatch by L), 'sectional', or
            'phenomenological'.
+    enabled : bool — if False, return E.copy() unchanged (default True).
 
     Returns
     -------
     ndarray (N, 2) — field after birefringence rotation.
     """
+    if not enabled:
+        return E.copy()
     if model == 'sectional':
         return _apply_birefringence_sectional(
             E, L, wavelength, temperature, bend_radius, section_length)
@@ -326,11 +330,16 @@ def apply_attenuation(E, L_km, attenuation_factor=0.182):
 def cable(fiber_length, E, dt=None, wavelength=1550e-9,
           dispersion=False, attenuation_factor=0.182,
           temperature=25, bend_radius=None, pm_dispersion=0.1e-12,
-          section_length=1.0, model='auto'):
+          section_length=1.0, model='auto',
+          birefringence=True, cd=None, pmd=None, attenuation=True):
     """Transmission through an optical fibre.
 
-    Applies, in order:
-      1. Birefringence (dispatches to sectional or phenomenological model)
+    Each impairment can be independently enabled/disabled via individual
+    flags.  The legacy `dispersion` flag is an alias for setting both
+    ``cd`` and ``pmd`` when they are not explicitly provided.
+
+    Impairments applied in order:
+      1. Birefringence (sectional or phenomenological)
       2. Chromatic dispersion (FFT-based, Agrawal [6] §2.4)
       3. PMD (frequency-domain DGD)
       4. Attenuation (Keiser [1] Eq 3.6)
@@ -339,15 +348,19 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
     ----------
     fiber_length : float — fibre length in kilometres.
     E : ndarray (N, 2) — complex-envelope field.
-    dt : float or None — sampling interval (required when dispersion=True).
+    dt : float or None — sampling interval (required when cd=True or pmd=True).
     wavelength : float — centre wavelength (default 1550 nm).
-    dispersion : bool — apply CD + PMD? (default False).
+    dispersion : bool — legacy alias for cd + pmd (default False).
     attenuation_factor : float — dB/km (default 0.182).
     temperature : float — C (default 25).
     bend_radius : float or None — m (default None).
     pm_dispersion : float — s/sqrt(m) (default 0.1e-12).
     section_length : float — birefringence section length in m (default 1.0).
-    model : str — 'auto', 'sectional', or 'phenomenological' (default 'auto').
+    model : str — birefringence model: 'auto', 'sectional', 'phenomenological'.
+    birefringence : bool — apply birefringence? (default True).
+    cd : bool or None — apply CD?  None uses ``dispersion`` value.
+    pmd : bool or None — apply PMD?  None uses ``dispersion`` value.
+    attenuation : bool — apply attenuation? (default True).
 
     Returns
     -------
@@ -355,16 +368,24 @@ def cable(fiber_length, E, dt=None, wavelength=1550e-9,
     """
     L = fiber_length * 1000
 
-    E = apply_birefringence(E, L, wavelength, temperature, bend_radius,
-                            section_length, model)
+    # Resolve individual CD/PMD flags from the legacy dispersion flag
+    enable_cd = cd if cd is not None else dispersion
+    enable_pmd = pmd if pmd is not None else dispersion
 
-    if dispersion:
+    if birefringence:
+        E = apply_birefringence(E, L, wavelength, temperature, bend_radius,
+                                section_length, model)
+
+    if enable_cd or enable_pmd:
         if dt is None:
             raise ValueError(
-                "dt (sampling interval) is required when dispersion=True."
+                "dt (sampling interval) is required when cd=True or pmd=True."
             )
-        E = apply_cd(E, dt, L, wavelength)
-        E, _ = apply_pmd(E, dt, L, pm_dispersion)
+        if enable_cd:
+            E = apply_cd(E, dt, L, wavelength)
+        if enable_pmd:
+            E, _ = apply_pmd(E, dt, L, pm_dispersion)
 
-    E = apply_attenuation(E, fiber_length, attenuation_factor)
+    if attenuation:
+        E = apply_attenuation(E, fiber_length, attenuation_factor)
     return E
