@@ -197,6 +197,9 @@ def _apply_birefringence_phenomenological(E, L, wavelength=1550e-9,
     if bend_radius is not None:
         delta_n += bend_effect_factor * (r_fiber / bend_radius) ** 2
 
+    # Stochastic residual — prevents unphysical cancellation
+    delta_n += np.random.normal(0, 0.1 * delta_n_0)
+
     delta_n = np.sign(delta_n) * max(abs(delta_n), 1e-10)
 
     L_char = L0 * (delta_n_0 / abs(delta_n)) ** 2

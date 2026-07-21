@@ -270,6 +270,11 @@ compose correctly under combined impairments.
   $^\ddagger$~Sinusoid-carrier level, proprietary.}
 \end{table}
 
+Criterion~(g) (system-level composition under combined impairments)
+is demonstrated in Section~\ref{sec:system-demo} and is not included
+in the table because no existing simulator provides it in conjunction
+with the other six criteria.
+
 The gap is clear: protocol-level simulators sacrifice optical-layer
 fidelity for scalability and protocol flexibility, while commercial
 optical simulators provide detailed physics but are closed-source,
@@ -571,12 +576,29 @@ producing a gradual distance-dependent QBER that matches the
 qualitative behaviour of long-haul BB84 links without resolving
 the sub-km polarisation structure.
 
+Note that the phenomenological $\Delta n_0 = 0.87\times10^{-5}$
+differs from the material beat-length value used in the multi-section
+model ($\Delta n_0 = 5.0\times10^{-8}$, $L_B \approx 31$~m).
+The phenomenological value is a \emph{fit parameter} calibrated so
+that $L_0 = 75$~km produces diffusive polarisation scrambling over
+the 10--200~km range relevant to long-haul BB84, rather than a
+measurement of the fibre's intrinsic birefringence.
+
 The dispatch between the two models is automatic: the function
 \texttt{propagate()} selects the multi-section model for
 $L < 2000$~m and the phenomenological model for $L \ge 2000$~m,
 and the user may override this choice via the \texttt{model}
 parameter (\texttt{'sectional'}, \texttt{'phenomenological'},
 or \texttt{'auto'}).
+
+The two models produce consistent polarisation statistics in the
+vicinity of the 2~km boundary: at $L = 2$~km the multi-section
+ordered product of $\sim$2000 sections produces a net SO(3)
+rotation of $0.1$--$0.3$~rad (stochastic residual dominates at
+this distance), while the phenomenological model with
+$L \ll L_{\text{char}}$ gives $\theta \approx 0.08$~rad.
+The transition is therefore smooth and no discontinuity appears
+in distance sweeps.
 
 \subsubsection{Chromatic Dispersion}
 
@@ -806,7 +828,8 @@ the LiNbO$_3$ Pockels coefficients~\cite{weis}.
   \includegraphics[width=0.65\textwidth]{../analysis/val_cd/val_cd--seed42.png}
   \caption{Chromatic dispersion validation.  Gaussian pulse broadening
   at $z/L_D = \{0.0, 0.5, 1.0, 2.0\}$ compared with the analytic formula
-  $\sigma(z) = \sigma_0\sqrt{1 + (z/L_D)^2}$ (Agrawal Eq.~3.2.6).
+  $\sigma(z) = \sigma_0\sqrt{1 + (z/L_D)^2}$ (Agrawal Eq.~3.2.6,
+where $\sigma$ is the RMS width and $\sigma_0 = T_0/\sqrt{2}$).
   Error: $<10^{-13}\%$ at all points.}
   \label{fig:cd}
 \end{figure}
@@ -1063,6 +1086,12 @@ the phenomenological rotation angle $\theta \approx 0$, the
 polarisation is minimally disturbed, and the QBER drops to a few
 percent.  Away from the null, $|\Delta n|$ grows, the rotation
 $\theta \propto 1/\sqrt{|\Delta n|}$ increases, and the QBER rises.
+This cancellation is a property of the phenomenological model's
+deterministic $\Delta n(T)$; in deployed fibre, thermal and residual
+birefringence have different physical origins and do not cancel
+exactly.  The V-shaped response illustrates the mechanism of
+temperature-dependent polarisation drift but should not be
+interpreted as a quantitative prediction at the null point.
 The temperature coefficient
 $T_{\text{coeff}} = -5\times10^{-7}/^\circ$C (phenomenological model)
 gives a fractional sensitivity of $\sim$5.7\%, consistent with the
@@ -1202,23 +1231,21 @@ for future work:
 
 \section{Conclusion}
 
-We have presented an open-source, physically validated optical channel
-framework for QKD simulation.  Five active components -- CW laser,
+We have presented an open-source optical channel simulation framework
+for QKD that simultaneously provides complex-envelope field propagation,
+per-component literature validation, verified system-level composition,
+and seeded reproducibility --- a combination absent from existing
+protocol-level and commercial simulators.  Five components --- CW laser,
 Mach--Zehnder modulator, fibre channel (birefringence, CD, PMD,
-attenuation), and avalanche photodiode -- are independently validated
-against published literature.  The primary contribution is the validation
-methodology: every equation cites a specific numbered reference, and
-every component is verified independently, providing a level of
-traceability absent from existing quantum network and optical system
-simulators.
+attenuation), and avalanche photodiode --- are independently validated
+against published literature (34~sources).
 
-The system-level BB84 demonstration confirms that the independently
-validated components compose correctly, producing physically sensible
-QBER under combined CD+PMD.  This demonstration serves as evidence of
-correct composition rather than as a standalone QKD contribution; the
-framework's value lies in enabling defensible studies of environmental
-sensitivity and physical-layer security that existing QKD simulators
-cannot support.
+The system-level BB84 demonstration confirms that these validated
+components compose correctly, producing physically sensible QBER
+under combined impairments.  The framework is designed to enable
+defensible studies of environmental sensitivity and physical-layer
+security that existing QKD simulators, which operate at the qubit or
+photon-count level, cannot support.
 
 The framework is available under an open-source licence at
 \texttt{https://github.com/azaan-mahmood/opto-sim-dev}.

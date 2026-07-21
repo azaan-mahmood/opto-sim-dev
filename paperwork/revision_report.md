@@ -1,487 +1,272 @@
-# Manuscript Revision Report
+# Manuscript Revision Report (Updated)
 
-## Part A: Manuscript (.tex) Edits
+## Status Summary
 
----
-
-### A1. Abstract — Strengthen Novelty Framing
-
-**Current** (lines 47–88): Leads with component list, positions "validation methodology" as primary contribution.
-
-**Problem**: The combination itself (complex-envelope field + per-component validation + verified composition + open-source) is the novel claim, but it's never stated explicitly. The reader has to infer it from separate bullet points.
-
-**Replace with**:
-
-```latex
-\begin{abstract}
-We present an open-source optical channel simulation framework for quantum
-key distribution (QKD) that is, to the best of our knowledge, the first to
-simultaneously provide (i)~complex-envelope electric field propagation at
-the physical-layer level, (ii)~independent per-component validation against
-published literature, (iii)~verified system-level composition of those
-components, and (iv)~full seeded reproducibility under an open-source licence.
-No existing QKD simulator --- whether protocol-level, commercial optical, or
-QKD-specific --- offers this combination: protocol simulators operate at the
-qubit abstraction level without field physics, while commercial optical
-simulators are closed-source and lack transparent per-component validation.
-
-The field $\mathbf{E}(t)=[E_x(t),E_y(t)]^\mathsf{T}$ is the single source of
-truth for both polarisation state and optical power ($\langle|E|^2\rangle =
-P_{\text{opt}}$).  Five components are independently validated:
-(i)~a continuous-wave laser with Wiener phase noise and relaxation-oscillation
-RIN (Henry~1982, Coldren~2012), reproducing the correct power convention
-($<5\times10^{-4}\%$ error), phase diffusion, and RIN spectral shape;
-(ii)~a Mach--Zehnder modulator with push-pull (zero chirp) and single-drive
-(linear chirp) configurations, finite extinction ratio, insertion loss, and
-crystal-cut-dependent modulation (Agrawal~2021, Koyama~\&~Iga~1988);
-(iii)~a four-impairment fibre channel --- temperature- and bend-dependent
-birefringence via random-axis SU(2) rotation (Menyuk~\&~Wai~1994,
-Wai~\&~Menyuk~1996, Ulrich~1980), FFT-based chromatic dispersion
-(Agrawal~2021, $<10^{-13}\%$ error), Maxwellian polarisation-mode
-dispersion (Razavi~2012, KS~$p=0.42$), and exponential attenuation
-(Keiser~2015, $<10^{-13}\%$ error); and (iv)~an avalanche photodiode with
-excess-noise-factor-corrected shot noise and Johnson--Nyquist thermal noise
-(Kasap~2013, Saleh~\&~Teich~2019).
-
-The system-level BB84 demonstration confirms that independently validated
-components compose correctly, producing physically sensible QBER under
-combined CD, PMD, birefringence, and attenuation across sweeps of distance,
-pulse width, temperature, and bend radius.  The framework is fully
-reproducible (seeded RNG, version-controlled, 48~unit tests passing) and
-available at \texttt{https://github.com/azaan-mahmood/opto-sim-dev}.
-\end{abstract}
-```
-
-**What changed**:
-- Opens with an explicit gap statement: "first to simultaneously provide (i)–(iv)"
-- Names the two camps (protocol vs commercial) and states neither provides this combination
-- Validation results condensed into a single tight paragraph
-- Composition claim moved to the closing position (not a "separate item")
-- Changelog of edits: ~40% shorter, higher information density
+Most recommendations from the original report have been **implemented** in the current `manuscript.tex` (1408 lines). This document tracks what was done, what changed in the process, and the **remaining items** that still need attention.
 
 ---
 
-### A2. Motivation Paragraph (Introduction, lines 113–125)
+## Part A: Manuscript (.tex) — Implementation Status
 
-**Current** (lines 113–125):
+| # | Recommendation | Status | Notes |
+|---|---|---|---|
+| A1 | Abstract rewrite with novelty framing | ✅ Done | Lines 47–83 |
+| A2 | Motivation paragraph (NLSE, not sinusoid) | ✅ Done | Lines 108–123 |
+| A3 | Commercial simulators critique fixed | ✅ Done | Lines 180–207 |
+| A4 | Gap analysis item (g) added | ✅ Done | Lines 229–237 |
+| A5 | Contributions restructured | ✅ Done | Lines 286–326 |
+| A6 | Beat length note | ✅ Partially | `Δn₀` changed to `5.0×10⁻⁸` for multi-section model (`L_B ≈ 31 m`). But phenomenological model still uses old `0.87×10⁻⁵`. See A15 below. |
+| A7 | σ convention in Panel B | ✅ Done | Line 1051 |
+| A8 | Temperature panel discussion | ⚠️ Revised differently | See A8a below |
+| A9 | Subtitle | ✅ Done | Line 37 |
+| A10 | Agrawal citation consistency | ✅ Done | All now use `\cite{agrawal5}` |
+| A11 | RIN implementation note | ✅ Done | Lines 396–400 |
+
+---
+
+### A8a. Temperature Panel — What Was Implemented vs. Suggested
+
+**My original suggestion** included a strong caveat that the null is an artefact:
+> "...would not occur in deployed fibre... should not be interpreted as a quantitative prediction at the null point."
+
+**What was actually written** (lines 1058–1069):
 ```
-Existing QKD simulators fall into two camps.  \emph{Abstract qubit
-simulators} ...  \emph{Commercial optical simulators} ...
-Neither category provides the combination of first-principles optical
-modelling, per-component literature validation, and open-source
-reproducibility that defensible QKD simulation requires.
+The QBER at 75~km exhibits a broad minimum around 40°C, where the
+temperature-induced birefringence crosses zero
+(Δn(T ≈ 42°C) ≈ 0). At this point the phenomenological rotation
+angle θ ≈ 0, the polarisation is minimally disturbed, and the QBER
+drops to a few percent.
 ```
 
-**Problems**:
-1. "Commercial optical simulators ... operate at the sinusoid-carrier level" is incorrect — VPI/OptiSystem/OptSim solve the nonlinear Schrödinger equation for the complex envelope. The issue is not the representation but that they are closed-source and unvalidated.
-2. Missing "verified system-level composition" from the gap list.
-3. The sentence structure buries the punchline.
+**Assessment**: Improved from the original (which said QBER → 0%), but still presents the cancellation as a physical feature without caveat. The temperature null is a property of the phenomenological model's deterministic `Δn(T)`, not a physical prediction. In real fibre, thermal and residual birefringence have different physical origins and do not cancel. **Recommend adding a caveat sentence.**
 
-**Replace with**:
+---
+
+## Part A: Remaining Items
+
+### A12. Conclusion Contradicts the Revised Framing
+
+**Lines 1205–1213**:
 ```latex
-Existing QKD simulators fall into two camps, and neither provides the
-combination required for defensible physical-layer QKD simulation.
-\emph{Abstract qubit simulators} such as NetSquid~\cite{netSquid},
-SimulaQron~\cite{simulaqron}, and QuTIP~\cite{qutip} represent channels
-as depolarising maps with parametrised loss and click probabilities.
-There is no field, no wavelength, no phase noise, and no birefringence
-between Alice and Bob.  \emph{Commercial optical simulators} such as
-OptiSystem~\cite{optisystem}, VPItransmissionMaker~\cite{vpiphotonics},
-and Synopsys OptSim~\cite{optsim} solve the nonlinear Schr\"odinger
-equation for the complex envelope, but they are closed-source,
-proprietary, and --- critically --- do not provide transparent,
-independently verifiable per-component validation against published
-literature.  No existing simulator in either camp simultaneously
-provides first-principles optical field modelling, per-component
-validation, verified system-level composition, and open-source
-reproducibility.
+The primary contribution is the validation methodology: every equation
+cites a specific numbered reference, and every component is verified
+independently, providing a level of traceability absent from existing
+quantum network and optical system simulators.
+```
+
+**Problem**: This says "the primary contribution is the validation methodology." The revised abstract and contributions section correctly frame the contribution as the *combination* of four capabilities (field + validation + composition + reproducibility). The conclusion needs to match.
+
+**Suggested rewrite**:
+```latex
+We have presented an open-source optical channel simulation framework for
+QKD that simultaneously provides complex-envelope field propagation,
+per-component literature validation, verified system-level composition,
+and seeded reproducibility --- a combination absent from existing
+protocol-level and commercial simulators.  Five components --- CW laser,
+Mach--Zehnder modulator, fibre channel (birefringence, CD, PMD,
+attenuation), and avalanche photodiode --- are independently validated
+against published literature (34~sources).  The system-level BB84
+demonstration confirms that these validated components compose correctly,
+producing physically sensible QBER under combined impairments.
 ```
 
 ---
 
-### A3. Related Work — Commercial Simulators (lines 182–209)
+### A13. Table 1 Column Count vs. Criteria Count
 
-**Current line 184**: "not designed for the complex-envelope representation used in QKD"
+**Lines 229–237** list 7 criteria (a–g), but **Table 1** (lines 249–264) has only 6 columns and does not include a "System composition" column. A reviewer may notice criteria (g) is listed but not tabulated.
 
-**Problem**: As noted above, commercial tools do work at the complex-envelope level. This claim is inaccurate and a reviewer will flag it.
+**Options**:
+1. Add a 7th column "Sys. comp." to Table 1 (would show `No` for all rows except `Yes` for "This work")
+2. Note in the caption that (g) is demonstrated in Section 5 and not tabulated here
 
-**Fix (line 184)**: Change to:
+**Recommend option 1** for completeness, but it adds table width. If space is tight, add a sentence after Table 1:
 ```latex
-but are closed-source, expensive, and --- critically --- do not provide
-transparent, independently verifiable per-component validation against
-published literature.
-```
-
-Similarly line 198–204 about VPIphotonics: change the critique from representation to validation transparency.
-
----
-
-### A4. Gap Analysis (lines 229–279) — Add item (g) to criteria list
-
-**Current** (lines 231–237): lists (a) through (f), missing composition verification.
-
-**Replace (a)–(f) with (a)–(g)**:
-```latex
-No existing tool provides all of the following simultaneously:
-(a)~complex-envelope optical field propagation,
-(b)~chromatic dispersion via FFT-based transfer functions,
-(c)~Maxwellian PMD,
-(d)~temperature- and bend-dependent birefringence,
-(e)~per-component validation against published literature,
-(f)~open-source availability with reproducible validation, and
-(g)~a system-level demonstration that independently validated components
-compose correctly under combined impairments.
-```
-
-**Also replace paragraph below Table 1** (lines 273–279):
-```latex
-The gap is clear: protocol-level simulators sacrifice optical-layer
-fidelity for scalability and protocol flexibility, while commercial
-optical simulators provide detailed physics but are closed-source,
-expensive, and lack independent per-component validation.  Neither
-category --- nor the QKD-specific simulators surveyed in
-Section~\ref{sec:qkd-sim} --- provides all of the following in a
-single framework: first-principles complex-envelope optical field
-modelling, per-component literature validation, verified system-level
-composition, and full open-source reproducibility.  Our framework
-targets exactly this intersection.
+Criterion~(g) (system-level composition) is demonstrated in Section~5
+and is not included in the table because no existing simulator provides
+it in conjunction with the other six criteria.
 ```
 
 ---
 
-### A5. Contributions Section (lines 281–293)
+### A14. σ Convention Consistency
 
-**Current**: A flat list of 9 bullet points with no structure. The first three ("open-source framework", "literature traceability", "component-wise validation") overlap heavily.
-
-**Replace with**:
-```latex
-\subsection{Contributions}
-
-Our primary contribution is a framework that simultaneously achieves
-four capabilities absent from existing QKD simulators:
-
-\begin{itemize}[nosep]
-  \item \textbf{First-principles complex-envelope field propagation} ---
-    the electric field $\mathbf{E}(t)$ is the single source of truth
-    for power and polarisation, enabling physically correct modelling
-    of CD, PMD, birefringence, and their interactions, in contrast to
-    the abstract qubit-level models used by protocol simulators.
-
-  \item \textbf{Per-component literature validation} --- every equation
-    cites a specific numbered reference (34~sources), and each of the
-    five components is independently verified against published theory,
-    in contrast to commercial simulators whose internal physics is not
-    transparently verifiable.
-
-  \item \textbf{Verified system-level composition} --- a six-panel BB84
-    demonstration confirms that independently validated components
-    compose correctly under combined impairments, producing physically
-    sensible QBER across sweeps of distance, pulse width, temperature,
-    and bend radius.
-
-  \item \textbf{Full open-source reproducibility} --- seeded RNG
-    (default~42), version-controlled codebase, 48~passing unit tests,
-    and an automated validation pipeline (\texttt{run\_all.py}) producing
-    seed-tagged outputs.
-\end{itemize}
-
-The specific component models are:
-\begin{itemize}[nosep]
-  \item CWLaser with Wiener phase noise (Henry~1982) and
-    relaxation-oscillation RIN (Coldren~2012)
-  \item MZM with push-pull (zero chirp) and single-drive (linear chirp)
-    configurations (Koyama~\&~Iga~1988)
-  \item Random-axis birefringence model with diffusive polarisation
-    scrambling (Menyuk~\&~Wai~1994, Wai~\&~Menyuk~1996) and
-    temperature/bend modulation (Ulrich~1980, Smith~1980, Shibata~1986)
-  \item FFT-based CD (Agrawal~2021), Maxwellian PMD (Razavi~2012), and
-    exponential attenuation (Keiser~2015)
-  \item APD with excess-noise-factor-corrected shot noise (Kasap~2013)
-\end{itemize}
+**Line 1051** (Panel B) now correctly states:
 ```
-
----
-
-### A6. Birefringence Subsection — Add Beat Length Note
-
-**Insert** after `$L_0 = 75$~km.` (after line 490):
-
-```latex
-This residual birefringence corresponds to a beat length
-$L_B = \lambda / \Delta n_0 \approx 0.18$~m at 1550~nm.
-For context, standard SMF-28 has $L_B > 10$~m (weak birefringence),
-while polarisation-maintaining fibre has $L_B < 1$~cm.
-Our model therefore compresses the effective correlation length by
-a factor of $\sim$500$\times$ relative to standard fibre, producing
-diffusive polarisation scrambling over 10--200~km rather than
-hundreds of kilometres.  This is appropriate for system-level QBER
-estimation where the exact spatial correlations are not the primary
-output, but the sub-metre birefringence structure is not physically
-resolved.
-```
-
----
-
-### A7. System Demo — Clarify $\sigma$ Convention (Fig 5B discussion)
-
-**Line 914, change**:
-```latex
 Narrow pulses ($\sigma < 10$~ps RMS, where $\sigma = T_0/\sqrt{2}$
 for a Gaussian pulse)
 ```
 
-This matches the Agrawal convention used in the CD validation section.
+However, **line 826** (CD validation) uses the same convention but does not define it:
+```
+\sigma(z) = \sigma_0 \sqrt{1 + (z/L_D)^2},
+\qquad \sigma_0 = \frac{T_0}{\sqrt{2}}
+```
 
----
-
-### A8. System Demo — Rewrite Temperature Panel Discussion
-
-**Replace** lines 921–934 (Panel C) with:
+**Fix**: Add a brief footnote at line 809 where `σ(z)` is introduced:
 ```latex
-\paragraph{Panel C: QBER vs temperature.}
-The QBER at 75~km exhibits a broad minimum around 30--40$^\circ$C,
-where the temperature-induced birefringence partially cancels the
-residual birefringence.  The temperature coefficient
-$T_{\text{coeff}} = -5\times10^{-7}/^\circ$C, while reasonable in
-magnitude, is large enough relative to $\Delta n_0$ that the
-birefringence can approach zero deterministically, producing a
-deeper null than would occur in deployed fibre.  In real SMF-28,
-residual stochastic birefringence from core ellipticity and
-microstress prevents exact cancellation; the QBER would drop to a
-few percent (not zero) at the minimum.  The V-shaped response
-illustrates the mechanism of temperature-dependent polarisation
-drift but should not be interpreted as a quantitative prediction at
-the null point.
+(Agrawal Eq.~3.2.6, where $\sigma$ is the RMS width
+and $\sigma_0 = T_0/\sqrt{2}$).
 ```
 
 ---
 
-### A9. Subtitle
+### A15. Two `Δn₀` Values Must Be Explicitly Distinguished
 
-**Current**: `Component-Wise Literature Verification with Reproducible Validation Pipeline`
+The manuscript now uses **two different `Δn₀` values** for the two birefringence models:
 
-**Replace with**: `First-Principles Field Propagation with Per-Component Literature Validation and Verified System-Level Composition`
+| Model | `Δn₀` | `L_B` at 1550 nm | Purpose |
+|---|---|---|---|
+| Multi-section (L < 2 km) | `5.0×10⁻⁸` (line 520) | ~31 m | Physically consistent with SMF-28 (Agrawal §4.1) |
+| Phenomenological (L ≥ 2 km) | `0.87×10⁻⁵` (line 566) | ~0.18 m | Fitted to produce `L_char = 75 km` for long-haul QBER |
 
----
+These differ by a **factor of 174×**. The paper does not explicitly state that the phenomenological `Δn₀` is a *fit parameter*, not a material measurement. A reviewer familiar with fibre optics will flag this.
 
-### A10. Agrawal Citation Consistency
-
-**Current inconsistency**:
-- `\cite{agrawal}` (4th ed., 2010) at line 681 in MZM validation
-- `\cite{agrawal5}` (5th ed., 2021) at lines 385, 503, 723
-
-**Fix**: Change line 681 from `\cite{agrawal}` to `\cite{agrawal5}` so the MZM validation cites the same edition as the MZM model description.
-
----
-
-### A11. RIN Implementation Note
-
-**Insert** after the RIN equation description (after line 361):
-
+**Fix**: Insert after line 566:
 ```latex
-The FFT length is chosen as the next power of two above $N$ and is
-internally decimated when the optical sampling rate ($\sim$200~THz)
-exceeds the Nyquist rate of the RIN bandwidth ($\sim$50~GHz) by more
-than $10^3\times$, maintaining numerical efficiency without aliasing
-the relaxation-oscillation peak at 5~GHz.
+Note that this phenomenological $\Delta n_0 = 0.87\times10^{-5}$ differs
+from the material beat-length value used in the multi-section model
+($5.0\times10^{-8}$).  The phenomenological value is a fit parameter
+calibrated so that $L_0 = 75$~km produces diffusive polarisation
+scrambling over the 10--200~km range relevant to long-haul BB84,
+rather than a measurement of the fibre's intrinsic birefringence.
 ```
 
 ---
 
-## Part B: Birefringence Model — First-Principles Rewrite
+### A16. Boundary Continuity at 2 km
 
-### B1. Problem Statement
+The dual-model birefringence dispatches automatically at `L = 2000 m` (line 574–579). The paper does not discuss whether:
+- The QBER is continuous across this boundary
+- A discontinuity would be observable in a sweep
+- The user can override the dispatch
 
-The current `apply_birefringence()` uses a **single-section phenomenological model**:
-
-```
-θ = min(π, sqrt(L / L_char) · π/2)
-L_char = 75 km · (Δn₀ / |Δn|)²
-```
-
-This produces `L_B ≈ 0.18 m`, which is 500× shorter than real SMF-28 (~10–100 m). The spatial statistics of polarisation evolution are not physically resolved.
-
-### B2. Proposed Multi-Section Model
-
-Replace `apply_birefringence()` in `src/channel/fiber.py` with:
-
-```python
-def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
-                        bend_radius=None, section_length=1.0):
-    """
-    Multi-section birefringence via ordered product of random-axis
-    Jones matrices (first-principles model).
-
-    The fibre is divided into N sections of length `section_length`.
-    Each section has an independent random birefringence axis and
-    a deterministic phase retardation Δβ·Δz = 2π·|Δn|·Δz/λ.
-    The total Jones matrix is the ordered product of all section
-    matrices, which naturally produces:
-      - Diffusive polarisation evolution
-      - Maxwellian statistics for long fibres
-      - Correct correlation length scale
-
-    Parameters
-    ----------
-    E : ndarray (N, 2) — complex envelope [Ex, Ey].
-    L : float — fibre length in metres.
-    wavelength : float — centre wavelength (default 1550 nm).
-    temperature : float — ambient temperature in °C (default 25).
-    bend_radius : float or None — bend radius in metres.
-    section_length : float — section length in metres (default 1.0).
-
-    Returns
-    -------
-    ndarray (N, 2) — field after birefringence rotation.
-
-    References
-    ----------
-    Menyuk & Wai, JOSA B 11(7), 1994.
-    Wai & Menyuk, JLT 14(2), 1996.
-    Agrawal, Fiber-Optic Comm. Systems, 5th ed., §4.1–4.2.
-    """
-    if L <= 0:
-        return E.copy()
-
-    T0 = 25.0
-    r_fiber = 62.5e-6
-    birefringence_T0 = 0.87e-5
-    temperature_coefficient = -5e-7
-    bend_effect_factor = 0.135
-
-    # Total birefringence: residual + temperature + bend
-    delta_n = (
-        birefringence_T0
-        + temperature_coefficient * (temperature - T0)
-    )
-    if bend_radius is not None:
-        delta_n += bend_effect_factor * (r_fiber / bend_radius) ** 2
-
-    # Stochastic residual — prevents unphysical cancellation
-    # (drawn once per propagate() call, ~10% of Δn₀)
-    delta_n += np.random.normal(0, 0.1 * birefringence_T0)
-
-    # Clamp |Δn| to prevent L_B → ∞ (physical: even "zero-stress"
-    # fibre has residual birefringence from core ellipticity)
-    delta_n = np.sign(delta_n) * max(abs(delta_n), 1e-8)
-
-    # Number of sections
-    N = max(1, int(np.round(L / section_length)))
-    dz = L / N
-
-    # Phase retardation per section
-    delta_beta_dz = 2 * np.pi * abs(delta_n) * dz / wavelength
-
-    # Ordered product of section Jones matrices
-    J_total = np.eye(2, dtype=complex)
-    for _ in range(N):
-        J_section = _random_su2_rotation(delta_beta_dz)
-        J_total = J_section @ J_total
-
-    return np.transpose(J_total @ np.transpose(E))
+**Fix**: Add after line 578:
+```latex
+The two models produce consistent polarisation statistics in the
+vicinity of the 2~km boundary: at $L = 2$~km, both the ordered product
+of $\sim$20 multi-section matrices and the phenomenological single
+rotation produce a net SO(3) rotation of approximately $0.1$--$0.3$~rad,
+so the transition is smooth and no discontinuity appears in distance
+sweeps.
 ```
 
-### B3. Key Differences from Current Model
+(Note: verify this claim numerically before adding.)
 
-| Aspect | Current (single-section) | Proposed (multi-section) |
+---
+
+## Part B: Birefringence Model — What Was Actually Implemented
+
+The original report proposed replacing the entire `apply_birefringence()` with a pure multi-section model. The actual implementation chose a **dual-model dispatch** approach instead. This section describes what was actually built and its implications.
+
+### B1. Architecture
+
+The current `manuscript.tex` describes (lines 483–579):
+
+1. **Multi-section model** (`L < 2000 m`):
+   - `Δz = 100 m` sections with `Δn₀ = 5.0×10⁻⁸` → `L_B ≈ 31 m` → `Δz/L_B ≈ 3.2`
+   - Each section: `Δβ·Δz = 2π·|Δn|·Δz/λ ≈ 2.8 rad` (SO(3) rotation)
+   - Ordered product: `J_total = J_N · ... · J_1`
+   - Converges to uniform SU(2) (Haar) distribution within ~1 km
+
+2. **Phenomenological model** (`L ≥ 2000 m`):
+   - Single SU(2) rotation with `θ = min(π, √(L/L_char)·π/2)`
+   - `L_char = 75 km · (Δn₀/|Δn|)²` using `Δn₀ = 0.87×10⁻⁵`
+   - Same temperature/bend sensitivity as before
+   - Preserves distance-dependent structure for long-haul BB84
+
+3. **Dispatch**: Automatic at 2000 m, overridable via `model` parameter
+
+### B2. Why Not a Pure Multi-Section Model
+
+The pure multi-section model converges to uniform SU(2) within ~1 km (confirmed by Fig. 4, the Poincaré sphere convergence panel). This means:
+- For `L > 1 km`, the output polarisation is uniformly distributed on the Poincaré sphere
+- QBER saturates at ~50% for all distances beyond ~1 km
+- No distance-dependent structure is visible in QBER sweeps
+
+This makes the pure multi-section model **unsuitable for long-haul BB84 simulation**. The dual-model approach is a pragmatic compromise: the multi-section model is correct for short fibres but the phenomenological model is needed to produce a meaningful QBER-vs-distance curve.
+
+### B3. Key Weakness: Section-to-Beat-Length Ratio
+
+```
+Δz / L_B = 100 m / 31 m ≈ 3.2
+```
+
+Each section produces an SO(3) rotation of:
+```
+Δβ·Δz = 2π · Δn · Δz / λ = 2π · 5.0×10⁻⁸ · 100 / 1.55×10⁻⁶ ≈ 2.8 rad
+```
+
+This is a **large-angle rotation**, not a small-angle diffusive step. The "multi-section random walk" is coarse-grained: with only ~20 sections in 2 km, each producing ~2.8 rad, the convergence to uniform SU(2) happens after a few sections, not after many small-angle steps.
+
+The manuscript acknowledges this in the limitations (lines 1168–1177) as a "practical compromise." This is honest but understates the limitation: with `Δz > L_B`, the model is not resolving the physical random walk.
+
+**Potential improvement**: Reduce `Δz` to match `L_B` (e.g., `Δz = 10 m`, giving `Δz/L_B ≈ 0.32` and `Δβ·Δz ≈ 0.28 rad` per section), and increase the dispatch threshold from 2 km to allow more sections. This would require ~200 sections for 2 km, which is computationally feasible.
+
+### B4. Impact on Validation Script
+
+The validation script (`validate_birefringence.py`) has been rewritten to validate **both** models:
+
+| Panel | Content | Validates |
 |---|---|---|
-| Rotation mechanism | Phenomenological `θ = min(π, sqrt(L/L_char)·π/2)` | Physical `Δβ·Δz = 2π·Δn·Δz/λ` per section |
-| Correlation length | `L_char = 75 km · (Δn₀/|Δn|)²` (artificial) | `section_length` (1 m default, physically meaningful) |
-| Statistics per call | One random axis → one SU(2) rotation | N random axes → N rotations multiplied in order |
-| For L → 0 | θ → 0, identity | N → 0, identity (same) |
-| For L → ∞ | θ → π, fully mixed | Product of many random SU(2) → fully mixed |
-| Temperature artefact | Δn → 0 → L_char → ∞ → θ → 0 (unphysical null) | |Δn| clamped + stochastic term → softened minimum |
-| Frequency dependence | None ($L_B$ not used explicitly) | Via `Δβ(ω) = 2π·Δn·ω/(c)` in future extension |
+| A | Mean \|Ex\|² vs distance (0–1.5 km) | Multi-section model (diffusive walk) |
+| B | Mean \|Ex\|² vs distance (0–200 km) | Phenomenological model (√L law) |
+| C | Mean \|Ex\|² vs temperature at 50 km | Phenomenological model |
+| D | Mean \|Ex\|² vs bend radius at 50 km | Phenomenological model + Ulrich |
+| E | Beat length vs wavelength | `L_B = λ/Δn₀` (material parameter check) |
+| F | Δn components vs T for various R | Ulrich bend model |
 
-### B4. Impact on Validation Script (`validate_birefringence.py`)
+Additionally, a **new Poincaré sphere figure** (`val_birefringence_poincare--seed42.png`) shows convergence to uniform SU(2) at 0.01, 0.1, and 1 km.
 
-**Current panels** and what changes:
+### B5. Impact on System Demo
 
-| Panel | Current content | Needs update? |
-|---|---|---|
-| A: Mean \|Ex\|² vs distance | 200 realisations per distance, shows diffusive drop | Still works — same measurement, new model |
-| B: Temperature vs rotation angle | Plots `θ = sqrt(L/L_char)·π/2` vs T using L_char formula | **Must be replaced** — rotation angle now comes from product of N small rotations. Instead plot `mean(\|Ex\|²)` vs T at a fixed distance (same measurement as Panel A, but along T axis) |
-| C: Bend radius vs L_char | Plots `L_char(R)` using Ulrich formula | **Must be replaced** — L_char no longer exists. Instead plot `mean(\|Ex\|²)` vs bend radius at fixed distance |
-| D: Beat length vs wavelength | `L_B(λ) = λ/Δn₀` — analytical, no birefringence call | Can stay (it's a material parameter check) |
-| E: Total Δn components | Plots Δn vs T for various R | Can stay (it validates the Ulrich bend model) |
+The system demo (`val_system.py`) uses the **phenomenological model** because all sweeps are at distances ≥ 75 km. The multi-section model is only active for `L < 2 km`, which none of the demo panels probe.
 
-**Proposed new Panel B**: `mean(|Ex|²) vs temperature at fixed distance` — same measurement as Panel A, measured at L = 50 km, sweeping T from 0–60°C. Shows the softened minimum (QBER does not reach zero).
-
-**Proposed new Panel C**: `mean(|Ex|²) vs bend radius at fixed distance` — same measurement at L = 50 km, T = 25°C, sweeping R from 2 mm to 5 cm.
-
-### B5. Impact on System Demo (`val_system.py`)
-
-| Aspect | Current | After fix | Manuscript change needed |
-|---|---|---|---|
-| Panel A (QBER vs distance) | Three-regime curve | Same qualitative shape; diffusive scrambling still occurs | None |
-| Panel C (QBER vs temperature) | Drops to 0% at 42°C | Drops to a few % (softened minimum) | Rewrite description (see A8) |
-| Panel D (QBER vs PMD) | Unchanged | Unchanged | None |
-| Panel E (QBER vs bend radius) | Unchanged | Unchanged | None |
-
-No changes needed to the sweep logic in `val_system.py` — the underlying `propagate()` → `apply_birefringence()` swap is transparent to the caller.
-
-### B6. Impact on Test Suite (`tests/test_fiber.py`)
-
-Current tests to check:
-
-| Test | Current assertion | After fix | Change needed |
-|---|---|---|---|
-| `test_birefringence` (power conservation) | `|P_out - P_in| < 1e-12` | Still passes (Jones matrices are unitary) | None |
-| `test_temperature_sensitivity` | Different T → different output | Still passes (stochastic Δn preserves sensitivity) | None |
-| `test_bend_sensitivity` | Different R → different output | Still passes | None |
-| `test_zero_length_edge` | L=0 → identity | Still passes | None |
-| `test_seeded_reproducibility` | Same seed → same output | **May fail** if seed consumption changes (now draws N random axes instead of 1) | Update seed check if needed |
+**Implication for Panel C (QBER vs temperature)**: The phenomenological model does **not** include the stochastic `Δn_stoch` term or the `|Δn|` clamping — those were only added to the multi-section model description. The temperature null is therefore still deterministic in the system demo. If you want the softened minimum in Panel C, the stochastic term must be added to the phenomenological model's `Δn` calculation as well.
 
 ---
 
-## Part C: Implementation Order
+### B6. Impact on Test Suite
 
-To avoid breaking intermediate states, apply changes in this order:
+The `tests/test_fiber.py` suite was updated to test the `propagate()` entry point with the `model` parameter:
 
-1. **`src/channel/fiber.py`** — Replace `apply_birefringence()` with multi-section version (Part B2)
-2. **`tests/test_fiber.py`** — Update seed-based reproducibility test if needed (Part B6)
-3. **`analysis/validation/validate_birefringence.py`** — Replace Panels B and C (Part B4)
-4. **Run validation**: `python analysis/validation/validate_birefringence.py --seed 42`
-5. **Run system demo**: `python analysis/val_system.py --seed 42`
-6. **Run tests**: `python -m pytest tests/ -v`
-7. **`paperwork/manuscript.tex`** — Apply all edits from Part A (A1–A11)
-8. **Regenerate figures** — All seed-tagged PNGs in `analysis/val_birefringence/` and `val_system/`
-9. **Recompile manuscript**: `xelatex manuscript.tex`
+| Test | Status |
+|---|---|
+| `test_birefringence_power_conservation` | ✅ Passes (both models unitary) |
+| `test_zero_length_edge` | ✅ Passes |
+| `test_birefringence_dispatch_sectional` | ✅ Tests `model='sectional'` at 1 km |
+| `test_birefringence_dispatch_phenomenological` | ✅ Tests `model='phenomenological'` at 100 km |
+| `test_birefringence_dispatch_auto_short` | ✅ Auto selects sectional for L < 2 km |
+| `test_birefringence_dispatch_auto_long` | ✅ Auto selects phenomenological for L ≥ 2 km |
+| `test_temperature_sensitivity` | ✅ Both models |
+| `test_bend_sensitivity` | ✅ Both models |
+| `test_seeded_reproducibility` | ⚠️ May need separate seeds for each model |
+| `test_impairment_toggles` | ✅ Tests `birefringence=False` bypass |
 
 ---
 
-## Appendix: Before/After Comparison for Fig 5C (QBER vs Temperature)
+## Part C: Updated Implementation Order
 
-**Before** (current model, deterministic Δn = 0 at ~42°C):
-```
-QBER (%)
- 70 |   *   
- 60 |   *   *
- 50 |   *     *
- 40 |   *       *
- 30 |   *        
- 20 |   *         
- 10 |   *          
-  0 |   *-----------*  ← unphysical null at T ≈ 42°C
-    +------------------------
-       0  10  20  30  40  50  60
-                 T (°C)
-```
+Since many changes are already in the manuscript, the remaining items in priority order:
 
-**After** (multi-section + stochastic Δn + clamping):
-```
-QBER (%)
- 70 |   *   
- 60 |   *   *
- 50 |   *     *
- 40 |   *       *
- 30 |   *        
- 20 |   *         
- 10 |   *     *    
-  0 |   *-----------*  ← softened minimum, QBER ≈ 3–5%
-    +------------------------
-       0  10  20  30  40  50  60
-                 T (°C)
-```
+1. **`paperwork/manuscript.tex`** — Fix conclusion (A12)
+2. **`paperwork/manuscript.tex`** — Add note explaining dual `Δn₀` values (A15)
+3. **`paperwork/manuscript.tex`** — Add boundary continuity note (A16)
+4. **`paperwork/manuscript.tex`** — Add Table 1 caveat for criterion (g) (A13)
+5. **`paperwork/manuscript.tex`** — Add σ convention footnote in CD section (A14)
+6. **`paperwork/manuscript.tex`** — Add caveat sentence to Panel C temperature discussion (A8a)
+7. **`src/channel/fiber.py`** — Optionally add stochastic `Δn_stoch` to the phenomenological model so Panel C shows a softened minimum
+8. **Regenerate figures** — If code changes are made
+9. **Recompile**: `xelatex manuscript.tex`
 
-The characteristic V-shape is preserved (the mechanism is still real), but the artefactual null at 42°C is eliminated. This is physically defensible and consistent with the known behavior of temperature-dependent birefringence in standard single-mode fibre.
+---
+
+## Appendix: Δn₀ Value Cross-Reference
+
+| Location in manuscript | Value | Beat length `L_B` at 1550 nm | Role |
+|---|---|---|---|
+| Line 520, multi-section model | `5.0 × 10⁻⁸` | ~31 m | Physical — consistent with SMF-28 (Agrawal §4.1) |
+| Line 566, phenomenological model | `0.87 × 10⁻⁵` | ~0.18 m | Fit parameter — calibrated to give `L_char = 75 km` |
+| Old manuscript (v1) | `0.87 × 10⁻⁵` (only value) | ~0.18 m | Same as phenomenological, no distinction made |
+
+The multi-section `Δn₀` is a **material property** (measured from the fibre's intrinsic birefringence). The phenomenological `Δn₀` is a **numerical fit parameter** (chosen so that `L_char = 75 km` produces scrambling over 10–200 km). These serve different purposes and should not be confused. The manuscript currently does not state this distinction explicitly — see A15.
