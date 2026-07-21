@@ -1,25 +1,24 @@
 \begin{table}[!ht]
-  \caption{Birefringence validation summary (13 self-consistency checks).}
+  \caption{Birefringence validation summary.}
   \label{tab:birefringence}
   \centering
-  \small
-  \begin{tabular}{l l c}
+  \begin{tabular}{l c c}
     \toprule
     Test & Model & Result \\
     \midrule
-    Power conservation & Sectional & err < 1e-12 \\
-    Temperature sensitivity & Sectional & PASS \\
-    Wavelength sensitivity & Sectional & PASS \\
-    Seed randomness & Sectional & PASS \\
-    Poincar\'e scrambling & Sectional (1.5 km) & std > 0.05 \\
-    Power conservation & Phenomenological & err < 1e-12 \\
-    Temperature sensitivity & Phenomenological & PASS \\
-    Wavelength sensitivity & Phenomenological & PASS \\
-    Seed randomness & Phenomenological & PASS \\
-    Poincar\'e scrambling & Phenomenological (100 km) & std > 0.05 \\
-    Zero-length identity & Both & PASS \\
-    Auto-dispatch threshold & \texttt{SECTIONAL\_LIMIT} = 2000 m & PASS \\
-    \texttt{enabled=False} bypass & Both & PASS \\
+    Power conservation & sectional & err < 1e-12 \\
+    Temperature sensitivity & sectional & PASS \\
+    Wavelength sensitivity & sectional & PASS \\
+    Seed randomness & sectional & PASS \\
+    Poincaré scrambling & sectional & std > 0.05 \\
+    Power conservation & phenomenological & err < 1e-12 \\
+    Temperature sensitivity & phenomenological & PASS \\
+    Wavelength sensitivity & phenomenological & PASS \\
+    Seed randomness & phenomenological & PASS \\
+    Poincaré scrambling & phenomenological & std > 0.05 \\
+    Zero-length identity & both & PASS \\
+    Auto-dispatch & auto & 2000 m threshold \\
+    enabled=False & both & PASS \\
     \bottomrule
   \end{tabular}
 \end{table}
