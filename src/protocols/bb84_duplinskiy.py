@@ -21,6 +21,19 @@ Encoding (same as bb84_ideal.py):
   Bob X basis: V_bob = Vpi/2
   Bob C basis: V_bob = 0
 
+Validation note
+---------------
+The 0 km (back-to-back) QBER validates the SPAD + phase modulator + PBS
+detection chain against the paper's baseline measurement.  At 0 km there
+is no fibre, so birefringence does not enter — only detector dark counts,
+afterpulsing, and the intrinsic sifting loss contribute.
+
+Longer-distance QBER values from this script are NOT directly comparable
+to the paper because the paper used active polarisation compensation,
+whereas our fibre model applies random birefringence (Menyuk & Wai 1994)
+without correction.  Our system-level demo (Section 5) separately validates
+the distance-dependent fibre model using a different detection scheme.
+
 References
 ----------
 [1] Duplinskiy et al., Opt. Express 25(23), 28886-28897, 2017.
