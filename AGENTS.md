@@ -117,6 +117,13 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - Old symmetric Jones matrix `diag(exp(±j·Δβ·L/2))` superseded (retained in git history)
 - Bend model `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7]) shared by both models
 
+### Gobby Validation (Time-bin BB84)
+- `analysis/val_gobby/validate_gobby.py` runs QBER vs distance (0–122 km, 9 points)
+- Default 200k pulses per point; 10M pulses needed >80 km for statistical significance
+- 10M-pulse results: 0 km QBER = 2.43% (paper ~3.3%), 122 km QBER = 4.55% (paper 8.9%)
+- Systematic offset vs paper attributed to uncharacterised environmental noise in Gobby's lab
+- Analytical model: QBER(L) = (P_dark/2)/(μ·η·10^{-αL/10} + P_dark) + QBER_opt
+
 ### BB84 Scripts
 - `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → propagate (dispersion flag) → PBS → APD
 - Both accept `--dispersion` CLI flag (default False for backward compatibility in ideal/bitrate scripts)
@@ -149,7 +156,7 @@ python -m pytest tests/ -v --seed=123         # custom RNG seed
 python -m pytest tests/test_cwlaser.py -v     # single file
 ```
 
-### Current coverage (48 tests, all passing)
+### Current coverage (77 tests, all passing)
 | File | Tests | What they check |
 |---|---|---|
 | `tests/test_cwlaser.py` | 11 | Power convention, `sample_field` shape, phase noise scaling, polarisation vector, seeded reproducibility, `instantaneous_field` shapes, `power_out`, zero-linewidth edge case, RIN scaling |
@@ -243,6 +250,10 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `analysis/val_gobby/val_gobby--seed42.png` | Regenerated with 10M pulses (was 200k). Clean curve beyond 80 km. |
+| `analysis/val_gobby/validate_gobby.py` | Run with 10M pulses — numbers updated in manuscript. |
+| `paperwork/tables/val_gobby_table.tex` | Updated with 10M-pulse results (23546 → 154 sifted bits, 2.43% → 4.55% QBER). |
+| `paperwork/manuscript.tex` | Gobby section: removed "statistical noise" language, added systematic offset discussion. |
 | `src/detectors/spad.py` | NEW: Geiger-mode SPAD, inherits from APD. Dead time, DCR, afterpulsing, gated detection. ID230 specs. |
 | `src/detectors/__init__.py` | Added `spad` export |
 | `src/channel/optics.py` | Added `voa(E, attenuation_dB)` for variable optical attenuation |

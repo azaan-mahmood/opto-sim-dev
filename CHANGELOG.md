@@ -27,7 +27,18 @@ All timestamps are local time (UTC+5).
 
 ---
 
-## 2026-07-21 — SPAD detector, VOA, Duplinskiy et al. BB84 replication
+## 2026-07-22 — Gobby validation: 10M-pulse sweep, manuscript update
+
+### Session: Final Gobby sweep with 10M pulses per distance, manuscript refined
+
+| Change | Files | Rationale |
+|---|---|---|
+| Gobby distance sweep at 10M pulses | `analysis/val_gobby/` — updated table, figure | 9 distances, 10M pulses each. Resolved stochastic noise >80 km. QBER: 2.43% (0 km) → 4.55% (122 km). Sifted bits: 23,546 → 154. |
+| Manuscript updated | `paperwork/manuscript.tex` | Removed "statistical noise" language from Gobby section; added discussion of systematic offset vs paper (uncharacterised environmental noise). Updated all QBER references (3.19% → 2.43% at 0 km). |
+| Table path fixed | `paperwork/tables/val_gobby_table.tex` | Copied from analysis output directory. |
+| Manuscript compiled | `paperwork/manuscript.pdf` | 29 pages, all cross-references resolved. |
+
+## 2026-07-21 — SPAD detector, VOA, Duplinskiy et al. BB84 protocol
 
 ### Session: single-photon detection, protocol replication, distance sweep
 
