@@ -4,6 +4,29 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-07-22 — Time-bin phase-encoding BB84 (Gobby et al. 2004 replication)
+
+### Session: Pulsed laser, AsymmetricMZI, time-bin protocol, Gobby validation, manuscript update
+
+| Change | Files | Rationale |
+|---|---|---|
+| Switchable pulsed mode for CWLaser | `src/lasers/cwlaser.py` | `pulsed=False` (default, backward-compatible). Adds `pulse_width`, `repetition_rate`, `timing_jitter_rms`. Gaussian pulse train with `⟨\|g\|²⟩=1` preserves average power. Literature: Agrawal §3.4, Gobby 2004. |
+| AsymmetricMZI encoder/decoder | `src/channel/interferometer.py` (new), `src/channel/__init__.py` | 50:50 Hadamard split/combine, delay via `np.roll`, phase on delayed arm, insertion loss. Encoder: single pulse → two time bins. Decoder: recombine → constructive + destructive ports with `cos²(Δφ/2)` fringe. Literature: Townsend 1993, Bennett & Brassard 1984. |
+| Time-bin BB84 protocol | `src/protocols/bb84_time_bin.py` (new) | Full chain: pulsed Gaussian pulse → AMZI encoder → fiber (attenuation only; time-bin immune to birefringence) → AMZI decoder → 2× SPAD. X/Y basis encoding, sifting, QBER computation. |
+| Gobby et al. 2004 validation | `analysis/val_gobby/validate_gobby.py` (new) | QBER vs distance sweep (0–122 km). Monte Carlo + analytical overlay against Gobby Fig 3 data. 0 km QBER = 3.19% (paper: ~3.3%). |
+| AMZI tests (21) | `tests/test_interferometer.py` (new) | Construction, encoder (output shape, two time bins, delay, power conservation, phase), decoder (interference fringes, constructive/destructive dominance, power sum), roundtrip, insertion loss. |
+| Pulsed laser tests (8) | `tests/test_cwlaser.py` | Shape, power conservation, FWHM, rep-rate, zero-power inter-pulse, energy/pulse, jitter. |
+| Manuscript updated | `paperwork/manuscript.tex`, `paperwork/tables/val_gobby_table.tex` | New §2.4 (AsymmetricMZI), §2.7 (SPAD), §3.8 (Time-bin BB84 validation). Updated abstract, contributions, reproducibility (48→77 tests), summary table, conclusion. 38 references. 28 pages. |
+
+**Key results:**
+- 0 km: QBER = 3.19% (paper: ~3.3%) — baseline validated
+- 4–40 km: QBER = 1–3% (consistent with Gobby plateau)
+- Longer distances need more pulses for statistical significance
+- Performance: ~2600 pulses/s (3rd Gen i5)
+- 77/77 tests pass
+
+---
+
 ## 2026-07-21 — SPAD detector, VOA, Duplinskiy et al. BB84 replication
 
 ### Session: single-photon detection, protocol replication, distance sweep

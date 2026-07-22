@@ -12,6 +12,11 @@ from numpy.typing import NDArray
 #     Phys. Rev., vol. 112, no. 6, pp. 1940-1949, 1958.
 # [5] Petermann, K., "Laser Diode Modulation and Noise", Kluwer, 1988.
 #     Ch. 7: Relaxation oscillations and RIN spectral density.
+# [6] Gobby, C., Yuan, Z. L. & Shields, A. J., "Quantum key distribution
+#     over 122 km of standard telecom fiber", Appl. Phys. Lett. 84,
+#     3762-3764, 2004.  — gain-switched DFB laser: 100 ps pulses, 2.5 MHz.
+# [7] Agrawal, G. P., "Fiber-Optic Communication Systems", 5th ed., Wiley,
+#     2021, §3.4: Gain-switched semiconductor lasers and pulse generation.
 
 
 class CWLaser:
@@ -23,9 +28,14 @@ class CWLaser:
       - Phase noise via Wiener process (finite linewidth, Henry [1])
       - RIN from the linearized rate equations, including the relaxation
         oscillation resonance (Coldren [2] §5.3)
+      - **Optional pulsed mode** (switchable): Gaussian pulse train at
+        configurable repetition rate and pulse width (Gobby [6], Agrawal [7])
 
     The electric field at time t is:
         E(t) = sqrt(P(t)) * exp(j * (omega * t + phi_noise(t))) * E_pol
+
+    In pulsed mode, a normalised Gaussian envelope g(t) is applied so that
+    ``mean(|g|^2) = 1`` over the sample window, preserving average power.
 
     The RIN power spectral density follows the linearized rate-equation
     result (Coldren [2] Eq 5.3.38):
@@ -67,6 +77,19 @@ class CWLaser:
         DFB lasers.  Related to f_RO via the K factor:
         gamma = K * f_RO^2 + gamma_0  (Coldren [2] §5.3.4).
         Default 1.88e10 rad/s (3 GHz in Hz units).
+    pulsed : bool
+        If True, output a train of Gaussian pulses instead of CW.
+        Default False (backward compatible).
+    pulse_width : float
+        FWHM of the Gaussian pulse envelope in seconds (default 100e-12).
+        Only used when pulsed=True.
+    repetition_rate : float
+        Pulse repetition frequency in Hz (default 2.5e6).
+        Only used when pulsed=True.
+    timing_jitter_rms : float
+        RMS timing jitter in seconds (default 0.0).
+        Each pulse centre is perturbed by N(0, jitter_rms^2).
+        Only used when pulsed=True.
     """
     def __init__(
         self,
@@ -78,6 +101,10 @@ class CWLaser:
         polarization_ellipticity: float = 0.0,
         relaxation_frequency: float = 5e9,
         damping_rate: float = 1.88e10,
+        pulsed: bool = False,
+        pulse_width: float = 100e-12,
+        repetition_rate: float = 2.5e6,
+        timing_jitter_rms: float = 0.0,
     ) -> None:
         self.wavelength = wavelength
         self.c = 3e8
@@ -107,6 +134,15 @@ class CWLaser:
         # RIN correlation time ~ 1/(2*pi*f_RO).  The internal generation
         # uses a coarse timestep when the requested dt is far finer.
         self._rin_dt_min = 1.0 / (10.0 * self._relaxation_freq)
+
+        # Pulsed-mode parameters — Gobby [6], Agrawal [7] §3.4
+        self.pulsed = pulsed
+        self.pulse_width = pulse_width
+        self.repetition_rate = repetition_rate
+        self.timing_jitter_rms = timing_jitter_rms
+
+        # Precompute Gaussian sigma from FWHM
+        self._pulse_sigma = self.pulse_width / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 
     @property
     def power_out(self) -> float:
@@ -230,6 +266,55 @@ class CWLaser:
         rin = np.fft.irfft(Y, n=n_samples)
         return rin
 
+    def _pulse_envelope(self, dt: float, n_samples: int) -> NDArray[np.float64]:
+        """Gaussian pulse train envelope normalised so ``mean(|g|^2) = 1``.
+
+        Constructs a train of Gaussian pulses at ``self.repetition_rate``,
+        each with sigma = ``self._pulse_sigma``.  Normalisation preserves
+        the average optical power set by ``power_dbm``.
+
+        When ``timing_jitter_rms > 0``, each pulse centre is randomly
+        perturbed by ``N(0, timing_jitter_rms^2)``, modelling the timing
+        jitter of a gain-switched semiconductor laser (Agrawal [7] §3.4).
+
+        Parameters
+        ----------
+        dt : float
+            Sampling interval in seconds.
+        n_samples : int
+            Number of samples.
+
+        Returns
+        -------
+        numpy.ndarray, shape (n_samples,)
+            Normalized pulse envelope.
+        """
+        T = 1.0 / self.repetition_rate
+        sigma = self._pulse_sigma
+        t = np.arange(n_samples, dtype=float) * dt
+
+        half = max(1, int(3.0 * sigma / dt))
+        n_pulses = int(np.ceil(n_samples * dt / T))
+
+        envelope = np.zeros(n_samples)
+        for k in range(n_pulses):
+            t_center = k * T
+            if self.timing_jitter_rms > 0:
+                t_center += np.random.normal(0, self.timing_jitter_rms)
+            center_idx = int(t_center / dt)
+            start = max(0, center_idx - half)
+            end = min(n_samples, center_idx + half + 1)
+            if start >= end:
+                continue
+            t_local = t[start:end] - t_center
+            envelope[start:end] += np.exp(-0.5 * (t_local / sigma) ** 2)
+
+        # Normalise to preserve average power
+        mean_sq = np.mean(envelope ** 2)
+        if mean_sq > 0:
+            envelope /= np.sqrt(mean_sq)
+        return envelope
+
     def sample_field(self, dt: float, n_samples: int) -> NDArray[np.complex128]:
         """
         Primary API — generate field samples with all physical effects.
@@ -237,13 +322,16 @@ class CWLaser:
         Returns the complex envelope (no optical carrier), shape (n_samples, 2)
         for [Ex, Ey], with power, phase noise, RIN, and polarisation.
 
+        When ``pulsed=True`` a normalised Gaussian pulse-train envelope is
+        applied (Gobby [6], Agrawal [7]).
+
         This is the method to use for physics-based simulations involving:
           - Multi-bit sequences at arbitrary baud rate
           - Chromatic dispersion (requires complex envelope, not carrier)
           - PMD
           - Bit-rate-dependent detector response
 
-        For quick single-bit polarisation/phase validation (5 fs window with
+        For quick single-bit polarisation/phase validation (5 fs window with
         optical carrier), use ``instantaneous_field(over_period=True)`` instead.
 
         Parameters
@@ -262,7 +350,13 @@ class CWLaser:
         rin = self._sample_rin(dt, n_samples)
         amp = np.sqrt(np.maximum(self._power_w * (1.0 + rin), 0.0))
         E_pol = self._polarization_vector()
-        return np.outer(amp * np.exp(1j * phi), E_pol)
+        E = np.outer(amp * np.exp(1j * phi), E_pol)
+
+        if self.pulsed:
+            env = self._pulse_envelope(dt, n_samples)
+            E *= env[:, np.newaxis]
+
+        return E
 
     def instantaneous_field(
         self, dt: float = 1e-12, over_period: bool = False,
@@ -334,7 +428,7 @@ class CWLaser:
             return E
 
     def __str__(self) -> str:
-        return (
+        s = (
             f"CWLaser: lambda={self.wavelength:.2e}m, "
             f"P={self.power_mw:.2f}mW, "
             f"dnu={self.linewidth/1e6:.2f}MHz, "
@@ -342,3 +436,12 @@ class CWLaser:
             f"f_RO={self._relaxation_freq/1e9:.2f}GHz, "
             f"psi={self.polarization_azimuth:.4f}rad"
         )
+        if self.pulsed:
+            s += (
+                f", pulsed={self.pulsed}"
+                f", width={self.pulse_width:.1e}s"
+                f", rate={self.repetition_rate:.1e}Hz"
+            )
+            if self.timing_jitter_rms > 0:
+                s += f", jitter={self.timing_jitter_rms:.1e}s"
+        return s

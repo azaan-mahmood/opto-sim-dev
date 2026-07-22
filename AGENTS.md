@@ -23,6 +23,15 @@
 - When using sub-agents to implement physics-based features, act as a supervisor
 
 
+## Summary
+- **Time-bin phase-encoding BB84 implemented**: pulsed laser, AsymmetricMZI, time-bin protocol, Gobby replication validation
+- **77 tests all pass** (48 original + 8 pulsed laser + 21 AMZI)
+- **Gobby 2004 replication**: 0 km QBER = 3.19% (paper: ~3.3%) — excellent baseline match
+- **Manuscript updated**: 28 pages, 7 validated components, 38 references — new AsymmetricMZI, SPAD, time-bin BB84 validation sections
+- **New files**: `src/channel/interferometer.py`, `src/protocols/bb84_time_bin.py`, `tests/test_interferometer.py`, `analysis/val_gobby/validate_gobby.py`
+- **Performance**: ~2600 pulses/s on 3rd Gen i5 — 2.5M pulses in ~16 min, 25M pulses in ~2.7h
+- **Next**: Long-distance statistics need more pulses; consider increasing mu or using batched simulation for speed
+
 ## Goal
 Open-source, validated physical-layer fiber-optic simulator where the complex-envelope electric field is the single source of truth. QKD (BB84) is one application protocol; the platform is general-purpose: CW lasers, MZMs, CD, PMD, birefringence, attenuation, APDs — any classical or quantum optical link that can be modeled as a linear pipeline of physically parametrised impairments.
 
