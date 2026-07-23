@@ -672,7 +672,10 @@ short-fibre polarisation physics (component-level validation,
 lab-scale setups), while the phenomenological model produces
 gradual distance-dependent QBER for long-haul BB84.  The user
 may override the automatic dispatch via the \texttt{model}
-parameter to apply either model at any distance.
+parameter to apply either model at any distance.  For production
+use where a continuous QBER curve is required across the full
+distance range, the phenomenological model should be applied
+uniformly at all distances.
 
 \subsubsection{Chromatic Dispersion}
 
@@ -853,7 +856,7 @@ where $\eta$ is the quantum efficiency (default 0.10).
 
 With probability $p_{\text{ap}}$ (default 0.05), a click triggers a false
 afterpulse at a random time $t_{\text{ap}} \sim \tau_d/2 \cdot
-\operatorname{Exp}(1)$ after the dead time expires.
+\operatorname{Exp}(1)$ after the dead time expires~\cite{id230}.
 
 \section{Validation Results}
 
@@ -1231,11 +1234,13 @@ simulation at 10,000,000 pulses per point produces:
 
 The key validation is the 0~km QBER: the simulation yields 2.43\% against
 the paper's $\sim$3.3\% baseline, using only published ID230 SPAD
-specifications without adjustable parameters.  The systematic
-$\sim$0.9~pp undershoot across all short-distance points is consistent
-with uncharacterised environmental noise in the experimental setup
-(ambient background, detector timing jitter, electrical pickup) that is
-absent from the simulation.  Despite this offset, the QBER curve
+specifications ($\eta=0.10$, $R_{\text{dc}}=15$~Hz) without adjustable
+parameters.  The systematic $\sim$0.9~pp undershoot across all
+short-distance points is consistent with uncharacterised environmental
+noise in the experimental setup (ambient background, detector timing
+jitter, electrical pickup) that is absent from the simulation, as well
+as the expected discrepancy between datasheet specifications and the
+parameters of the particular detectors used in Gobby et al.~\cite{gobby}.  Despite this offset, the QBER curve
 reproduces the correct distance-dependent shape: a flat dark-count floor
 at short distances followed by a monotonic rise once fibre attenuation
 reduces the signal below the dark count level.  The simulation confirms
@@ -1571,10 +1576,6 @@ Wiley, 2012.
 
 \bibitem{yariv}
 A.~Yariv, \textit{Optical Electronics}, 4th~ed., Saunders, 1991.
-
-\bibitem{agrawal}
-G.~P.~Agrawal, \textit{Fiber-Optic Communication Systems}, 4th~ed.,
-Wiley, 2010.
 
 \bibitem{agrawal5}
 G.~P.~Agrawal, \textit{Fiber-Optic Communication Systems}, 5th~ed.,
