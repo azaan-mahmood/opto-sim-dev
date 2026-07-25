@@ -1,3 +1,0 @@
-CV = Continuous Variable
-QKD = Quantum Key Distribution
-CVQKD = Continuous Variable Quantum Key Distribution

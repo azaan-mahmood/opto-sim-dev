@@ -1,6 +1,0 @@
-Parameter,Value
-Power calibration,max error = 4.82e-04 %
-Phase diffusion coeff,D_phi = 6.28e+08 rad^2/s
-Phase increments,"Gaussian, std = 2.51e-02 rad"
-RIN resonance,"f_RO = 5 GHz, damping = 1.88e10 rad/s"
-Polarization,"Unit norm, linear/circular verified"
