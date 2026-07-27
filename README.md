@@ -4,6 +4,48 @@
 
 Seven components are independently validated against published literature (38 references), then composed into a system-level time-bin BB84 QKD demonstration that reproduces Gobby et al. (2004) with 0 km QBER = 2.43% versus the paper's 3.3%.
 
+## Comparison with Existing Simulators
+
+No existing simulator — whether protocol-level, commercial optical, or QKD-specific — offers all of the following simultaneously: first-principles optical field modelling, per-component literature validation, open-source code, and full fibre impairment physics (CD, PMD, birefringence).
+
+| Simulator | Open source | Physical layer | CD/PMD/Biref | Per-comp. validation | Complex envelope |
+|---|---|---|---|---|---|
+| NetSquid | No | Partial | No | No | No |
+| SimulaQron | Yes | No | No | No | No |
+| SeQUeNCe | Yes | Partial | No | No | No |
+| QuISP | Yes | Partial | No | No | No |
+| QuNetSim | Yes | No | No | No | No |
+| SQUANCH | Yes | No | No | No | No |
+| QKDNetSim | Yes | No | No | No | No |
+| OptiSystem | No | Yes | Partial | No | No |
+| VPIphotonics | No | Yes | Yes | No | No |
+| OptSim | No | Yes | Partial | No | No |
+| **This work** | **Yes** | **Yes** | **Yes** | **Yes** | **Yes** |
+
+## How to Run
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run all 77 unit tests
+python -m pytest tests/ -v
+
+# Run all component validations (generates figures + tables)
+python run_all.py --seed 42
+
+# Run a specific protocol
+python -m src.protocols.bb84_ideal --fiber-length 50
+python -m src.protocols.bb84_time_bin --distance 10
+```
+
+Individual validation scripts are in `analysis/validation/`:
+
+```bash
+python analysis/validation/validate_cd.py --seed 42
+python analysis/validation/validate_gobby.py --seed 42
+```
+
 ## Key Features
 
 - **Complex-envelope field propagation** — full polarisation state (Stokes parameters), phase noise, RIN, and power tracked through every component
@@ -49,7 +91,7 @@ The field convention is consistent: `mean(|E|²)` = optical power in Watts. Ever
 
 ## Validation
 
-Each component is validated against a published source — see `analysis/validation/` for the full scripts and `paperwork/main.tex` for the manuscript.
+Each component is validated against a published source — see `analysis/validation/` for the full scripts.
 
 | Component | Method | Error |
 |---|---|---|
@@ -62,13 +104,6 @@ Each component is validated against a published source — see `analysis/validat
 | Birefringence | Beat length vs bend radius (Ulrich 1980) | < 0.1 % |
 | APD | Responsivity, noise floor (Kasap Eq 4.45) | < 1 % |
 | SPAD | Gobby replication (Appl. Phys. Lett. 84, 2004) | 0 km QBER 2.43 % |
-
-## Installation
-
-```bash
-pip install -r requirements.txt
-python -m pytest tests/ -v      # run all tests
-```
 
 ## Quick Start
 
@@ -89,15 +124,6 @@ result = apd.output(E, bandwidth=1e9)
 print(f"Signal current: {result['I_signal']:.2e} A")
 ```
 
-## Running BB84
-
-```bash
-python -m src.protocols.bb84_ideal --fiber-length 50
-python -m src.protocols.bb84_time_bin --distance 10
-```
-
-All scripts accept `--seed` for reproducibility.
-
 ## Reproducibility
 
 Every test and validation script pins both `random` and `np.random` at session start via `conftest.py`. The `--seed` CLI flag (default 42) controls all RNG. Validation outputs are tagged with the seed in the filename (e.g., `val_gobby--seed42.png`).
@@ -113,7 +139,7 @@ Framework for Quantum Key Distribution," arXiv preprint, 2026.
 
 ## License
 
-MIT License — see LICENSE file.
+MIT License — see [LICENSE](LICENSE) file.
 
 ## Contact
 
