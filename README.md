@@ -109,18 +109,17 @@ Each component is validated against a published source — see `analysis/validat
 
 ```python
 from src.lasers import CWLaser
-from src.channel import fiber
-from src.detectors import APD
+from src.channel import propagate
+from src.detectors import apd
 import numpy as np
 
 laser = CWLaser(wavelength=1550e-9, power_dbm=0)
 E = laser.sample_field(dt=1e-12, n_samples=1000)
 
-f = fiber.Fiber(fiber_length=50)
-E = f.propagate(E, dt=1e-12, wavelength=1550e-9)
+E = propagate(fiber_length=50, E=E, dt=1e-12, wavelength=1550e-9)
 
-apd = APD()
-result = apd.output(E, bandwidth=1e9)
+detector = apd()
+result = detector.output(E, bandwidth=1e9)
 print(f"Signal current: {result['I_signal']:.2e} A")
 ```
 
