@@ -1,0 +1,7 @@
+Scenario,QBER
+No Impairments,0.0%
+Attenuation Only,42.7%
+CD Only,45.2%
+PMD Only,43.0%
+CD + PMD,43.0%
+CD + PMD + Bend (R=1cm),70.1%

@@ -1,107 +1,120 @@
-## opto-sim: A Physics-Based Optical Simulation Framework for QKD Systems
+# opto-sim: Physical-Layer Fiber-Optic Simulation Framework
 
-**opto-sim** is a modular headless Python library for simulating real-world optical systems at a backend level. It models components like lasers, LiNbO₃ phase modulators, beam splitters, fiber cables, and APDs, using **numerical methods** and **Stokes vector polarization analysis**. Think of it as a lightweight, scriptable backend akin to what powers tools like HFSS, Lumerical, or SIwave—minus the GUI.
+**opto-sim** is an open-source Python framework for physical-layer simulation of optical fibre channels, with a focus on quantum key distribution (QKD) systems. The complex-envelope electric field $\mathbf{E}(t)=[E_x(t),E_y(t)]^\mathsf{T}$ is the single source of truth — optical power is derived directly from the field as $\langle|E|^2\rangle$, calibrated once at the laser output and tracked through every downstream component.
 
-**Work in Progress**  
-This project is under active development and not production-ready, but reflects:
+Seven components are independently validated against published literature (38 references), then composed into a system-level time-bin BB84 QKD demonstration that reproduces Gobby et al. (2004) with 0 km QBER = 2.43% versus the paper's 3.3%.
 
-- A strong interest in engineering simulation
-- Hands-on application of numerical methods to physical systems
-- A **backend-first** approach suitable for scripting, automation, and scientific use
-- Emphasis on **physics-first modeling**, internal APIs, and extendability.
+## Key Features
 
-## Project Overview
+- **Complex-envelope field propagation** — full polarisation state (Stokes parameters), phase noise, RIN, and power tracked through every component
+- **7 validated components**, each against its own literature source:
+  - **CW Laser** with switchable pulsed mode, Wiener phase noise (Henry 1982), relaxation-oscillation RIN (Coldren 2012)
+  - **Mach–Zehnder Modulator** with push-pull and single-drive configurations (Agrawal, Koyama & Iga)
+  - **Asymmetric Mach–Zehnder Interferometer** for time-bin phase encoding/decoding
+  - **Fibre Channel** with birefringence (sectional + phenomenological models), chromatic dispersion (FFT-based, Agrawal), PMD (Maxwellian DGD, Razavi), and attenuation (Keiser)
+  - **Avalanche Photodiode** with shot noise, thermal noise, excess noise factor (Kasap)
+  - **Geiger-mode SPAD** with dead time, dark count rate, afterpulsing, gated detection (ID230 specs)
+  - **Time-bin BB84 Protocol** with pulsed laser, AMZI encoder/decoder, dual SPAD detection
+- **Seeded reproducibility** — all RNG seeded at session start (`--seed` default 42)
+- **77 unit tests** — component-level validation of power convention, noise scaling, polarisation, interference fringes, edge cases
+- **No GUI, no proprietary dependencies** — pure Python + NumPy + SciPy + Matplotlib
 
-This simulator aims to mimic the behavior of physical optical components used in QKD experiments—specifically BB84 protocol setups—through mathematical models. It’s intended as a learning tool and experimental platform for simulating realistic noise conditions, signal degradation, and quantum encoding/decoding via optics.
+## Architecture
 
-### Current Features
-
-- **Laser Source**  
-  - Solid-state lasers modeled after Nd:YAG and Er:YAG systems.
-
-- **Phase Modulators**  
-  - Supports X-cut and Y-cut, Z-propagating configurations.
-
-- **Avalanche Photodiodes (APDs)**  
-  - Models include shot noise, thermal noise, and random Gaussian/Poisson noise.
-
-- **Optical Components**  
-  - Basic tools like beam splitters, couplers, etc
-
-- **Visualization**  
-  - Polarimetry
-  - Calculation of **Stokes parameters** for polarization state analysis.
-  - Poincare Sphere
-
-- **Fiber Cable**
-  - Simulates fiber transmission, optional dispersion modeling
-
-### Mathematical Modeling
-
-All models aim to closely reflect published experimental setups and component behaviors found in academic literature. While accuracy is a priority, simplifications are made when necessary to keep computations tractable.
-
-## Technical Highlights
-- Physics-first architecture: Built from experimental papers and known equations
-- Modular backend API: Easily compose system-level simulations
-- Pure Python + NumPy stack
-- Runs in Jupyter/Colab with reproducible outputs and examples
-- Output includes:
-  - Stokes vector breakdown
-  - Cosine similarity across transmission
-  - Realistic phase and polarization transitions
-
-## Sample Use Case
-### Code
-```python
-from src.channel import PhaseModulator
-from src.lasers import CWLaser
-from src.visualization.stokes import compute_stokes_parameters
-from src.visualization import polarimeter
-source = CWLaser(
-    wavelength=1550e-9,
-    polarization_azimuth=np.pi,  # 45° polarization
-    polarization_ellipticity=np.pi/4,
-    power_dbm=-5.0,
-)
-E_field = source.instantaneous_field(normalize=False, over_period=True)
-S0, S1, S2, S3 = compute_stokes_parameters(E_field)
-print(f"S0 = {S0:.3f}\nS1 = {S1:.3f}\nS2 = {S2:.3f}\nS3 = {S3:.3f}")
-polarimeter(E_field, title=f"Laser Output")
-pm = PhaseModulator(crystal_cut='X', modulation='DC')
-E_modulated = pm.modulate(E_field, V=3.3)
-S0, S1, S2, S3 = compute_stokes_parameters(E_modulated)
-print(f"S0 = {S0:.3f}\nS1 = {S1:.3f}\nS2 = {S2:.3f}\nS3 = {S3:.3f}")
-polarimeter(E_modulated, title=f"Phase Modulator Output")
 ```
-### Output
-```output
-S0 = 0.910
-S1 = 0.000
-S2 = -0.707
-S3 = -0.707
+src/
+├── lasers/cwlaser.py          # CW laser with pulsed mode option
+├── channel/
+│   ├── fiber.py               # birefringence, CD, PMD, attenuation
+│   ├── mzm.py                 # Mach-Zehnder modulator
+│   ├── interferometer.py      # asymmetric MZI for time-bin encoding
+│   ├── optics.py              # VOA, beam splitters, etc.
+│   └── phase_modulator.py     # LiNbO3 phase modulator
+├── detectors/
+│   ├── apd.py                 # linear-mode APD
+│   └── spad.py                # Geiger-mode SPAD
+├── protocols/
+│   ├── bb84_ideal.py          # CW-based BB84
+│   ├── bb84_high_bitrate.py   # bitrate-sweep BB84
+│   ├── bb84_test_dispersion.py# MZM-carved pulses with CD/PMD
+│   ├── bb84_duplinskiy.py     # SPAD-based BB84 replication
+│   └── bb84_time_bin.py       # time-bin phase-encoding BB84
+└── visualization/
+    ├── stokes.py               # Stokes parameter computation
+    ├── polarimeter.py          # Poincaré sphere plotting
+    └── fields.py               # field visualization
 ```
-![Laser Output](https://github.com/azaan-mahmood/opto-sim/blob/main/src/common/images/Laser_Out.png "Laser Output")
-```output
-S0 = 0.910
-S1 = 0.000
-S2 = 0.951
-S3 = 0.309
-```
-![PM Output](https://github.com/azaan-mahmood/opto-sim/blob/main/src/common/images/PM_Out.png "Phase Modulator Output")
 
-## Dependencies
+The field convention is consistent: `mean(|E|²)` = optical power in Watts. Every component reads and writes the same field array `E` with shape `(n_samples, 2)`.
 
-- `numpy`
-- `scipy`
-- `matplotlib`
+## Validation
 
-Install dependencies with:
+Each component is validated against a published source — see `analysis/validation/` for the full scripts and `paperwork/main.tex` for the manuscript.
+
+| Component | Method | Error |
+|---|---|---|
+| CW Laser | Power convention, phase noise (Henry), RIN (Coldren) | < 1 % |
+| MZM | Transfer function, null/peak, quadrature (Agrawal) | < 0.1 % |
+| AMZI | Fringe visibility cos²(Δφ/2) | < 0.1 % |
+| CD | Gaussian pulse broadening (Agrawal Fig 2.6) | < 0.06 % |
+| PMD | Maxwellian DGD histogram (Razavi Fig 2.11) | KS test pass |
+| Attenuation | SMF-28 distance sweep (Keiser Eq 3.6) | < 1e-12 |
+| Birefringence | Beat length vs bend radius (Ulrich 1980) | < 0.1 % |
+| APD | Responsivity, noise floor (Kasap Eq 4.45) | < 1 % |
+| SPAD | Gobby replication (Appl. Phys. Lett. 84, 2004) | 0 km QBER 2.43 % |
+
+## Installation
 
 ```bash
 pip install -r requirements.txt
+python -m pytest tests/ -v      # run all tests
 ```
-## Licensing and Usage
-🚫 This simulator is intended for demonstration and research purposes only. Please contact me for permission before using in personal research/projects or commercial projects.
 
-## Contact ##
-- Feel free to reach out via GitHub issues or messages if you’re curious about the project and want to collaborate.
+## Quick Start
+
+```python
+from src.lasers import CWLaser
+from src.channel import fiber
+from src.detectors import APD
+import numpy as np
+
+laser = CWLaser(wavelength=1550e-9, power_dbm=0)
+E = laser.sample_field(dt=1e-12, n_samples=1000)
+
+f = fiber.Fiber(fiber_length=50)
+E = f.propagate(E, dt=1e-12, wavelength=1550e-9)
+
+apd = APD()
+result = apd.output(E, bandwidth=1e9)
+print(f"Signal current: {result['I_signal']:.2e} A")
+```
+
+## Running BB84
+
+```bash
+python -m src.protocols.bb84_ideal --fiber-length 50
+python -m src.protocols.bb84_time_bin --distance 10
+```
+
+All scripts accept `--seed` for reproducibility.
+
+## Reproducibility
+
+Every test and validation script pins both `random` and `np.random` at session start via `conftest.py`. The `--seed` CLI flag (default 42) controls all RNG. Validation outputs are tagged with the seed in the filename (e.g., `val_gobby--seed42.png`).
+
+## Citation
+
+If you use this framework in your research, please cite the accompanying manuscript:
+
+```
+A. Mahmood, "An Open-Source Physically Validated Optical Channel Simulation
+Framework for Quantum Key Distribution," arXiv preprint, 2026.
+```
+
+## License
+
+MIT License — see LICENSE file.
+
+## Contact
+
+A. Mahmood — azaan.mahmood@dsu.edu.pk

@@ -1,0 +1,8 @@
+Parameter,Value
+D_total,14.0 ps/(nm*km)
+D_material,17.0 ps/(nm*km)
+D_waveguide,-3.0 ps/(nm*km)
+beta2,-1.786e-26 s^2/m
+Dispersion length L_D,50.40 km
+Max error,3.012676e-14 %
+Gaussian broadening,Matches analytic: all < 0.001 %
