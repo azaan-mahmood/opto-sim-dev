@@ -96,6 +96,12 @@ class spad(apd):
         if not self._armed:
             if t - self._last_click_time >= self.dead_time:
                 self._armed = True
+                # PHYS-7: clear any afterpulse scheduled-but-never-fired
+                # during this dead period — otherwise it stays pending
+                # with a stale timestamp and can fire on the first gate
+                # of a *later* dead period (opto-sim-issues-and-fixes.md).
+                self._afterpulse_pending = False
+                self._afterpulse_time = -np.inf
             else:
                 # Still dead — check for scheduled afterpulse
                 if self._afterpulse_pending and t >= self._afterpulse_time:
@@ -133,11 +139,19 @@ class spad(apd):
         return click
 
     def _schedule_afterpulse(self, t):
-        """With probability afterpulse_prob, schedule a false click."""
+        """With probability afterpulse_prob, schedule a false click.
+
+        Always assigns both fields (PHYS-7) so a failed roll clears any
+        previously pending afterpulse rather than leaving its stale state
+        in place.
+        """
         if np.random.random() < self.afterpulse_prob:
             self._afterpulse_pending = True
             delay = np.random.exponential(self.dead_time * 0.5)
             self._afterpulse_time = t + max(delay, self.gate_width)
+        else:
+            self._afterpulse_pending = False
+            self._afterpulse_time = -np.inf
 
     # ------------------------------------------------------------------
     # Convenience: detect a full pulse train

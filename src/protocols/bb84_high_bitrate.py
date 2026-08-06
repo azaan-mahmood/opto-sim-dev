@@ -1,7 +1,7 @@
 import argparse
 import numpy as np
 from src.lasers.cwlaser import CWLaser
-from src.channel import propagate, optics
+from src.channel import optics, FiberRealization
 from src.channel.phase_modulator import PhaseModulator
 from src.visualization import fields, polarimeter
 from src.detectors import apd
@@ -47,6 +47,15 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9,
     dt = 1e-12     # time step (1 ps) — 1 ns total per bit at 1000 samples
     n_samples = 1000
 
+    # One physical fibre for the whole run: birefringence and PMD are
+    # quasi-static, so every bit must see the same impairments (see
+    # ROOT-1 in opto-sim-issues-and-fixes.md). Built once here, reused
+    # per bit below. `dispersion` gates CD+PMD, matching propagate()'s
+    # legacy alias behaviour.
+    fibre = FiberRealization(L_m=fiber_length * 1000, temperature=25,
+                             bend_radius=None, attenuation_factor=0.182,
+                             cd=dispersion, pmd=dispersion, seed=seed)
+
     for _ in range(num_bits):
         # Alice's random choices
         alice_basis = random.choice(['C', 'X'])
@@ -75,10 +84,7 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9,
 
         # Channel transmission (QC). Dispersion now works because
         # sample_field returns the complex envelope (not the optical carrier).
-        E = propagate(
-            fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
-            attenuation_factor=0.182, temperature=25, bend_radius=None
-        )
+        E = fibre.apply(E, dt=dt)
 
         # Bob's random basis choice
         bob_basis = random.choice(['C', 'X'])
@@ -91,7 +97,9 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9,
         E = pm_bob.modulate(E_field=E, V=phase_bob)  # Bob's phase shift
         
         # Measurement: PBS splits into two spatial modes
-        Ex, Ey = optics.pbs(E)
+        # circular_analyser, not pbs: detection depends on the relative
+        # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
+        Ex, Ey = optics.circular_analyser(E)
 
         # Noisy photocurrent from each detector (power derived from field)
         I_x = detector.output(E=Ex, bandwidth=bandwidth)

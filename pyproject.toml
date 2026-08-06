@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opto-sim"
-version = "0.1.0"
+version = "0.2.0"
 description = "Physics-based optical simulation framework for QKD systems."
 readme = "README.md"
 requires-python = ">=3.10"

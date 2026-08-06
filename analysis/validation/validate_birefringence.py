@@ -195,7 +195,7 @@ mean_ex_short = np.array(mean_ex_short)
 ax1 = fig.add_subplot(gs[0, 0])
 ax1.plot(dist_short_km, mean_ex_short, 's-', c='C3', lw=1.5, ms=4)
 ax1.set(xlabel='Fibre length (km)', ylabel=r'$\langle |E_x|^2 \rangle$',
-        title='A: Sectional model — polarisation vs distance\n(L_B ≈ 31 m, sections = 100 m)')
+        title='A: Sectional model — polarisation vs distance\n(L_B ≈ 31 m, correlation length = 50 m)')
 ax1.grid(True, alpha=0.25)
 ax1.set_ylim(-0.05, 1.05)
 ax1.axvline(2, c='gray', ls=':', lw=0.6, alpha=0.4, label='Sectional limit')
@@ -354,22 +354,29 @@ plt.close(fig)
 # Convergence figure: Poincaré sphere scatter plots for the
 # multi-section (sectional) model at increasing distances,
 # showing the transition from ordered → uniform SU(2).
+#
+# With the physical correlation length L_c = 50 m (PHYS-4) exceeding the
+# beat length L_B ~ 31 m, a fibre shorter than L_c is a *single* random-axis
+# section whose retardation phase (alpha = 2*pi*|Δn|*L/lambda) already
+# wraps past 2*pi within a few metres — so |mean(S)| oscillates with L
+# rather than decaying smoothly until L is a few correlation lengths.
+# The first distance below is chosen well under one beat length, where
+# that oscillation hasn't kicked in yet, to still show a coherent state.
 # ============================================================
 from mpl_toolkits.mplot3d import Axes3D
 
 np.random.seed(SEED)
 E_in = np.array([[1.0, 0.0]], dtype=complex)
 N_REAL = 500
-conv_distances = [0.01, 0.1, 1.0, 10.0]  # km
+conv_distances = [0.002, 0.05, 1.0, 10.0]  # km
 
 fig2 = plt.figure(figsize=(12, 10))
 gs2 = fig2.add_gridspec(2, 2, hspace=0.30, wspace=0.30)
 titles = [
-    f'A: L = {d} km — few sections, clustered' if d == 0.1
-    else     f'B: L = {d} km — partial scrambling' if d == 0.1
-    else f'C: L = {d} km — near-uniform' if d == 1.0
-    else f'D: L = {d} km — uniform SU(2) (Haar)'
-    for d in conv_distances
+    f'A: L = {conv_distances[0]*1e3:.0f} m — single correlation cell, clustered',
+    f'B: L = {conv_distances[1]*1e3:.0f} m — one correlation length, partial scrambling',
+    f'C: L = {conv_distances[2]} km — near-uniform',
+    f'D: L = {conv_distances[3]} km — uniform SU(2) (Haar)',
 ]
 
 for idx, (d_km, title) in enumerate(zip(conv_distances, titles)):
@@ -413,7 +420,7 @@ for d_km in conv_distances:
     S_all = np.array(S_all)
     mean_norm = np.linalg.norm(np.mean(S_all, axis=0))
     conv_results.append(mean_norm)
-    print(f"  L={d_km:3.1f} km: |mean(S)| = {mean_norm:.4f}  (0 -> uniform, 1 -> single state)")
-assert conv_results[0] > 0.15, f"Short fibre should have non-zero mean Stokes: {conv_results[0]}"
+    print(f"  L={d_km:6.3f} km: |mean(S)| = {mean_norm:.4f}  (0 -> uniform, 1 -> single state)")
+assert conv_results[0] > 0.5, f"Sub-beat-length fibre should have high mean Stokes: {conv_results[0]}"
 assert conv_results[-1] < 0.10, f"Long fibre should have near-zero mean Stokes: {conv_results[-1]}"
 print(f"  [PASS] Poincare sphere convergence: |mean(S)| = {conv_results[0]:.3f} -> {conv_results[-1]:.3f}")

@@ -8,9 +8,11 @@ using LiNbO3 phase modulators and InGaAs SPADs.
 Signal chain (mirrors bb84_ideal.py but with VOA + SPAD):
   Alice: polarizer('45') → PM1 (encode)
   Channel: propagate (birefringence + attenuation)
-  Bob: PM2 (basis select) → PBS → 2x SPAD
+  Bob: PM2 (basis select) → circular_analyser → 2x SPAD
 
-Detection uses the same 50:50 BS with π/2 phase shift (optics.pbs):
+Detection uses the same 50:50 BS with π/2 phase shift
+(optics.circular_analyser — not a true PBS, see PHYS-6 in
+opto-sim-issues-and-fixes.md):
   P_x − P_y = sin(Δφ_alice + Δφ_bob)
   Same basis: |sin| = 1 → deterministic bit
   Diff basis: sin ≈ 0 → random (sifted out)
@@ -23,8 +25,9 @@ Encoding (same as bb84_ideal.py):
 
 Validation note
 ---------------
-The 0 km (back-to-back) QBER validates the SPAD + phase modulator + PBS
-detection chain against the paper's baseline measurement.  At 0 km there
+The 0 km (back-to-back) QBER validates the SPAD + phase modulator +
+circular-analyser detection chain against the paper's baseline
+measurement.  At 0 km there
 is no fibre, so birefringence does not enter — only detector dark counts,
 afterpulsing, and the intrinsic sifting loss contribute.
 
@@ -47,7 +50,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel import propagate, optics
+from src.channel import optics, FiberRealization
 from src.channel.phase_modulator import PhaseModulator
 from src.detectors.spad import spad
 
@@ -102,6 +105,15 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
 
     dt_pulse = 1.0 / rep_rate
 
+    # One physical fibre for the whole run: birefringence is quasi-static,
+    # so every pulse must see the same Jones matrix (see ROOT-1 in
+    # opto-sim-issues-and-fixes.md). Built once here, reused per pulse
+    # below. CD/PMD stay off, matching this script's original explicit
+    # propagate(cd=False, pmd=False) call.
+    fibre = FiberRealization(L_m=fiber_length * 1000, temperature=25,
+                             bend_radius=None, attenuation_factor=alpha_dB,
+                             cd=False, pmd=False, seed=seed)
+
     alice_bits, alice_bases = [], []
     bob_bits, bob_bases = [], []
     has_click = []
@@ -129,12 +141,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         E = pm_alice.modulate(E_field=E, V=phase_alice)
 
         # --- Channel: birefringence + attenuation ---
-        E = propagate(
-            fiber_length=fiber_length, E=E, dt=dt_pulse,
-            birefringence=True, cd=False, pmd=False,
-            attenuation=True, attenuation_factor=alpha_dB,
-            temperature=25, bend_radius=None,
-        )
+        E = fibre.apply(E, dt=dt_pulse)
 
         # --- Bob's internal loss (optics, connectors, coupler) ---
         E = optics.voa(E, bob_loss_dB)
@@ -147,7 +154,9 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
             phase_bob = Vpi / 2
 
         E = pm_bob.modulate(E_field=E, V=phase_bob)
-        Ex, Ey = optics.pbs(E)
+        # circular_analyser, not pbs: detection depends on the relative
+        # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
+        Ex, Ey = optics.circular_analyser(E)
 
         # --- Detection ---
         power_x = np.mean(np.abs(Ex) ** 2)

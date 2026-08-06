@@ -26,7 +26,7 @@ import os, sys, time, argparse, random
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from src.lasers.cwlaser import CWLaser
-from src.channel import propagate, optics
+from src.channel import optics, FiberRealization
 from src.channel.phase_modulator import PhaseModulator
 from src.channel.mzm import MZM
 from src.detectors.apd import apd
@@ -53,7 +53,7 @@ BIT_RATE_MHZ = 250
 
 def simulate_bb84_full(num_bits, fiber_length=50, pulse_sigma=30e-12,
                        dispersion=True, temperature=25, bend_radius=None,
-                       pm_dispersion=0.1e-12, seed=None, n_samples=4000):
+                       pmd_coeff_ps_sqrt_km=0.1, seed=None, n_samples=4000):
     """Full BB84 with MZM-carved pulses, all impairments."""
     if seed is not None:
         random.seed(seed)
@@ -61,6 +61,7 @@ def simulate_bb84_full(num_bits, fiber_length=50, pulse_sigma=30e-12,
 
     alice_bits, alice_bases = [], []
     bob_bits, bob_bases = [], []
+    has_click = []
 
     detector = apd(wavelength=1550e-9, quantum_efficiency=0.9, gain=10,
                    excess_noise_factor=10, load_resistance=50, temperature=25)
@@ -82,6 +83,17 @@ def simulate_bb84_full(num_bits, fiber_length=50, pulse_sigma=30e-12,
     mzm = MZM(mode='push-pull', bias_voltage=Vpi)
     V_pulse = Vpi * np.exp(-0.5 * ((t - t_center) / pulse_sigma) ** 2)
 
+    # One physical fibre for the whole run: birefringence and PMD are
+    # quasi-static, so every bit must see the same impairments (see
+    # ROOT-1 in opto-sim-issues-and-fixes.md). Built once here, reused
+    # per bit below. `dispersion` gates CD+PMD, matching propagate()'s
+    # legacy alias behaviour.
+    fibre = FiberRealization(L_m=fiber_length * 1000, temperature=temperature,
+                             bend_radius=bend_radius,
+                             pmd_coeff_ps_sqrt_km=pmd_coeff_ps_sqrt_km,
+                             attenuation_factor=0.182,
+                             cd=dispersion, pmd=dispersion, seed=seed)
+
     for _ in range(num_bits):
         alice_basis = random.choice(['C', 'X'])
         alice_bit = random.randint(0, 1)
@@ -96,54 +108,67 @@ def simulate_bb84_full(num_bits, fiber_length=50, pulse_sigma=30e-12,
         E = optics.polarizer(E, '45')
         E = pm_alice.modulate(E_field=E, V=phase_alice)
 
-        E = propagate(
-            fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
-            attenuation_factor=0.182, temperature=temperature,
-            bend_radius=bend_radius, pm_dispersion=pm_dispersion,
-        )
+        E = fibre.apply(E, dt=dt)
 
         bob_basis = random.choice(['C', 'X'])
         phase_bob = 0 if bob_basis == 'C' else Vpi / 2
         E = pm_bob.modulate(E_field=E, V=phase_bob)
 
-        Ex, Ey = optics.pbs(E)
+        # circular_analyser, not pbs: detection depends on the relative
+        # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
+        Ex, Ey = optics.circular_analyser(E)
         I_x = detector.output(E=Ex, bandwidth=1e6)
         I_y = detector.output(E=Ey, bandwidth=1e6)
 
         noise_floor = detector.calculate_noise(0, 1e6)
         threshold = 3 * noise_floor
 
-        if I_x > threshold or I_y > threshold:
-            bob_bit = 0 if I_x > I_y else 1
-        else:
-            bob_bit = random.randint(0, 1)
+        # PHYS-3: a below-threshold event is a non-detection, not a random
+        # bit — Bob's receiver simply didn't register a signal. Real BB84
+        # discards non-detections during sifting (bb84_time_bin.py and
+        # bb84_duplinskiy.py already do this correctly); keeping a coin
+        # flip in the sifted key makes QBER converge to 50% by
+        # construction at long range rather than by physics. See PHYS-3
+        # in opto-sim-issues-and-fixes.md.
+        detected = I_x > threshold or I_y > threshold
+        bob_bit = (0 if I_x > I_y else 1) if detected else -1
 
         alice_bits.append(alice_bit)
         alice_bases.append(alice_basis)
         bob_bits.append(bob_bit)
         bob_bases.append(bob_basis)
+        has_click.append(detected)
 
-    sifted_indices = [i for i in range(num_bits) if alice_bases[i] == bob_bases[i]]
+    sifted_indices = [i for i in range(num_bits)
+                      if alice_bases[i] == bob_bases[i] and has_click[i]]
     sifted_alice = [alice_bits[i] for i in sifted_indices]
     sifted_bob = [bob_bits[i] for i in sifted_indices]
 
+    n_sifted = len(sifted_alice)
     qber = 0.0
-    if len(sifted_alice) > 0:
-        errors = sum(sifted_alice[i] != sifted_bob[i] for i in range(len(sifted_alice)))
-        qber = errors / len(sifted_alice)
+    if n_sifted > 0:
+        errors = sum(sifted_alice[i] != sifted_bob[i] for i in range(n_sifted))
+        qber = errors / n_sifted
+    sifted_fraction = n_sifted / num_bits if num_bits > 0 else 0.0
 
-    return qber
+    return {'qber': qber, 'sifted_fraction': sifted_fraction}
 
 
 def sweep(pname, vals, fixed):
+    """Returns (qber_array, sifted_fraction_array). Sifted fraction is
+    reported alongside QBER (PHYS-3) since a coin-flip QBER of ~50% and a
+    physically noise-limited QBER of ~50% look identical unless the
+    fraction of bits that actually survived sifting is also shown."""
     base = dict(fiber_length=50, pulse_sigma=30e-12, dispersion=True)
-    qs = []
+    qs, fracs = [], []
     for v in vals:
         kw = {**base, **fixed, pname: v}
-        q = simulate_bb84_full(NUM_BITS, seed=SEED, **kw)
-        qs.append(q)
-        print(f"  {pname}={v:<12}  QBER={q*100:5.1f}%")
-    return np.array(qs)
+        result = simulate_bb84_full(NUM_BITS, seed=SEED, **kw)
+        qs.append(result['qber'])
+        fracs.append(result['sifted_fraction'])
+        print(f"  {pname}={v:<12}  QBER={result['qber']*100:5.1f}%  "
+              f"sifted={result['sifted_fraction']*100:5.1f}%")
+    return np.array(qs), np.array(fracs)
 
 
 # ── Panel A: QBER vs distance ─────────────────────────────────────
@@ -151,47 +176,53 @@ print("Panel A: QBER vs distance (30 ps pulses, 250 MHz effective bit rate)")
 # Fine grid up to 200 km, coarse grid beyond (saturation + dark-count regime)
 distances = np.concatenate([np.arange(0, 201, 10),
                              np.arange(250, 1001, 50)])
-qber_on = sweep('fiber_length', distances, dict(dispersion=True))
-qber_off = sweep('fiber_length', distances, dict(dispersion=False))
+qber_on, sifted_on = sweep('fiber_length', distances, dict(dispersion=True))
+qber_off, sifted_off = sweep('fiber_length', distances, dict(dispersion=False))
 
 # ── Panel B: QBER vs pulse width (at "critical" distance 75 km) ──
 print("\nPanel B: QBER vs pulse width (75 km)")
 CRIT_DIST = 75
 pws_ps = np.array([5, 7, 10, 15, 20, 30, 40, 50])
-qber_pulse = sweep('pulse_sigma', pws_ps * 1e-12,
-                    dict(fiber_length=CRIT_DIST))
+qber_pulse, sifted_pulse = sweep('pulse_sigma', pws_ps * 1e-12,
+                                 dict(fiber_length=CRIT_DIST))
 
 # ── Panel C: QBER vs temperature (at 75 km) ──────────────────────
 print("\nPanel C: QBER vs temperature (75 km)")
 temps = np.array([0, 10, 20, 25, 30, 40, 50, 60])
-qber_temp = sweep('temperature', temps, dict(fiber_length=CRIT_DIST))
+qber_temp, sifted_temp = sweep('temperature', temps, dict(fiber_length=CRIT_DIST))
 
 # ── Panel D: QBER vs PMD coeff (at 75 km) ────────────────────────
+# pmds is in ps/sqrt(km) directly — matches FiberRealization's
+# pmd_coeff_ps_sqrt_km convention (Corning SMF-28 Ultra spec <= 0.1
+# ps/sqrt(km), see PHYS-1 in opto-sim-issues-and-fixes.md).
 print("\nPanel D: QBER vs PMD coefficient (75 km)")
 pmds = np.array([0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3])
-qber_pmd = sweep('pm_dispersion', pmds * 1e-12, dict(fiber_length=CRIT_DIST))
+qber_pmd, sifted_pmd = sweep('pmd_coeff_ps_sqrt_km', pmds, dict(fiber_length=CRIT_DIST))
 
 # ── Panel E: QBER vs bend radius (at 75 km) ──────────────────────
 print("\nPanel E: QBER vs bend radius (75 km)")
 bends = np.array([0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05])
-qber_bend = sweep('bend_radius', bends, dict(fiber_length=CRIT_DIST))
+qber_bend, sifted_bend = sweep('bend_radius', bends, dict(fiber_length=CRIT_DIST))
 
 # ── Save CSV ──────────────────────────────────────────────────────
+# Sifted_fraction is reported alongside QBER (PHYS-3): a coin-flip QBER of
+# ~50% and a physically noise-limited QBER of ~50% look identical unless
+# the fraction of bits that actually survived sifting is also shown.
 csv_path = os.path.join(OUT, f'val_system--seed{SEED}.csv')
 with open(csv_path, 'w') as f:
-    f.write("Panel,Parameter,Value,QBER_fraction\n")
-    for d, q in zip(distances, qber_on):
-        f.write(f"A,distance_km,{d},{q:.6f}\n")
-    for d, q in zip(distances, qber_off):
-        f.write(f"A,distance_km_no_disp,{d},{q:.6f}\n")
-    for pw, q in zip(pws_ps, qber_pulse):
-        f.write(f"B,pulse_width_ps,{pw},{q:.6f}\n")
-    for t, q in zip(temps, qber_temp):
-        f.write(f"C,temperature_C,{t},{q:.6f}\n")
-    for p, q in zip(pmds, qber_pmd):
-        f.write(f"D,pmd_coeff_ps_sqrt_km,{p},{q:.6f}\n")
-    for r, q in zip(bends, qber_bend):
-        f.write(f"E,bend_radius_m,{r},{q:.6f}\n")
+    f.write("Panel,Parameter,Value,QBER_fraction,Sifted_fraction\n")
+    for d, q, s in zip(distances, qber_on, sifted_on):
+        f.write(f"A,distance_km,{d},{q:.6f},{s:.6f}\n")
+    for d, q, s in zip(distances, qber_off, sifted_off):
+        f.write(f"A,distance_km_no_disp,{d},{q:.6f},{s:.6f}\n")
+    for pw, q, s in zip(pws_ps, qber_pulse, sifted_pulse):
+        f.write(f"B,pulse_width_ps,{pw},{q:.6f},{s:.6f}\n")
+    for t, q, s in zip(temps, qber_temp, sifted_temp):
+        f.write(f"C,temperature_C,{t},{q:.6f},{s:.6f}\n")
+    for p, q, s in zip(pmds, qber_pmd, sifted_pmd):
+        f.write(f"D,pmd_coeff_ps_sqrt_km,{p},{q:.6f},{s:.6f}\n")
+    for r, q, s in zip(bends, qber_bend, sifted_bend):
+        f.write(f"E,bend_radius_m,{r},{q:.6f},{s:.6f}\n")
 print(f"Saved: {csv_path}")
 
 # ── Figure ────────────────────────────────────────────────────────

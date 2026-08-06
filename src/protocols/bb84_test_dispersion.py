@@ -1,7 +1,7 @@
 import argparse
 import numpy as np
 from src.lasers.cwlaser import CWLaser
-from src.channel import propagate, optics
+from src.channel import optics, FiberRealization
 from src.channel.phase_modulator import PhaseModulator
 from src.channel.mzm import MZM
 from src.visualization import fields, polarimeter
@@ -65,6 +65,15 @@ def simulate_bb84_dispersion(num_bits, fiber_length=100, pulse_sigma=30e-12,
     # Gaussian voltage pulse — carves a short optical pulse from the CW field
     V_pulse = Vpi * np.exp(-0.5 * ((t - t_center) / pulse_sigma) ** 2)
 
+    # One physical fibre for the whole run: birefringence and PMD are
+    # quasi-static, so every bit must see the same impairments (see
+    # ROOT-1 in opto-sim-issues-and-fixes.md). Built once here, reused
+    # per bit below. `dispersion` gates CD+PMD, matching propagate()'s
+    # legacy alias behaviour.
+    fibre = FiberRealization(L_m=fiber_length * 1000, temperature=25,
+                             bend_radius=None, attenuation_factor=0.182,
+                             cd=dispersion, pmd=dispersion, seed=seed)
+
     for _ in range(num_bits):
         alice_basis = random.choice(['C', 'X'])
         alice_bit = random.randint(0, 1)
@@ -90,16 +99,15 @@ def simulate_bb84_dispersion(num_bits, fiber_length=100, pulse_sigma=30e-12,
             polarimeter(E, title=f"Alice: bit {alice_bit}, basis {alice_basis}")
 
         # Fiber with dispersion (now physically meaningful for broadband pulses)
-        E = propagate(
-            fiber_length=fiber_length, E=E, dt=dt, dispersion=dispersion,
-            attenuation_factor=0.182, temperature=25, bend_radius=None
-        )
+        E = fibre.apply(E, dt=dt)
 
         bob_basis = random.choice(['C', 'X'])
         phase_bob = 0 if bob_basis == 'C' else Vpi / 2
         E = pm_bob.modulate(E_field=E, V=phase_bob)
 
-        Ex, Ey = optics.pbs(E)
+        # circular_analyser, not pbs: detection depends on the relative
+        # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
+        Ex, Ey = optics.circular_analyser(E)
         I_x = detector.output(E=Ex, bandwidth=1e6)
         I_y = detector.output(E=Ey, bandwidth=1e6)
 

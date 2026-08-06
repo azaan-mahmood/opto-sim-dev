@@ -167,12 +167,61 @@ def hadamard(E):
     E_out = E @ J.T  # Apply transformation along the last axis
     return E_out
 
-def pbs(E):
+def circular_analyser(E):
+    """Circular-basis analyser: quarter-wave plate followed by a
+    polarising beam splitter (QWP+PBS), projecting onto the L/R circular
+    basis rather than H/V.
+
+    This is *not* a polarising beam splitter (PHYS-6 in
+    opto-sim-issues-and-fixes.md — this function used to be misnamed
+    `pbs`). A true PBS projects onto H and V (`diag(1,0)` / `diag(0,1)`,
+    see `pbs()` below) and is blind to the relative phase between Ex and
+    Ey. This function instead converts that relative phase into an
+    intensity imbalance between its two output ports:
+
+        E_x = (Ex - i*Ey) / sqrt(2),   E_y = (-i*Ex + Ey) / sqrt(2)
+
+    which is what phase-encoded schemes (e.g. Section 5's 45°-polarised,
+    phase-modulated BB84) need for detection — a true H/V PBS would give
+    a fixed 50/50 split regardless of phase and discriminate nothing.
+    Any caller relying on this behaviour must call `circular_analyser()`
+    explicitly, not `pbs()`.
+
+    Parameters
+    ----------
+    E : ndarray (N, 2) — complex envelope [Ex, Ey].
+
+    Returns
+    -------
+    E_x, E_y : ndarray (N,) — the two output-port fields.
+    """
     J = (1 / np.sqrt(2)) * np.array([[1, -1j],
                                     [-1j, 1]])
     E_out = E @ J.T  # Apply transformation along the last axis
     E_x = E_out[:, 0]
     E_y = E_out[:, 1]
+    return E_x, E_y
+
+
+def pbs(E):
+    """Polarising beam splitter: projects onto H and V.
+
+    A true PBS transmits the H component to one port and reflects the V
+    component to the other, and is blind to the relative phase between Ex
+    and Ey — unlike `circular_analyser()` (formerly misnamed `pbs`, see
+    PHYS-6 in opto-sim-issues-and-fixes.md), which projects onto the
+    circular basis and *does* depend on that phase.
+
+    Parameters
+    ----------
+    E : ndarray (N, 2) — complex envelope [Ex, Ey].
+
+    Returns
+    -------
+    E_x, E_y : ndarray (N,) — the H-port and V-port fields.
+    """
+    E_x = E[:, 0]
+    E_y = E[:, 1]
     return E_x, E_y
 #
 # Version 2
