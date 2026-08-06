@@ -4,6 +4,70 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-06 — Audit fixes: quasi-static fibre, impairment separation, physics corrections
+
+### Session: ROOT-1 + impairment separation + PHYS-1/2/3/4/6/7 + PERF-1
+
+Addresses the code-side findings in `opto-sim-issues-and-fixes.md`. Manuscript
+items (M1–M14) were explicitly out of scope and are untouched.
+
+#### Part 1 — ROOT-1: birefringence was a per-bit depolarising channel
+
+| Change | Files | Rationale |
+|---|---|---|
+| `FiberRealization` class | `src/channel/fiber.py`, `src/channel/__init__.py` | A real fibre's Jones matrix is quasi-static — it drifts on seconds-to-minutes timescales, not per 4 ns bit. `np.random.uniform(...)` was being called *inside* the propagation function, so every bit traversed an independently sampled random unitary, converting the fibre into a fully depolarising channel. The class builds the matrix once at construction from its own `np.random.Generator` (seeded independently of the global RNG used for bit/basis choices and detector noise) and reuses it for every `apply()`. |
+| Jones-matrix builders factored out | `src/channel/fiber.py` | `_build_jones_sectional`, `_build_jones_phenomenological`, `_build_jones_matrix`, `_random_su2_rotation_rng` — all take an `rng` argument, accepting either the `numpy.random` module (stateless per-call API) or a `Generator` (FiberRealization). Keeps the stateless path byte-for-byte identical; the validation scripts legitimately want a fresh draw per ensemble sample. |
+| Wired into all per-bit loops | `analysis/val_system.py`, `src/protocols/bb84_ideal.py`, `bb84_high_bitrate.py`, `bb84_test_dispersion.py`, `bb84_duplinskiy.py` | One `FiberRealization` built before the loop, reused per bit. |
+
+**Verified:** five `apply()` calls on one realization are bit-identical; two seeds differ; `FiberRealization(L_m=0)` is the identity. Panel A's QBER-vs-distance no longer saturates smoothly at 50% — it now jumps between near-0% and near-100% depending on where each fibre's *fixed* rotation lands relative to Bob's basis, the expected signature of a compensable fixed unitary rather than a depolarising channel.
+
+#### Part 2 — Impairment separation (requested feature, beyond the audit)
+
+| Change | Files | Rationale |
+|---|---|---|
+| `FiberRealization` owns all four impairments | `src/channel/fiber.py` | `birefringence`, `cd`, `pmd`, `attenuation` are now independent constructor flags defaulting to `propagate()`'s existing defaults (`True, False, False, True`). Previously the class froze only birefringence while `propagate()` re-applied attenuation/CD/PMD separately on every call. `apply(E, dt=None)` runs the enabled set in the original order: birefringence → CD → PMD → attenuation. |
+| PMD split into sampling + application | `src/channel/fiber.py` | `_sample_pmd_dgd(rng, ...)` (Maxwellian DGD + axis-swap draw) and `_apply_pmd_fixed(E, dt, dgd, swap)` (deterministic frequency-domain operator), mirroring the birefringence split. PMD's DGD is now frozen at construction alongside birefringence — same physical origin (fibre asymmetry), same quasi-static argument. Verified bit-identical to the old code under a seeded global RNG. |
+| `propagate()` delegates wholesale | `src/channel/fiber.py` | Given a `fiber_realization`, returns `fiber_realization.apply(E, dt=dt)` and ignores its own impairment arguments (documented). Stateless path unchanged. |
+| Call sites use `fibre.apply()` directly | `analysis/val_system.py`, 4× `src/protocols/bb84_*.py` | Each passes its impairment flags to the constructor; no more indirection through `propagate()` with dead arguments. |
+
+#### Part 3 — Physics and performance corrections
+
+| Fix | Files | Detail |
+|---|---|---|
+| **PHYS-1** — PMD coefficient 31.6× too large | `src/channel/fiber.py`, `analysis/val_system.py`, `analysis/validation/validate_pmd.py` | `pm_dispersion` (s/√m) → `pmd_coeff_ps_sqrt_km` (ps/√km, the datasheet convention), converted internally. Cited to new **ref [12] Corning SMF-28 Ultra PI1463 (2021)** — PMD link value ≤ 0.06, typical ≤ 0.1 ps/√km. `validate_pmd.py` now fits **0.09982 ps/√km** vs 0.1 nominal (was 3.16), R² = 0.999977. Panel D sweeps raw ps/√km, matching its axis label. |
+| **PHYS-2** — `D_TOTAL` double-counted | `src/channel/fiber.py` | 17.0 was the *total* SMF-28 dispersion, not the material component; subtracting a waveguide term on top left `D_TOTAL` 18% low. `D_MATERIAL` 17.0 → **22.0**, `D_WAVEGUIDE` −3.0 → **−5.0** (**Agrawal [6] Fig. 2.10**), giving `D_TOTAL = 17.0` (**Corning [12] / ITU-T G.652**). Decomposition kept because `validate_cd.py` Panel E plots the components separately. `validate_cd.py` now prints `D = 17.0`, `β₂ = −2.168e-26 s²/m`, `L_D = 41.51 km`. |
+| **PHYS-3** — sifting counted coin flips | `analysis/val_system.py` | Non-detections were assigned `random.randint(0,1)` and *kept* in the sifted key, so QBER converged to 50% by construction at long range. Now tracks `has_click` and sifts on `bases match AND detected`, matching `bb84_time_bin.py`/`bb84_duplinskiy.py`. `simulate_bb84_full()` returns `{'qber', 'sifted_fraction'}`; CSV gained a `Sifted_fraction` column. |
+| **PHYS-4** — `section_length` conflated two lengths | `src/channel/fiber.py`, `analysis/validation/validate_birefringence.py` | Each section draws a *new random axis*, so the parameter is physically the birefringence correlation length L_c, not a discretisation step. Renamed `section_length` → `correlation_length`, default 1.0 → **50.0 m** (**Menyuk & Wai [10]**, physical range 10–100 m). |
+| **PHYS-6** — `optics.pbs()` was not a PBS | `src/channel/optics.py`, `src/channel/__init__.py`, 5 call sites | The matrix `(1/√2)·[[1,−1j],[−1j,1]]` is a circular-basis projector (QWP+PBS), not H/V splitting. Renamed `circular_analyser()` and documented; a real `pbs()` doing H/V projection added alongside. All callers switched explicitly, so **behaviour is unchanged** — for pure-H input `circular_analyser` reproduces the old `(0.707, −0.707j)` while the new `pbs` gives `(1, 0)`. |
+| **PHYS-7** — latent afterpulse state leak | `src/detectors/spad.py` | On re-arm the code left `_afterpulse_pending`/`_afterpulse_time` set, so a scheduled-but-never-fired afterpulse could fire on a *later* dead period. Both fields now cleared on re-arm, and `_schedule_afterpulse` always assigns so a failed roll clears rather than preserves. |
+| **PERF-1** — O(N) matmul loop | `src/channel/fiber.py` | New `_ordered_product()` computes the ordered Jones product by pairwise tree reduction in O(log N) vectorised steps. Exact, not approximate — matrix multiplication is associative. |
+
+#### Tests
+
+| Added | File | Covers |
+|---|---|---|
+| `TestPMD` (1) | `tests/test_fiber.py` | Maxwellian mean DGD `2·(σ/√3)·√(2/π)` = 0.921 ps at 0.1 ps/√km over 100 km, against 20 000 samples. |
+| `TestBirefringenceDepolarization` (1) | `tests/test_fiber.py` | Analytic depolarisation law `⟨S⟩ = pᴺ·S_in`, `p = (1+2cos α)/3` (**Menyuk & Wai [10]**), 400 realizations at L = 10/50/100/200 m. |
+| `TestOrderedProductTreeReduction` (10) | `tests/test_fiber.py` | Tree reduction vs naive left-fold for N = 1…1001, covering odd/even and power-of-two boundaries. |
+
+**Tests:** 89/89 pass (was 77).
+
+**Key results:**
+- `validate_cd.py`: D = 17.0 ps/(nm·km), L_D = 41.51 km, max error 3.01e-14 %
+- `validate_pmd.py`: fitted 0.09982 ps/√km (nominal 0.1), mean DGD 0.933 ps (expected 0.921), KS p = 0.17
+- `validate_attenuation.py`: α = 0.182 dB/km, R² = 1.0000000000, max error 3.21e-14 %
+- `validate_birefringence.py`: 13/13 self-consistency checks pass; Poincaré convergence |mean(S)| = 0.944 → 0.034
+- PHYS-7 leak, measured against pre-fix code: **2000/2000 trials leaked before, 0/2000 after**; effective afterpulse rate still 4.2%/5.1% vs 5% nominal
+- All five protocol scripts and `val_system.py` run clean end-to-end
+
+**Knock-on fix.** `validate_birefringence.py`'s convergence demo carried a hardcoded assertion (`|mean(S)| > 0.15` at L = 10 m) encoding the *old* 1 m parameter, which failed under PHYS-4. With L_c = 50 m > L_B ≈ 31 m, a sub-correlation-length fibre is a single random-axis section whose retardation phase wraps past 2π within a few metres, so `|mean(S)|` oscillates with L rather than decaying monotonically. First demo point moved 10 m → 2 m (well under one beat length), restoring a coherent state. Reasoning documented in-script.
+
+**Deliberately not done — see `opto-sim-issues-and-fixes.md` for the full list.** The phenomenological birefringence model was **retained**, so `SECTIONAL_LIMIT` is still 2 km and every run past 2 km still uses its fitted `Δn₀ = 0.87e-5`. ROOT-1's promised simplification (single `Δn₀`, no fit parameter, no 2 km discontinuity) is therefore not yet realised, and **PHYS-5 did not resolve itself as the audit predicted** — both temperature coefficients (`-3.0e-9` sectional, `-5e-7` phenomenological) are still live. Deleting that model will move all long-distance numbers and warrants an explicit decision. Also still open: BLOCK-1/2/3, REPRO-1/2/3/5, REPRO-4 (partial — `p^N` law added, Ulrich bend law still missing), ARCH-1/2/3.
+
+**Separately noted:** `run_all.py` is saved as UTF-16LE with a BOM and dies with `SyntaxError: Non-UTF-8 code` before executing a line. Pre-existing, unrelated to these changes, and a prerequisite for REPRO-3.
+
+---
+
 ## 2026-07-22 — Time-bin phase-encoding BB84 (Gobby et al. 2004 replication)
 
 ### Session: Pulsed laser, AsymmetricMZI, time-bin protocol, Gobby validation, manuscript update

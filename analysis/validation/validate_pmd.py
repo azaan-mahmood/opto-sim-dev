@@ -20,7 +20,7 @@ N_REAL = args.n_realizations
 np.random.seed(SEED)
 
 L_KM = 100
-PMD_COEFF = 0.1e-12
+PMD_COEFF = 0.1  # ps/sqrt(km) — Corning SMF-28 Ultra spec <= 0.1 ps/sqrt(km)
 DT = 0.5e-12
 N_SAMPLES = 4096
 T = np.arange(N_SAMPLES) * DT
@@ -32,7 +32,7 @@ E_in = np.zeros((N_SAMPLES, 2), dtype=np.complex128)
 E_in[:, 0] = np.exp(-0.5 * (t_arr / PULSE_SIGMA)**2)
 E_in[:, 1] = E_in[:, 0].copy()
 
-pmd_sd = PMD_COEFF * np.sqrt(L_KM * 1e3)
+pmd_sd = PMD_COEFF * 1e-12 * np.sqrt(L_KM)   # seconds
 maxwell_scale = pmd_sd / np.sqrt(3)
 
 print(f"PMD validation via apply_pmd - {N_REAL} realizations, {L_KM} km")
@@ -41,7 +41,7 @@ print(f"  Expected mean DGD = {2*maxwell_scale*np.sqrt(2/np.pi)*1e12:.3f} ps")
 
 dgds = []
 for i in range(N_REAL):
-    _, dgd = apply_pmd(E_in.copy(), dt=DT, L=L_KM*1000, pm_dispersion=PMD_COEFF)
+    _, dgd = apply_pmd(E_in.copy(), dt=DT, L=L_KM*1000, pmd_coeff_ps_sqrt_km=PMD_COEFF)
     dgds.append(dgd)
     if (i + 1) % 2000 == 0:
         print(f"  {i+1}/{N_REAL} complete")
@@ -65,14 +65,14 @@ rms_dgd_sweep = np.zeros(len(L_sweep_km))
 for j, Lk in enumerate(L_sweep_km):
     dgd_list = []
     for _ in range(N_PER_L):
-        _, dgd = apply_pmd(E_in.copy(), dt=DT, L=Lk*1000, pm_dispersion=PMD_COEFF)
+        _, dgd = apply_pmd(E_in.copy(), dt=DT, L=Lk*1000, pmd_coeff_ps_sqrt_km=PMD_COEFF)
         dgd_list.append(dgd)
     rms_dgd_sweep[j] = np.sqrt(np.mean(np.array(dgd_list)**2)) * 1e12
 
 sqrt_L = np.sqrt(L_sweep_km * 1e3)
 slope_pmd, int_pmd, r2_pmd, p_pmd, se_pmd = stats.linregress(sqrt_L, rms_dgd_sweep)
 print(f"\nDGD vs sqrt(L) sweep:")
-print(f"  Fitted PMD coeff = {slope_pmd*np.sqrt(1e3):.5f} ps/sqrt(km) (nominal = {PMD_COEFF*1e12*np.sqrt(1e3):.5f} ps/sqrt(km))")
+print(f"  Fitted PMD coeff = {slope_pmd*np.sqrt(1e3):.5f} ps/sqrt(km) (nominal = {PMD_COEFF:.5f} ps/sqrt(km))")
 print(f"  R^2 = {r2_pmd:.6f}")
 
 # ============================================================
@@ -141,7 +141,7 @@ ax3.grid(True, alpha=0.25)
 # --- Panel D: DGD vs sqrt(L) (PMD scaling, Razavi [5] Sec 2.5) ---
 sqrt_km = np.sqrt(L_sweep_km)
 slope_ps_per_sqrtkm = slope_pmd * np.sqrt(1e3)
-nominal_ps_per_sqrtkm = PMD_COEFF * 1e12 * np.sqrt(1e3)
+nominal_ps_per_sqrtkm = PMD_COEFF
 
 ax4 = fig.add_subplot(gs[1, 0])
 ax4.plot(sqrt_km, rms_dgd_sweep, 'o-', ms=5, c='C2', lw=1.5,
@@ -163,8 +163,8 @@ ax4.annotate(f'R^2 = {r2_pmd:.6f}',
 pmd_coeff_extracted = rms_dgd_sweep / np.sqrt(L_sweep_km)
 ax5 = fig.add_subplot(gs[1, 1])
 ax5.plot(L_sweep_km, pmd_coeff_extracted, 'o-', ms=4, c='C4', lw=1.2)
-ax5.axhline(PMD_COEFF*1e12, c='gray', ls='--', lw=1, alpha=0.6,
-            label=f'Nominal PMD coeff = {PMD_COEFF*1e12:.3f} ps/√km')
+ax5.axhline(PMD_COEFF, c='gray', ls='--', lw=1, alpha=0.6,
+            label=f'Nominal PMD coeff = {PMD_COEFF:.3f} ps/√km')
 ax5.set(xlabel='Fibre length (km)',
         ylabel='Extracted PMD coeff (ps/√km)',
         title='E: PMD coefficient consistency',
