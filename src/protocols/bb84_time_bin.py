@@ -39,6 +39,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                             delay=5.8e-9, gate_width=1e-9,
                             spad_eta=0.10, dark_count_rate=15.0,
                             afterpulse_prob=0.05, dead_time=13e-6,
+                            visibility=1.0, phase_error=0.0,
                             seed=None, verbose=False):
     """BB84 time-bin phase-encoding simulation.
 
@@ -57,6 +58,10 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     dark_count_rate : float — SPAD dark count rate (Hz, default 15.0).
     afterpulse_prob : float — afterpulse probability (default 0.05).
     dead_time : float — SPAD dead time (s, default 13e-6).
+    visibility : float — decoder interferometric visibility in (0, 1],
+        default 1.0 (ideal).  Optical misalignment error e_opt = (1 - V)/2.
+    phase_error : float — static decoder phase offset (radians),
+        default 0.0; represents imperfect AMZI path-length matching.
     seed : int or None — RNG seed.
     verbose : bool — print progress.
 
@@ -94,7 +99,8 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
 
     # Build AMZI components
     enc = AsymmetricMZI(delay=delay, mode='encoder')
-    dec = AsymmetricMZI(delay=delay, mode='decoder')
+    dec = AsymmetricMZI(delay=delay, mode='decoder',
+                        visibility=visibility, phase_error=phase_error)
 
     # SPAD detectors (constructive and destructive ports)
     spad_c = spad(wavelength=wavelength, quantum_efficiency=spad_eta,
@@ -111,38 +117,49 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     gate_half_samples = max(1, int(gate_width / dt / 2.0))
     delay_samples = int(delay / dt)
     interference_idx = pulse_center_idx = int(pulse_center / dt) + delay_samples
+    start_i = max(0, interference_idx - gate_half_samples)
+    end_i = min(n_samples, interference_idx + gate_half_samples + 1)
 
     alice_bits, alice_bases = [], []
     bob_bits, bob_bases = [], []
     has_click = []
+
+    # --- Precompute the 8 distinct field-chain outcomes (PERF-2) ---
+    # The channel is scalar attenuation and the AMZIs are linear and
+    # deterministic, so the gate powers (P_c, P_d) depend only on the
+    # three discrete choices (alice_basis, alice_bit, bob_basis).  They
+    # are computed once per point instead of per pulse — a 2,000,000-
+    # pulse run used to perform 4,000,000 field propagations to obtain
+    # 8 distinct answers.  No RNG is drawn in the table build, and the
+    # per-pulse draw order is unchanged, so the results are bit-identical
+    # to the per-pulse field chain (verified: tests, and the PERF-2
+    # equivalence harness).
+    PHI_A = {'X': {0: 0.0, 1: np.pi},
+             'Y': {0: np.pi / 2.0, 1: 3.0 * np.pi / 2.0}}
+    PHI_B = {'X': 0.0, 'Y': np.pi / 2.0}
+    gate_table = {}
+    for a_basis in ('X', 'Y'):
+        for a_bit in (0, 1):
+            E_field = enc.modulate(E_pulse, dt, phase=PHI_A[a_basis][a_bit])
+            E_field *= fiber_loss_lin
+            for b_basis in ('X', 'Y'):
+                E_c, E_d = dec.modulate(E_field, dt, phase=PHI_B[b_basis])
+                P_c = float(np.mean(np.sum(np.abs(E_c[start_i:end_i]) ** 2,
+                                           axis=1)))
+                P_d = float(np.mean(np.sum(np.abs(E_d[start_i:end_i]) ** 2,
+                                           axis=1)))
+                gate_table[(a_basis, a_bit, b_basis)] = (P_c, P_d)
 
     for pulse_idx in range(num_bits):
         # --- Alice's encoding ---
         alice_basis = random.choice(['X', 'Y'])
         alice_bit = random.randint(0, 1)
 
-        if alice_basis == 'X':
-            phi_A = 0.0 if alice_bit == 0 else np.pi
-        else:  # Y basis
-            phi_A = np.pi / 2.0 if alice_bit == 0 else 3.0 * np.pi / 2.0
-
-        # --- Encode time bins with phase φ_A ---
-        E_field = enc.modulate(E_pulse, dt, phase=phi_A)
-
-        # --- Fiber channel (attenuation only; time-bin immune to birefringence) ---
-        E_field *= fiber_loss_lin
-
-        # --- Bob's decoding ---
+        # --- Bob's decoding basis ---
         bob_basis = random.choice(['X', 'Y'])
-        phi_B = 0.0 if bob_basis == 'X' else np.pi / 2.0
 
-        E_c, E_d = dec.modulate(E_field, dt, phase=phi_B)
-
-        # --- Extract interference power ---
-        start_i = max(0, interference_idx - gate_half_samples)
-        end_i = min(len(E_c), interference_idx + gate_half_samples + 1)
-        P_c = float(np.mean(np.sum(np.abs(E_c[start_i:end_i]) ** 2, axis=1)))
-        P_d = float(np.mean(np.sum(np.abs(E_d[start_i:end_i]) ** 2, axis=1)))
+        # --- Interference power from the precomputed table ---
+        P_c, P_d = gate_table[(alice_basis, alice_bit, bob_basis)]
 
         # --- Detection ---
         click_c = spad_c.detect(P_c, float(pulse_idx) / repetition_rate)
@@ -215,9 +232,14 @@ if __name__ == "__main__":
                         help='Fiber length in km (default 0)')
     parser.add_argument('--mu', type=float, default=0.1,
                         help='Mean photons per pulse (default 0.1)')
+    parser.add_argument('--visibility', type=float, default=1.0,
+                        help='Decoder interferometric visibility, (0,1] (default 1.0)')
+    parser.add_argument('--phase-error', type=float, default=0.0,
+                        help='Static decoder phase offset in rad (default 0.0)')
     parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args()
 
     results = simulate_bb84_time_bin(
         num_bits=args.bits, fiber_length=args.fiber_length,
-        mu=args.mu, seed=args.seed, verbose=True)
+        mu=args.mu, seed=args.seed, verbose=True,
+        visibility=args.visibility, phase_error=args.phase_error)

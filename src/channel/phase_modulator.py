@@ -50,6 +50,8 @@ class PhaseModulator:
         }
         if params is None:
             params = self.default_params
+        else:
+            params = {**self.default_params, **params}
 
         for key in params:
             if key not in self.default_params:

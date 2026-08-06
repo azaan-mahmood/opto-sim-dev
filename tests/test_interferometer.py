@@ -281,6 +281,123 @@ class TestAsymmetricMZIRoundtrip:
                     assert np.isclose(ratio_c, expected, atol=0.15)
 
 
+class TestAsymmetricMZIVisibility:
+
+    def test_visibility_default_is_ideal(self):
+        """Default visibility should be 1.0 (ideal)."""
+        mzi = AsymmetricMZI(delay=1e-9, mode='decoder')
+        assert mzi.visibility == 1.0
+
+    def test_visibility_validation(self):
+        """Visibility outside (0, 1] should raise ValueError."""
+        with pytest.raises(ValueError):
+            AsymmetricMZI(delay=1e-9, mode='decoder', visibility=0.0)
+        with pytest.raises(ValueError):
+            AsymmetricMZI(delay=1e-9, mode='decoder', visibility=-0.5)
+        with pytest.raises(ValueError):
+            AsymmetricMZI(delay=1e-9, mode='decoder', visibility=1.5)
+
+    def test_visibility_matches_fringe_contrast(self, gaussian_pulse):
+        """Measured fringe contrast (max-min)/(max+min) must equal V."""
+        E, dt = gaussian_pulse
+        delay = 0.5e-9
+        enc = AsymmetricMZI(delay=delay)
+
+        for V in [1.0, 0.934, 0.8, 0.5]:
+            dec = AsymmetricMZI(delay=delay, mode='decoder', visibility=V)
+            E_in = enc.modulate(E, dt, phase=0)
+            P_c_vals = []
+            for phi_b in np.linspace(0, 2 * np.pi, 25):
+                E_c, E_d = dec.modulate(E_in, dt, phase=phi_b)
+                pc, _ = TestAsymmetricMZIDecoder._interference_power(
+                    E_c, E_d, E, dt, delay)
+                P_c_vals.append(pc)
+            P_c = np.array(P_c_vals)
+            contrast = (P_c.max() - P_c.min()) / (P_c.max() + P_c.min())
+            assert np.isclose(contrast, V, atol=0.02), \
+                f"V={V}: measured contrast {contrast:.4f}"
+
+    def test_visibility_optical_misalignment_error(self, gaussian_pulse):
+        """At Delta_phi = 0, e_opt = P_d/(P_c+P_d) must equal (1-V)/2."""
+        E, dt = gaussian_pulse
+        delay = 0.5e-9
+        enc = AsymmetricMZI(delay=delay)
+        E_in = enc.modulate(E, dt, phase=0)
+
+        for V in [1.0, 0.934, 0.8, 0.5]:
+            dec = AsymmetricMZI(delay=delay, mode='decoder', visibility=V)
+            E_c, E_d = dec.modulate(E_in, dt, phase=0)
+            P_c, P_d = TestAsymmetricMZIDecoder._interference_power(
+                E_c, E_d, E, dt, delay)
+            e_opt = P_d / (P_c + P_d)
+            assert np.isclose(e_opt, (1.0 - V) / 2.0, atol=0.02), \
+                f"V={V}: e_opt {e_opt:.4f} vs {(1.0-V)/2.0:.4f}"
+
+    def test_visibility_power_conserved(self, gaussian_pulse):
+        """Finite visibility must not change total power at the fringe."""
+        E, dt = gaussian_pulse
+        delay = 0.5e-9
+        enc = AsymmetricMZI(delay=delay)
+        E_in = enc.modulate(E, dt, phase=0)
+
+        for V in [1.0, 0.934, 0.5]:
+            dec = AsymmetricMZI(delay=delay, mode='decoder', visibility=V)
+            E_c, E_d = dec.modulate(E_in, dt, phase=0)
+            P_c, P_d = TestAsymmetricMZIDecoder._interference_power(
+                E_c, E_d, E, dt, delay)
+            total = P_c + P_d
+            # Ideal decoder at same delay gives the reference total
+            dec_ideal = AsymmetricMZI(delay=delay, mode='decoder')
+            E_ci, E_di = dec_ideal.modulate(E_in, dt, phase=0)
+            P_ci, P_di = TestAsymmetricMZIDecoder._interference_power(
+                E_ci, E_di, E, dt, delay)
+            assert np.isclose(total, P_ci + P_di, rtol=0.01)
+
+    def test_visibility_one_is_backward_compatible(self, gaussian_pulse):
+        """visibility=1.0 must reproduce the ideal 50:50 combiner exactly."""
+        E, dt = gaussian_pulse
+        delay = 0.5e-9
+        enc = AsymmetricMZI(delay=delay)
+        E_in = enc.modulate(E, dt, phase=np.pi / 3)
+
+        dec_ideal = AsymmetricMZI(delay=delay, mode='decoder')
+        dec_v1 = AsymmetricMZI(delay=delay, mode='decoder', visibility=1.0)
+        for phi_b in [0, np.pi / 4, np.pi / 2]:
+            E_c1, E_d1 = dec_ideal.modulate(E_in, dt, phase=phi_b)
+            E_c2, E_d2 = dec_v1.modulate(E_in, dt, phase=phi_b)
+            assert np.allclose(E_c1, E_c2, atol=1e-12)
+            assert np.allclose(E_d1, E_d2, atol=1e-12)
+
+    def test_phase_error_shifts_fringe(self, gaussian_pulse):
+        """A static phase error must shift the fringe by -phi_err."""
+        E, dt = gaussian_pulse
+        delay = 0.5e-9
+        enc = AsymmetricMZI(delay=delay)
+        E_in = enc.modulate(E, dt, phase=0)
+
+        for phi_err in [0.0, 0.3, 1.0]:
+            dec = AsymmetricMZI(delay=delay, mode='decoder',
+                                phase_error=phi_err)
+            P_c_vals = []
+            for phi_b in np.linspace(0, 2 * np.pi, 49):
+                E_c, E_d = dec.modulate(E_in, dt, phase=phi_b)
+                pc, _ = TestAsymmetricMZIDecoder._interference_power(
+                    E_c, E_d, E, dt, delay)
+                P_c_vals.append(pc)
+            P_c = np.array(P_c_vals)
+            # Fringe peak moves to phi_b = -phi_err (mod 2pi)
+            phi_grid = np.linspace(0, 2 * np.pi, 49)
+            peak_phi = phi_grid[np.argmax(P_c)]
+            expected = (-phi_err) % (2 * np.pi)
+            assert np.isclose(peak_phi, expected, atol=0.15), \
+                f"phi_err={phi_err}: peak at {peak_phi:.3f}, expected {expected:.3f}"
+
+    def test_phase_error_default_zero(self):
+        """Default phase_error should be 0.0."""
+        mzi = AsymmetricMZI(delay=1e-9, mode='decoder')
+        assert mzi.phase_error == 0.0
+
+
 class TestAsymmetricMZILoss:
 
     def test_insertion_loss_reduces_power(self, gaussian_pulse):

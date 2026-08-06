@@ -5,7 +5,7 @@ import numpy as np
 import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.channel.fiber import apply_birefringence, SECTIONAL_LIMIT
+from src.channel.fiber import apply_birefringence
 from src.visualization.stokes import compute_stokes_parameters
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_birefringence')
@@ -25,160 +25,43 @@ temp_coeff = -3.0e-9
 bend_factor = 0.135
 REALIZATIONS = 50
 
-# --- Self-consistency checks: sectional model (L < SECTIONAL_LIMIT) ---
-def test_power_conservation_sectional():
-    E = np.random.randn(1000, 2) + 1j * np.random.randn(1000, 2)
-    P_in = np.mean(np.abs(E)**2)
-    for L_m in [1, 10, 100, 1000]:
-        E_out = apply_birefringence(E.copy(), L_m, wavelength=WAVELENGTH,
-                                    model='sectional')
-        P_out = np.mean(np.abs(E_out)**2)
-        assert abs(P_out - P_in) / P_in < 1e-12
-    print("  [PASS] Power conservation (sectional model)")
+# --- Self-consistency checks moved to the test suite (REPRO-4) ---
+# The 13 internal invariants (power conservation, temperature/wavelength
+# sensitivity, seed dependence, auto-dispatch, enabled=False, ...) used to
+# live here, printed as [PASS] lines. They are unit-test material, not
+# literature validation: they now live in tests/test_fiber.py
+# (TestBirefringenceSelfConsistency, 13 tests). The literature comparisons
+# are TestBirefringenceDepolarization (Menyuk & Wai [10] p^N law) and
+# TestUlrichBendLaw (Ulrich [7] Eq. 1) in the same file.
 
-def test_temperature_dependence_sectional():
-    E = np.ones((100, 2), dtype=complex)
-    np.random.seed(SEED + 1)
-    Js = [apply_birefringence(E.copy(), 1000, wavelength=WAVELENGTH,
-                               temperature=T, model='sectional')[0, 0]
-          for T in [0, 25, 50]]
-    assert not np.allclose(Js[0], Js[1])
-    print("  [PASS] Temperature sensitivity (sectional model)")
+# --- Model note (PHYS-5, 5th pass) ---
+# The former phenomenological model (single SU(2) rotation with fitted
+# theta = min(pi, sqrt(L/L_char)*pi/2)) was removed: the multi-section
+# model is quasi-static, converges to uniform SU(2) within a few hundred
+# metres, and costs ~0.16 ms/apply at 122 km. 'auto' == 'sectional' at all
+# lengths. Temperature/bend dependence is only visible in the
+# single-section regime (L ~ metres); beyond ~1 km the ensemble mean is
+# already the uniform-SU(2) value 1/3 + (2/3)cos^2(theta/2) -> 1/2.
 
-def test_wavelength_dependence_sectional():
-    E = np.ones((100, 2), dtype=complex)
-    np.random.seed(SEED + 2)
-    Js = [apply_birefringence(E.copy(), 1000, wavelength=lam, model='sectional')[0, 0]
-          for lam in [1310e-9, 1550e-9]]
-    assert not np.allclose(Js[0], Js[1])
-    print("  [PASS] Wavelength dependence (sectional model)")
-
-def test_randomness_sectional():
-    E = np.ones((100, 2), dtype=complex)
-    np.random.seed(SEED)
-    J1 = apply_birefringence(E.copy(), 100, wavelength=WAVELENGTH, model='sectional')[0, 0]
-    np.random.seed(SEED + 100)
-    J2 = apply_birefringence(E.copy(), 100, wavelength=WAVELENGTH, model='sectional')[0, 0]
-    assert not np.allclose(J1, J2)
-    print("  [PASS] Seed-dependent output (sectional model)")
-
-def test_output_on_poincare_sphere_sectional():
-    E = np.array([[1.0, 0.0]], dtype=complex)
-    np.random.seed(SEED)
-    outputs = [apply_birefringence(E.copy(), 1500, wavelength=WAVELENGTH,
-                                    model='sectional')[0] for _ in range(50)]
-    ex_powers = [np.abs(o[0])**2 for o in outputs]
-    assert np.allclose([np.abs(o[0])**2 + np.abs(o[1])**2 for o in outputs], 1.0, atol=1e-12)
-    assert np.std(ex_powers) > 0.05
-    print("  [PASS] Output polarisation varies (sectional model, 1.5 km)")
-
-# --- Self-consistency checks: phenomenological model (L >= SECTIONAL_LIMIT) ---
-def test_power_conservation_phenomenological():
-    E = np.random.randn(1000, 2) + 1j * np.random.randn(1000, 2)
-    P_in = np.mean(np.abs(E)**2)
-    for L_m in [5000, 50000, 100000]:
-        E_out = apply_birefringence(E.copy(), L_m, wavelength=WAVELENGTH,
-                                    model='phenomenological')
-        P_out = np.mean(np.abs(E_out)**2)
-        assert abs(P_out - P_in) / P_in < 1e-12
-    print("  [PASS] Power conservation (phenomenological model)")
-
-def test_zero_length_identity():
-    E = np.random.randn(100, 2) + 1j * np.random.randn(100, 2)
-    E_out = apply_birefringence(E.copy(), 0, wavelength=WAVELENGTH)
-    assert np.allclose(E_out, E)
-    print("  [PASS] Zero length returns field unchanged")
-
-def test_temperature_dependence_phenomenological():
-    E = np.ones((100, 2), dtype=complex)
-    np.random.seed(SEED + 3)
-    Js = [apply_birefringence(E.copy(), 50000, wavelength=WAVELENGTH,
-                               temperature=T, model='phenomenological')[0, 0]
-          for T in [0, 25, 50]]
-    assert not np.allclose(Js[0], Js[1])
-    print("  [PASS] Temperature sensitivity (phenomenological model)")
-
-def test_wavelength_dependence_phenomenological():
-    E = np.ones((100, 2), dtype=complex)
-    np.random.seed(SEED + 4)
-    Js = [apply_birefringence(E.copy(), 50000, wavelength=lam, model='phenomenological')[0, 0]
-          for lam in [1310e-9, 1550e-9]]
-    assert not np.allclose(Js[0], Js[1])
-    print("  [PASS] Wavelength dependence (phenomenological model)")
-
-def test_randomness_phenomenological():
-    E = np.ones((100, 2), dtype=complex)
-    np.random.seed(SEED)
-    J1 = apply_birefringence(E.copy(), 50000, wavelength=WAVELENGTH, model='phenomenological')[0, 0]
-    np.random.seed(SEED + 100)
-    J2 = apply_birefringence(E.copy(), 50000, wavelength=WAVELENGTH, model='phenomenological')[0, 0]
-    assert not np.allclose(J1, J2)
-    print("  [PASS] Seed-dependent output (phenomenological model)")
-
-def test_output_on_poincare_sphere_phenomenological():
-    E = np.array([[1.0, 0.0]], dtype=complex)
-    np.random.seed(SEED)
-    outputs = [apply_birefringence(E.copy(), 100e3, wavelength=WAVELENGTH,
-                                    model='phenomenological')[0] for _ in range(50)]
-    ex_powers = [np.abs(o[0])**2 for o in outputs]
-    assert np.std(ex_powers) > 0.05
-    print("  [PASS] Output polarisation varies (phenomenological model, 100 km)")
-
-# --- Auto-dispatch validation ---
-def test_auto_dispatch():
-    E = np.ones((10, 2), dtype=complex)
-    np.random.seed(SEED + 10)
-    out_short = apply_birefringence(E.copy(), SECTIONAL_LIMIT - 1, wavelength=WAVELENGTH, model='auto')
-    np.random.seed(SEED + 10)
-    out_short_explicit = apply_birefringence(E.copy(), SECTIONAL_LIMIT - 1, wavelength=WAVELENGTH, model='sectional')
-    assert np.allclose(out_short, out_short_explicit), \
-        f"auto should route to sectional below limit ({SECTIONAL_LIMIT} m)"
-
-    np.random.seed(SEED + 10)
-    out_long = apply_birefringence(E.copy(), SECTIONAL_LIMIT + 1, wavelength=WAVELENGTH, model='auto')
-    np.random.seed(SEED + 10)
-    out_long_explicit = apply_birefringence(E.copy(), SECTIONAL_LIMIT + 1, wavelength=WAVELENGTH, model='phenomenological')
-    assert np.allclose(out_long, out_long_explicit), \
-        f"auto should route to phenomenological at or above limit ({SECTIONAL_LIMIT} m)"
-    print("  [PASS] Auto-dispatch correctly routes based on fibre length")
-
-def test_enabled_false():
-    E = np.random.randn(100, 2) + 1j * np.random.randn(100, 2)
-    E_out = apply_birefringence(E.copy(), 10000, wavelength=WAVELENGTH, enabled=False)
-    assert np.allclose(E_out, E)
-    print("  [PASS] enabled=False returns field unchanged")
-
-print("Birefringence validation: multi-section and phenomenological models")
+print("Birefringence validation: multi-section model (all lengths)")
 print("  Ref: Menyuk & Wai, JOSA B 1994; Wai & Menyuk, JLT 1996; Ulrich 1980")
-print(f"  SECTIONAL_LIMIT = {SECTIONAL_LIMIT} m")
-test_power_conservation_sectional()
-test_temperature_dependence_sectional()
-test_wavelength_dependence_sectional()
-test_randomness_sectional()
-test_output_on_poincare_sphere_sectional()
-test_power_conservation_phenomenological()
-test_zero_length_identity()
-test_temperature_dependence_phenomenological()
-test_wavelength_dependence_phenomenological()
-test_randomness_phenomenological()
-test_output_on_poincare_sphere_phenomenological()
-test_auto_dispatch()
-test_enabled_false()
+print("  Self-consistency checks: see tests/test_fiber.py "
+      "(TestBirefringenceSelfConsistency)")
 
 # ============================================================
 # Main validation figure — 6 panels
 # Panel layout:
-#   A — sectional: mean |Ex|^2 vs distance (0–1.5 km)
-#   B — phenomenological: mean |Ex|^2 vs distance (0–200 km)
-#   C — phenomenological: mean |Ex|^2 vs temperature
-#   D — phenomenological: mean |Ex|^2 vs bend radius
+#   A — multi-section: mean |Ex|^2 vs distance (0–1.5 km)
+#   B — multi-section: mean |Ex|^2 vs distance (0–200 km, ensemble)
+#   C — multi-section: mean |Ex|^2 vs temperature (2 m, single section)
+#   D — multi-section: mean |Ex|^2 vs bend radius (2 m, single section)
 #   E — Beat length vs wavelength (analytical)
 #   F — Total Δn = base + temp + bend
 # ============================================================
 fig = plt.figure(figsize=(14, 10))
 gs = fig.add_gridspec(2, 3, hspace=0.35, wspace=0.35)
 
-# --- Panel A: Sectional model — mean |Ex|^2 vs distance (0–1.5 km) ---
+# --- Panel A: mean |Ex|^2 vs distance (0–1.5 km) ---
 np.random.seed(SEED)
 E_in = np.array([[1.0, 0.0]], dtype=complex)
 dist_short_km = np.arange(0, 1.6, 0.1)
@@ -195,15 +78,17 @@ mean_ex_short = np.array(mean_ex_short)
 ax1 = fig.add_subplot(gs[0, 0])
 ax1.plot(dist_short_km, mean_ex_short, 's-', c='C3', lw=1.5, ms=4)
 ax1.set(xlabel='Fibre length (km)', ylabel=r'$\langle |E_x|^2 \rangle$',
-        title='A: Sectional model — polarisation vs distance\n(L_B ≈ 31 m, correlation length = 50 m)')
+        title='A: Multi-section — polarisation vs distance\n(L_B ≈ 31 m, correlation length = 50 m)')
 ax1.grid(True, alpha=0.25)
 ax1.set_ylim(-0.05, 1.05)
-ax1.axvline(2, c='gray', ls=':', lw=0.6, alpha=0.4, label='Sectional limit')
 ax1.annotate('Random walk on\nPoincar\\\'e sphere',
              xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel B: Phenomenological model — mean |Ex|^2 vs distance (0–200 km) ---
+# --- Panel B: mean |Ex|^2 vs distance (0–200 km, ensemble) ---
+# With L_c = 50 m and per-section retardance delta ~ 10 rad, the ensemble
+# mean reaches its uniform-SU(2) value (1/2) within a few hundred metres —
+# the honest long-distance behaviour of the single model (PHYS-5).
 np.random.seed(SEED)
 dist_long_km = np.arange(0, 210, 10)
 mean_ex_long = []
@@ -211,7 +96,7 @@ for d in dist_long_km:
     ex_powers = []
     for _ in range(REALIZATIONS):
         out = apply_birefringence(E_in.copy(), d * 1e3, wavelength=WAVELENGTH,
-                                  model='phenomenological')
+                                  model='sectional')
         ex_powers.append(np.abs(out[0, 0])**2)
     mean_ex_long.append(np.mean(ex_powers))
 mean_ex_long = np.array(mean_ex_long)
@@ -219,24 +104,28 @@ mean_ex_long = np.array(mean_ex_long)
 ax2 = fig.add_subplot(gs[0, 1])
 ax2.plot(dist_long_km, mean_ex_long, 's-', c='C4', lw=1.5, ms=4)
 ax2.set(xlabel='Fibre length (km)', ylabel=r'$\langle |E_x|^2 \rangle$',
-        title='B: Phenomenological — sqrt(L) rotation\n(Menyuk & Wai 1994, L₀ = 75 km)')
+        title='B: Multi-section — long-distance ensemble\n(0–200 km)')
 ax2.grid(True, alpha=0.25)
 ax2.set_ylim(-0.05, 1.05)
-ax2.annotate('Gradual scrambling\nθ ∝ √(L/L_char)',
+ax2.annotate('Uniform SU(2)\nplateau: |E_x|² → ½\nwithin ~200 m',
              xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel C: Phenomenological — mean |Ex|^2 vs temperature (50 km) ---
+# --- Panel C: mean |Ex|^2 vs temperature (2 m, single section) ---
+# At 2 m the fibre is one correlation cell: delta(T) = 2*pi*|delta_n(T)|*L/lambda
+# is in the visible regime (delta ~ 0.3–0.5 rad), so the temperature
+# coefficient -3.0e-9 / C shows up. Beyond ~1 km the ensemble is saturated
+# and temperature is invisible in the mean.
 np.random.seed(SEED)
 E_in = np.array([[1.0, 0.0]], dtype=complex)
-fixed_dist = 50e3
+fixed_dist = 2.0  # m — single correlation cell
 temp_C = np.linspace(0, 60, 13)
 mean_ex_temp = []
 for T in temp_C:
     ex_powers = []
     for _ in range(REALIZATIONS):
         out = apply_birefringence(E_in.copy(), fixed_dist, wavelength=WAVELENGTH,
-                                  temperature=T, model='phenomenological')
+                                  temperature=T, model='sectional')
         ex_powers.append(np.abs(out[0, 0])**2)
     mean_ex_temp.append(np.mean(ex_powers))
 mean_ex_temp = np.array(mean_ex_temp)
@@ -244,22 +133,22 @@ mean_ex_temp = np.array(mean_ex_temp)
 ax3 = fig.add_subplot(gs[0, 2])
 ax3.plot(temp_C, mean_ex_temp, 's-', c='C1', lw=1.5, ms=4)
 ax3.set(xlabel='Temperature (°C)', ylabel=r'$\langle |E_x|^2 \rangle$',
-        title='C: Temperature sensitivity\n(50 km, phenomenological)')
+        title='C: Temperature sensitivity\n(2 m, single correlation cell)')
 ax3.grid(True, alpha=0.25)
 ax3.set_ylim(-0.05, 1.05)
-ax3.annotate('Δn changes with T,\nθ ∝ 1/√|Δn|',
+ax3.annotate('Δn(T) = 5e-8 − 3e-9·(T−25)\nvisible where δ(T) < π',
              xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
              fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
-# --- Panel D: Phenomenological — mean |Ex|^2 vs bend radius (50 km) ---
+# --- Panel D: mean |Ex|^2 vs bend radius (2 m, single section) ---
 np.random.seed(SEED)
-bend_radii = np.array([0.002, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05])
+bend_radii = np.array([0.001, 0.0015, 0.002, 0.003, 0.005, 0.01, 0.02])
 mean_ex_bend = []
 for R in bend_radii:
     ex_powers = []
     for _ in range(REALIZATIONS):
         out = apply_birefringence(E_in.copy(), fixed_dist, wavelength=WAVELENGTH,
-                                  temperature=25, bend_radius=R, model='phenomenological')
+                                  temperature=25, bend_radius=R, model='sectional')
         ex_powers.append(np.abs(out[0, 0])**2)
     mean_ex_bend.append(np.mean(ex_powers))
 mean_ex_bend = np.array(mean_ex_bend)
@@ -267,8 +156,11 @@ mean_ex_bend = np.array(mean_ex_bend)
 ax4 = fig.add_subplot(gs[1, 0])
 ax4.semilogx(bend_radii * 1e3, mean_ex_bend, 's-', c='C2', lw=1.5, ms=4)
 ax4.set(xlabel='Bend radius (mm)', ylabel=r'$\langle |E_x|^2 \rangle$',
-        title='D: Bend-induced birefringence\n(Ulrich [7], 50 km, phenomenological)')
+        title='D: Bend-induced birefringence\n(Ulrich [7], 2 m, single correlation cell)')
 ax4.grid(True, alpha=0.25)
+ax4.annotate('Δn_bend = 0.135·(r/R)²\nwraps mod 2π below ~1.5 mm',
+             xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top',
+             fontsize=8, bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.8))
 
 # --- Panel E: Beat length vs wavelength (analytical) ---
 lam_range = np.linspace(800e-9, 1700e-9, 50)
@@ -311,7 +203,7 @@ ax6.set(xlabel='Temperature (°C)', ylabel=r'Δn (×10⁻⁶)',
 ax6.legend(fontsize=6, ncol=2)
 ax6.grid(True, alpha=0.25)
 
-fig.suptitle('Fiber Birefringence — Dual-Model Validation (Sectional + Phenomenological)\n'
+fig.suptitle('Fiber Birefringence — Multi-Section Model Validation (single model, all lengths)\n'
              '(Menyuk & Wai 1994; Wai & Menyuk 1996; Ulrich 1980; Agrawal 2021)',
              fontsize=12, fontweight='bold', y=0.98)
 fig.savefig(os.path.join(OUT, f'val_birefringence--seed{SEED}.png'), dpi=200, bbox_inches='tight')
@@ -319,11 +211,11 @@ print(f"Saved: val_birefringence--seed{SEED}.png")
 
 csv_name = f'val_birefringence--seed{SEED}.csv'
 with open(os.path.join(OUT, csv_name), 'w') as f:
-    f.write('# Sectional model (short fibre)\n')
+    f.write('# Multi-section model (short fibre)\n')
     f.write('dist_short_km,mean_Ex_short\n')
     for d, m in zip(dist_short_km, mean_ex_short):
         f.write(f'{d},{m}\n')
-    f.write('# Phenomenological model (long fibre)\n')
+    f.write('# Multi-section model (long fibre)\n')
     f.write('dist_long_km,mean_Ex_long\n')
     for d, m in zip(dist_long_km, mean_ex_long):
         f.write(f'{d},{m}\n')
@@ -334,20 +226,10 @@ table_csv = os.path.join(OUT, f'val_birefringence--seed{SEED}_table.csv')
 with open(table_csv, 'w', newline='') as f:
     writer = csv.writer(f)
     writer.writerow(['Test', 'Model', 'Result'])
-    writer.writerow(['Power conservation', 'sectional', 'err < 1e-12'])
-    writer.writerow(['Temperature sensitivity', 'sectional', 'PASS'])
-    writer.writerow(['Wavelength sensitivity', 'sectional', 'PASS'])
-    writer.writerow(['Seed randomness', 'sectional', 'PASS'])
-    writer.writerow(['Poincaré scrambling', 'sectional', 'std > 0.05'])
-    writer.writerow(['Power conservation', 'phenomenological', 'err < 1e-12'])
-    writer.writerow(['Temperature sensitivity', 'phenomenological', 'PASS'])
-    writer.writerow(['Wavelength sensitivity', 'phenomenological', 'PASS'])
-    writer.writerow(['Seed randomness', 'phenomenological', 'PASS'])
-    writer.writerow(['Poincaré scrambling', 'phenomenological', 'std > 0.05'])
-    writer.writerow(['Zero-length identity', 'both', 'PASS'])
-    writer.writerow(['Auto-dispatch', 'auto', f'{SECTIONAL_LIMIT} m threshold'])
-    writer.writerow(['enabled=False', 'both', 'PASS'])
-print(f"Saved: val_birefringence--seed{SEED}_table.csv")
+    writer.writerow(['Panel figure (A-F)', 'sectional', f'saved val_birefringence--seed{SEED}.png'])
+    writer.writerow(['Poincaré convergence', 'sectional', '|mean(S)|: first -> last'])
+    writer.writerow(['Self-consistency (13)', 'sectional', 'moved to tests/test_fiber.py'])
+print(f"Saved: {table_csv}")
 plt.close(fig)
 
 # ============================================================

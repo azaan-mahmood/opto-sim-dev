@@ -28,22 +28,23 @@ No existing simulator — whether protocol-level, commercial optical, or QKD-spe
 # Install dependencies
 pip install -r requirements.txt
 
-# Run all 77 unit tests
+# Run all 173 unit tests
 python -m pytest tests/ -v
 
 # Run all component validations (generates figures + tables)
 python run_all.py --seed 42
 
 # Run a specific protocol
-python -m src.protocols.bb84_ideal --fiber-length 50
+python -m src.protocols.examples.bb84_ideal --fiber-length 50
 python -m src.protocols.bb84_time_bin --distance 10
 ```
 
-Individual validation scripts are in `analysis/validation/`:
+Individual validation scripts are in `analysis/validation/` (Gobby lives in
+`analysis/val_gobby/`):
 
 ```bash
 python analysis/validation/validate_cd.py --seed 42
-python analysis/validation/validate_gobby.py --seed 42
+python analysis/val_gobby/validate_gobby.py --seed 42
 ```
 
 ## Key Features
@@ -53,12 +54,12 @@ python analysis/validation/validate_gobby.py --seed 42
   - **CW Laser** with switchable pulsed mode, Wiener phase noise (Henry 1982), relaxation-oscillation RIN (Coldren 2012)
   - **Mach–Zehnder Modulator** with push-pull and single-drive configurations (Agrawal, Koyama & Iga)
   - **Asymmetric Mach–Zehnder Interferometer** for time-bin phase encoding/decoding
-  - **Fibre Channel** with birefringence (sectional + phenomenological models), chromatic dispersion (FFT-based, Agrawal), PMD (Maxwellian DGD, Razavi), and attenuation (Keiser)
+  - **Fibre Channel** with birefringence (multi-section random-axis model, quasi-static), chromatic dispersion (FFT-based, Agrawal), PMD (Maxwellian DGD, Razavi), and attenuation (Keiser)
   - **Avalanche Photodiode** with shot noise, thermal noise, excess noise factor (Kasap)
   - **Geiger-mode SPAD** with dead time, dark count rate, afterpulsing, gated detection (ID230 specs)
   - **Time-bin BB84 Protocol** with pulsed laser, AMZI encoder/decoder, dual SPAD detection
 - **Seeded reproducibility** — all RNG seeded at session start (`--seed` default 42)
-- **77 unit tests** — component-level validation of power convention, noise scaling, polarisation, interference fringes, edge cases
+- **203 unit tests** — component-level validation of power convention, noise scaling, polarisation, interference fringes, edge cases
 - **No GUI, no proprietary dependencies** — pure Python + NumPy + SciPy + Matplotlib
 
 ## Architecture
@@ -76,11 +77,12 @@ src/
 │   ├── apd.py                 # linear-mode APD
 │   └── spad.py                # Geiger-mode SPAD
 ├── protocols/
-│   ├── bb84_ideal.py          # CW-based BB84
-│   ├── bb84_high_bitrate.py   # bitrate-sweep BB84
-│   ├── bb84_test_dispersion.py# MZM-carved pulses with CD/PMD
-│   ├── bb84_duplinskiy.py     # SPAD-based BB84 replication
-│   └── bb84_time_bin.py       # time-bin phase-encoding BB84
+│   ├── bb84_time_bin.py        # time-bin phase-encoding BB84 (active)
+│   ├── bb84_test_dispersion.py # MZM-carved pulses with CD/PMD
+│   ├── bb84_duplinskiy.py      # SPAD-based BB84 replication
+│   └── examples/               # legacy CW-based BB84 demos
+│       ├── bb84_ideal.py       #   CW-based BB84 (0 % sifted QBER)
+│       └── bb84_high_bitrate.py#   bitrate-sweep variant
 └── visualization/
     ├── stokes.py               # Stokes parameter computation
     ├── polarimeter.py          # Poincaré sphere plotting
@@ -126,6 +128,17 @@ print(f"Signal current: {result['I_signal']:.2e} A")
 ## Reproducibility
 
 Every test and validation script pins both `random` and `np.random` at session start via `conftest.py`. The `--seed` CLI flag (default 42) controls all RNG. Validation outputs are tagged with the seed in the filename (e.g., `val_gobby--seed42.png`).
+
+### Exact invocations behind published results
+
+| Result | Invocation |
+|---|---|
+| Gobby QBER-vs-distance table (Fig. 10 / Table 10) | `python analysis/val_gobby/validate_gobby.py --seed 42 --bits 10000000` (10M pulses per point — the default is only 200k) |
+| All component validations | `python run_all.py --seed 42` (Gobby at default 200k bits/point; add `--gobby-bits 10000000` to match the published table) |
+| Birefringence panels + Poincaré convergence | `python analysis/validation/validate_birefringence.py --seed 42` — the 13 internal self-consistency checks are in `tests/test_fiber.py` (`TestBirefringenceSelfConsistency`), not this script |
+
+Every published figure should also record the script, seed, and commit hash in
+its caption (see `opto-sim-issues-and-fixes.md`, ARCH-2).
 
 ## Citation
 

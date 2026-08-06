@@ -47,47 +47,31 @@ D_MATERIAL = 22.0      # ps/(nm·km) material @ 1550 nm (Agrawal [6] Fig 2.10)
 D_WAVEGUIDE = -5.0     # ps/(nm·km) waveguide @ 1550 nm (Agrawal [6] Fig 2.10)
 D_TOTAL = D_MATERIAL + D_WAVEGUIDE   # ps/(nm·km); = 17.0, matches SMF-28 spec [12]
 
-# Birefringence model threshold: fibres shorter than this (in metres) use
-# the multi-section model; longer fibres use the phenomenological model.
-SECTIONAL_LIMIT = 2000  # 2 km
 
+def bend_birefringence(bend_radius, r_fiber=62.5e-6):
+    """Bend-induced birefringence Delta_n_bend = 0.135 * (r_fiber / R)^2.
 
-def _random_su2_rotation_rng(rng, angle):
-    """Random SU(2) rotation matrix for a given rotation angle (radians).
+    The quadratic-in-(r/R) law for a bent single-mode fibre. Both
+    birefringence builders call this, so the formula and its constants
+    live in exactly one place (REPRO-4).
 
-    Generates a uniformly random axis on the Poincaré sphere and rotates
-    by `angle` around it.  angle = 0 -> identity, angle ~ pi -> fully mixed.
+    Parameters
+    ----------
+    bend_radius : float — bend radius R in metres.
+    r_fiber : float — fibre (cladding) radius in metres (default 62.5 um,
+        the standard SMF-28 value).
 
-    `rng` supplies the randomness: either the `numpy.random` module itself
-    (draws from — and advances — the global RNG state, for backward
-    compatibility with the stateless per-call API) or a
-    `numpy.random.Generator` instance (draws from its own independent
-    stream, for `FiberRealization`). Both expose `.uniform(...)` with the
-    same signature, so either can be passed here interchangeably.
+    Returns
+    -------
+    float — the bend-induced index difference Delta_n_bend.
 
     References
     ----------
-    Menyuk & Wai, JOSA B 11(7), 1994.
-    Wai & Menyuk, JLT 14(2), 1996.
+    [7] Ulrich, R., Rashleigh, S. C., & Eickhoff, W., "Bending-induced
+        birefringence in single-mode fibers," Opt. Lett. 5(6), 273-275,
+        1980. Eq. 1.
     """
-    theta = rng.uniform(0, 2 * np.pi)
-    phi = np.arccos(2 * rng.uniform() - 1)
-    n = np.array([np.sin(phi) * np.cos(theta),
-                  np.sin(phi) * np.sin(theta),
-                  np.cos(phi)])
-    sigma_x = np.array([[0, 1], [1, 0]], dtype=complex)
-    sigma_y = np.array([[0, -1j], [1j, 0]], dtype=complex)
-    sigma_z = np.array([[1, 0], [0, -1]], dtype=complex)
-    n_sigma = n[0] * sigma_x + n[1] * sigma_y + n[2] * sigma_z
-    half = angle / 2.0
-    U = np.cos(half) * np.eye(2, dtype=complex) - 1j * np.sin(half) * n_sigma
-    det = np.linalg.det(U)
-    return U / np.sqrt(det)
-
-
-def _random_su2_rotation(angle):
-    """Backward-compatible wrapper: draws from the global `np.random` state."""
-    return _random_su2_rotation_rng(np.random, angle)
+    return 0.135 * (r_fiber / bend_radius) ** 2
 
 
 def _build_jones_sectional(rng, L, wavelength=1550e-9, temperature=25,
@@ -105,12 +89,12 @@ def _build_jones_sectional(rng, L, wavelength=1550e-9, temperature=25,
     needed. Real SMF has L_c of order 10-100 m (Menyuk & Wai [10]).
     The returned matrix is the ordered product of all section matrices.
 
-    `rng` supplies the randomness (see `_random_su2_rotation_rng`): the
-    `numpy.random` module for the stateless per-call API, or a
-    `numpy.random.Generator` for a `FiberRealization`'s own fixed draw.
+    `rng` supplies the randomness: the `numpy.random` module for the
+    stateless per-call API, or a `numpy.random.Generator` for a
+    `FiberRealization`'s own fixed draw.
 
-    Suitable for short fibres (< SECTIONAL_LIMIT), DV-QKD, and DPS QKD
-    where the detailed polarisation evolution is resolved.
+    Suitable for DV-QKD, DPS QKD, and long fibres (the model is
+    quasi-static and converges to uniform SU(2) by ~5 km).
 
     Parameters
     ----------
@@ -132,17 +116,15 @@ def _build_jones_sectional(rng, L, wavelength=1550e-9, temperature=25,
     Agrawal, Fiber-Optic Comm. Systems, 5th ed., §4.1–4.2.
     """
     T0 = 25.0
-    r_fiber = 62.5e-6
     birefringence_T0 = 5.0e-8      # Agrawal §4.1: L_B ~ 31 m for SMF-28
     temperature_coefficient = -3.0e-9
-    bend_effect_factor = 0.135
 
     delta_n = (
         birefringence_T0
         + temperature_coefficient * (temperature - T0)
     )
     if bend_radius is not None:
-        delta_n += bend_effect_factor * (r_fiber / bend_radius) ** 2
+        delta_n += bend_birefringence(bend_radius)
 
     delta_n += rng.normal(0, 0.1 * birefringence_T0)
     delta_n = np.sign(delta_n) * max(abs(delta_n), 5e-10)
@@ -228,109 +210,29 @@ def _apply_birefringence_sectional(E, L, wavelength=1550e-9, temperature=25,
     return np.transpose(J_total @ np.transpose(E))
 
 
-def _build_jones_phenomenological(rng, L, wavelength=1550e-9,
-                                  temperature=25, bend_radius=None):
-    """Build the single-rotation Jones matrix for the phenomenological
-    birefringence model (Menyuk & Wai 1994).
-
-    The rotation angle is theta = min(pi, sqrt(L / L_char) * pi / 2)
-    where L_char = L_0 * (delta_n_0 / |delta_n|)^2, L_0 = 75 km.
-
-    `rng` supplies the randomness (see `_random_su2_rotation_rng`).
-
-    Suitable for long fibres where the multi-section model's rapid
-    scrambling converges to uniform SU(2).
-
-    Parameters
-    ----------
-    L : float — fibre length in metres. Caller must ensure L > 0.
-    wavelength : float — centre wavelength (default 1550 nm).
-    temperature : float — ambient temperature in C (default 25).
-    bend_radius : float or None — bend radius in metres.
-
-    Returns
-    -------
-    ndarray (2, 2) — the fibre's Jones matrix.
-
-    References
-    ----------
-    Menyuk & Wai, JOSA B 11(7), 1994.
-    Wai & Menyuk, JLT 14(2), 1996.
-    Ulrich, Opt. Lett. 5(6), 1980.
-    """
-    T0 = 25.0
-    r_fiber = 62.5e-6
-    delta_n_0 = 0.87e-5            # base birefringence (phenomenological)
-    temperature_coefficient = -5e-7
-    bend_effect_factor = 0.135
-    L0 = 75e3                       # characteristic length at delta_n_0 (75 km)
-
-    delta_n = (
-        delta_n_0
-        + temperature_coefficient * (temperature - T0)
-    )
-    if bend_radius is not None:
-        delta_n += bend_effect_factor * (r_fiber / bend_radius) ** 2
-
-    # Stochastic residual — prevents unphysical cancellation
-    delta_n += rng.normal(0, 0.1 * delta_n_0)
-
-    delta_n = np.sign(delta_n) * max(abs(delta_n), 1e-10)
-
-    L_char = L0 * (delta_n_0 / abs(delta_n)) ** 2
-    theta = min(np.pi, np.sqrt(L / L_char) * np.pi / 2)
-
-    return _random_su2_rotation_rng(rng, theta)
-
-
-def _apply_birefringence_phenomenological(E, L, wavelength=1550e-9,
-                                           temperature=25, bend_radius=None):
-    """Apply the phenomenological birefringence model, drawing a fresh
-    random realization from the global `np.random` state on every call.
-
-    See `_build_jones_phenomenological` for the model itself. Note: calling
-    this once per bit/pulse for what should be the *same* physical fibre is
-    the ROOT-1 bug described in opto-sim-issues-and-fixes.md — use
-    `FiberRealization` for that case instead.
-
-    Parameters
-    ----------
-    E : ndarray (N, 2) — complex envelope [Ex, Ey].
-    L : float — fibre length in metres.
-
-    Returns
-    -------
-    ndarray (N, 2) — field after birefringence rotation.
-    """
-    if L <= 0:
-        return E.copy()
-    J = _build_jones_phenomenological(np.random, L, wavelength, temperature,
-                                      bend_radius)
-    return np.transpose(J @ np.transpose(E))
-
-
 def _build_jones_matrix(rng, L, wavelength=1550e-9, temperature=25,
                         bend_radius=None, correlation_length=50.0, model='auto'):
-    """Dispatch to the sectional or phenomenological Jones-matrix builder
-    based on fibre length and `model`, mirroring `apply_birefringence`'s
-    dispatch logic. Shared by the stateless per-call API and by
-    `FiberRealization`. Returns `np.eye(2)` for L <= 0.
+    """Dispatch to the multi-section Jones-matrix builder, mirroring
+    `apply_birefringence`'s dispatch logic. Shared by the stateless
+    per-call API and by `FiberRealization`. Returns `np.eye(2)` for
+    L <= 0.
+
+    The former phenomenological model (single SU(2) rotation with fitted
+    `theta = min(pi, sqrt(L / L_char) * pi / 2)`, L0 = 75 km,
+    `delta_n_0 = 0.87e-5`) was removed in the fifth pass: the multi-
+    section model is quasi-static, converges to uniform SU(2) by ~5 km,
+    and costs ~0.16 ms/apply at 122 km, so the model had neither
+    literature backing nor a speed advantage. `model='phenomenological'`
+    now raises ValueError (PHYS-5 in opto-sim-issues-and-fixes.md).
     """
     if L <= 0:
         return np.eye(2, dtype=complex)
-    if model == 'sectional':
-        return _build_jones_sectional(rng, L, wavelength, temperature,
-                                      bend_radius, correlation_length)
-    elif model == 'phenomenological':
-        return _build_jones_phenomenological(rng, L, wavelength, temperature,
-                                             bend_radius)
-    else:  # 'auto'
-        if L < SECTIONAL_LIMIT:
-            return _build_jones_sectional(rng, L, wavelength, temperature,
-                                          bend_radius, correlation_length)
-        else:
-            return _build_jones_phenomenological(rng, L, wavelength,
-                                                 temperature, bend_radius)
+    if model == 'phenomenological':
+        raise ValueError(
+            "the phenomenological birefringence model was removed in the "
+            "fifth pass (PHYS-5); use model='sectional' or 'auto'")
+    return _build_jones_sectional(rng, L, wavelength, temperature,
+                                  bend_radius, correlation_length)
 
 
 class FiberRealization:
@@ -359,8 +261,9 @@ class FiberRealization:
     correlation_length : float — birefringence correlation length L_c for
         the sectional model (m); default 50.0, physical range 10-100 m
         per Menyuk & Wai [10].
-    model : str — birefringence model: 'auto' (dispatch by L), 'sectional',
-        or 'phenomenological'.
+    model : str — birefringence model: 'auto' (default; single model at
+        all lengths) or 'sectional'; 'phenomenological' raises ValueError
+        (removed in the fifth pass, PHYS-5).
     attenuation_factor : float — dB/km (default 0.182).
     pmd_coeff_ps_sqrt_km : float — PMD coefficient in ps/sqrt(km) (default
         0.1; Corning SMF-28 Ultra spec <= 0.1 ps/sqrt(km) [12]).
@@ -444,14 +347,31 @@ class FiberRealization:
 
         return E
 
+    def birefringence_matrix(self):
+        """Return this realization's quasi-static birefringence Jones
+        matrix (2x2 complex, unitary), or None if birefringence is
+        disabled.
+
+        The matrix is drawn once at construction and reused by every
+        `apply()` call.  Because it is unitary (SU(2)), the inverse
+        channel is its conjugate transpose — this is what a receiver's
+        active polarization compensation must implement (e.g. the
+        calibration loop of Duplinskiy et al. 2017).
+
+        Returns
+        -------
+        ndarray (2, 2) or None — a copy of the Jones matrix.
+        """
+        return None if self._J is None else self._J.copy()
+
 
 def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
                         bend_radius=None, correlation_length=50.0, model='auto',
                         enabled=True):
     """Apply birefringence to optical field.
 
-    Dispatches to the multi-section or phenomenological model based on
-    fibre length and the `model` parameter.
+    Uses the multi-section model at all lengths (the former
+    'phenomenological' branch was removed in the fifth pass, PHYS-5).
 
     Parameters
     ----------
@@ -463,8 +383,8 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
     correlation_length : float — birefringence correlation length L_c for
         the multi-section model (m); default 50.0, physical range
         10-100 m per Menyuk & Wai [10].
-    model : str — 'auto' (default, dispatch by L), 'sectional', or
-           'phenomenological'.
+    model : str — 'auto' (default) or 'sectional'; 'phenomenological'
+        raises ValueError (removed, PHYS-5).
     enabled : bool — if False, return E.copy() unchanged (default True).
 
     Returns
@@ -473,19 +393,12 @@ def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,
     """
     if not enabled:
         return E.copy()
-    if model == 'sectional':
-        return _apply_birefringence_sectional(
-            E, L, wavelength, temperature, bend_radius, correlation_length)
-    elif model == 'phenomenological':
-        return _apply_birefringence_phenomenological(
-            E, L, wavelength, temperature, bend_radius)
-    else:  # 'auto'
-        if L < SECTIONAL_LIMIT:
-            return _apply_birefringence_sectional(
-                E, L, wavelength, temperature, bend_radius, correlation_length)
-        else:
-            return _apply_birefringence_phenomenological(
-                E, L, wavelength, temperature, bend_radius)
+    if model == 'phenomenological':
+        raise ValueError(
+            "the phenomenological birefringence model was removed in the "
+            "fifth pass (PHYS-5); use model='sectional' or 'auto'")
+    return _apply_birefringence_sectional(
+        E, L, wavelength, temperature, bend_radius, correlation_length)
 
 
 def apply_cd(E, dt, L, wavelength=1550e-9):
@@ -637,7 +550,7 @@ def propagate(fiber_length, E, dt=None, wavelength=1550e-9,
     ``cd`` and ``pmd`` when they are not explicitly provided.
 
     Impairments applied in order:
-      1. Birefringence (sectional or phenomenological)
+      1. Birefringence (multi-section model)
       2. Chromatic dispersion (FFT-based, Agrawal [6] §2.4)
       3. PMD (frequency-domain DGD)
       4. Attenuation (Keiser [1] Eq 3.6)
@@ -657,7 +570,8 @@ def propagate(fiber_length, E, dt=None, wavelength=1550e-9,
     correlation_length : float — birefringence correlation length L_c for
         the multi-section model (m); default 50.0, physical range
         10-100 m per Menyuk & Wai [10].
-    model : str — birefringence model: 'auto', 'sectional', 'phenomenological'.
+    model : str — birefringence model: 'auto' (default) or 'sectional';
+        'phenomenological' raises ValueError (removed, PHYS-5).
     birefringence : bool — apply birefringence? (default True).
     cd : bool or None — apply CD?  None uses ``dispersion`` value.
     pmd : bool or None — apply PMD?  None uses ``dispersion`` value.

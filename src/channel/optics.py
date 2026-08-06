@@ -17,14 +17,32 @@ def coupler_split(power, E, ratio=0.5):
 
 
 def coupler_combine(power_port, port_E, power_tap, tap_E, out_ports=1):
-    if out_ports==1:
-        E_out = (port_E + tap_E)
-        pout = power_port+power_tap
+    """Ideal 3 dB coupler combine (2x2 scattering matrix with 1/sqrt(2)
+    normalization, so total power is conserved).
+
+    Parameters
+    ----------
+    power_port, power_tap : float — input powers (bookkeeping only; the
+        returned powers are always derived from the output fields).
+    port_E, tap_E : ndarray (N, 2) — input complex-envelope fields.
+    out_ports : int — 1 returns the coupled arm only, 2 returns both arms
+        (E_out1 = (E1 + j*E2)/sqrt(2), E_out2 = (j*E1 + E2)/sqrt(2)).
+
+    Returns
+    -------
+    out_ports=1 : (pout, E_out)
+    out_ports=2 : (pout1, E_out1, pout2, E_out2)
+    """
+    if out_ports == 1:
+        E_out = (port_E + 1j * tap_E) / np.sqrt(2.0)
+        pout = np.sum(np.abs(E_out) ** 2)
         return pout, E_out
-    elif out_ports==2:
-        E_out1 = (port_E + 1j * tap_E)
-        E_out2 = (1j * port_E + tap_E)
-        return power_port, E_out1, power_tap, E_out2
+    elif out_ports == 2:
+        E_out1 = (port_E + 1j * tap_E) / np.sqrt(2.0)
+        E_out2 = (1j * port_E + tap_E) / np.sqrt(2.0)
+        pout1 = np.sum(np.abs(E_out1) ** 2)
+        pout2 = np.sum(np.abs(E_out2) ** 2)
+        return pout1, E_out1, pout2, E_out2
     else:
         raise Exception("Incorrect Number of Ports. Argument accepted is 1 or 2.")
 

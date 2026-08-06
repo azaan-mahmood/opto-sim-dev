@@ -27,10 +27,15 @@ DCR = 15.0         # SPAD dark count rate (Hz)
 GATE_WIDTH = 1e-9  # SPAD gate (s)
 P_DARK = DCR * GATE_WIDTH  # dark count probability per gate
 QBER_OPT = 0.033    # optical misalignment baseline
+# OPEN-1: decoder visibility actually passed to the Monte Carlo (was a
+# silent default of 1.0).  V = 0.934 corresponds to Gobby's stated 3.3%
+# short-range QBER floor via e_opt = (1 - V)/2 [1]; verified in the 2nd
+# pass: V = 0.934, no noise -> 3.2961% at 1.5M pulses.
+VISIBILITY = 0.934
 
 
-def analytical_qber(dist_km):
-    """Compute QBER using the analytical formula.
+def model_qber(dist_km):
+    """QBER from this work's analytic model.
 
     QBER = (P_dark / 2) / (mu * eta * T_link + P_dark) + QBER_opt
 
@@ -45,7 +50,17 @@ def analytical_qber(dist_km):
     return qber * 100.0
 
 
-def simulate_qber(dist_km, num_bits, seed=42, verbose=False):
+def gobby_measured_qber(dist_km):
+    """Gobby et al. (2004) measured QBER, interpolated from Fig 3 data.
+
+    Returns the published value exactly at the four measured distances
+    (4.4, 65, 101, 122 km); clamped at the endpoints elsewhere.
+    """
+    return np.interp(dist_km, GOBBY_DIST_KM, GOBBY_QBER)
+
+
+def simulate_qber(dist_km, num_bits, seed=42, verbose=False,
+                  visibility=VISIBILITY):
     """Run Monte Carlo at a given distance."""
     results = simulate_bb84_time_bin(
         num_bits=num_bits,
@@ -55,18 +70,22 @@ def simulate_qber(dist_km, num_bits, seed=42, verbose=False):
         spad_eta=ETA, dark_count_rate=DCR,
         afterpulse_prob=0.05, dead_time=13e-6,
         gate_width=GATE_WIDTH,
+        visibility=visibility,      # OPEN-1: e_opt = (1-V)/2 = 3.3%
+        phase_error=0.0,
         seed=seed, verbose=verbose,
     )
     return results
 
 
-def run_validation(num_bits=200000, seed=42, distances=None):
+def run_validation(num_bits=200000, seed=42, distances=None,
+                   visibility=VISIBILITY):
     if distances is None:
         distances = [0, 4, 10, 20, 40, 65, 80, 100, 122]
     print("=" * 60)
     print("Gobby et al. 2004 — QBER vs Distance Validation")
     print(f"  Alpha: {ALPHA_dB} dB/km, Mu: {MU}, Eta: {ETA}")
-    print(f"  Pulses per point: {num_bits}, Seed: {seed}")
+    print(f"  Pulses per point: {num_bits}, Seed: {seed}, "
+          f"Visibility: {visibility}")
     print("=" * 60)
 
     sim_dist = []
@@ -75,12 +94,14 @@ def run_validation(num_bits=200000, seed=42, distances=None):
 
     for d in distances:
         print(f"\n--- Distance: {d} km ---")
-        r = simulate_qber(d, num_bits, seed=seed, verbose=True)
+        r = simulate_qber(d, num_bits, seed=seed, verbose=True,
+                          visibility=visibility)
         sim_dist.append(d)
         sim_qber.append(r['qber'] * 100.0)
         sim_sifted.append(r['n_sifted'])
         if r['n_sifted'] > 0:
-            print(f"  QBER: {r['qber']*100:.2f}%  (Gobby paper: {analytical_qber(d):.1f}%)")
+            print(f"  QBER: {r['qber']*100:.2f}%  (Gobby measured: {gobby_measured_qber(d):.1f}%, "
+                  f"this work analytic: {model_qber(d):.1f}%)")
 
     sim_dist = np.array(sim_dist)
     sim_qber = np.array(sim_qber)
@@ -88,18 +109,19 @@ def run_validation(num_bits=200000, seed=42, distances=None):
 
     # Analytical curve
     dense_dist = np.linspace(0, 130, 131)
-    analytic = analytical_qber(dense_dist)
+    analytic = model_qber(dense_dist)
 
     # Save results table
     table_path = os.path.join(os.path.dirname(__file__), 'val_gobby_table.tex')
     with open(table_path, 'w') as f:
-        f.write(r"\begin{tabular}{rcccc}" + "\n")
-        f.write(r"  Distance & Pulses & Sifted & QBER & Gobby \\" + "\n")
-        f.write(r"  (km)     &        & bits   & (\%) & (\%)   \\" + "\n")
+        f.write(r"\begin{tabular}{rccccc}" + "\n")
+        f.write(r"  Distance & Pulses & Sifted & QBER & This work & Gobby et al. \\" + "\n")
+        f.write(r"  (km)     &        & bits   & (\%) & analytic (\%) & measured (\%) \\" + "\n")
         f.write(r"\hline" + "\n")
         for d, q, s in zip(sim_dist, sim_qber, sim_sifted):
-            g = analytical_qber(d)
-            f.write(f"  {d:.0f} & {num_bits} & {s} & {q:.2f} & {g:.1f} \\\\\n")
+            g_model = model_qber(d)
+            g_meas = gobby_measured_qber(d)
+            f.write(f"  {d:.0f} & {num_bits} & {s} & {q:.2f} & {g_model:.1f} & {g_meas:.1f} \\\\\n")
         f.write(r"\end{tabular}" + "\n")
     print(f"\nTable saved to {table_path}")
 
@@ -110,7 +132,7 @@ def run_validation(num_bits=200000, seed=42, distances=None):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=(8, 5))
-        ax.plot(dense_dist, analytic, 'b-', label=f'Analytical (QBER_opt={QBER_OPT*100:.0f}%)')
+        ax.plot(dense_dist, analytic, 'b-', label=f'This work, analytic (QBER_opt={QBER_OPT*100:.0f}%)')
         ax.plot(sim_dist, sim_qber, 'ro-', label=f'Monte Carlo ({num_bits} pulses)')
         ax.plot(GOBBY_DIST_KM, GOBBY_QBER, 'gs', label='Gobby paper (Fig 3)')
         ax.set_xlabel('Distance (km)')
@@ -137,5 +159,10 @@ if __name__ == "__main__":
         description="Gobby et al. 2004 QBER validation")
     parser.add_argument('--bits', type=int, default=200000)
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--visibility', type=float, default=VISIBILITY,
+                        help='Decoder visibility (default 0.934 = Gobby '
+                             '3.3%% floor; use 1.0 for the perfect-decoder '
+                             'control)')
     args = parser.parse_args()
-    run_validation(num_bits=args.bits, seed=args.seed)
+    run_validation(num_bits=args.bits, seed=args.seed,
+                   visibility=args.visibility)

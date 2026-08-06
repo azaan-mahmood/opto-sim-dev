@@ -4,6 +4,284 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-06 — Eighth pass (OPEN-3 groundwork): gate-width knob, runtime measurement, budget decision
+
+### Session: OPEN-3 measurement + `gate_width` parameter
+
+OPEN-3 is the scenario-table regeneration; before committing to a run
+budget the per-pulse cost was measured on the actual chain.
+
+| Change | Files | Rationale |
+|---|---|---|
+| `simulate_point()` gains `gate_width` (default 1 ns) controlling both the SPAD gate and the integration window | `analysis/val_system.py` | Enables the OPEN-3 CD positive control: shrink the gate below the CD-broadened pulse width (30 → 78 ps at 100 km, L_D ≈ 41.5 km) so spill-over measurably moves the QBER. Additive; the default path is bit-identical (regression point re-verified: 28 sifted / 1 err / 3.571 % @ 500k, 100 km att-only). |
+
+**Runtime measurement (the point of the exercise):** `simulate_point` runs
+at **35.8 µs/pulse** @ 100 km attenuation-on — the ~10 µs/pulse PERF-2
+figure applies to the Gobby chain only, not to this SPAD Monte Carlo.
+Budget decision (user): **lean — ≥3×10³ sifted per row, all 8 rows**;
+σ(QBER) ≈ 0.2 %, >8σ separation between attenuation rows (1.16 %) and the
+2.81 % control. ≈7×10⁷ pulses/row ≈ 42 min, ~5 h total (10⁴ sifted would
+be ~2.3 h/row ≈ 16 h).
+
+**CD positive-control prototype (gate 150 ps, 100 km, 2M pulses, seed 42):**
+DCR 10 kHz → CD 2.74 % vs no-CD 2.27 % (2 errors each — inconclusive);
+DCR 50 kHz pair aborted mid-run, pending. Generator update + the ~5 h
+regeneration are the remaining OPEN-3 work; OPEN-2 (10M Gobby with
+V = 0.934) follows.
+
+---
+
+## 2026-08-06 — Seventh pass: PERF-2 + OPEN-1 — Gobby chain unblocked
+
+### Session: PERF-2 / OPEN-1
+
+The statistics bottleneck was the binding constraint on every remaining
+result (the 10M Gobby re-run, the scenario table). PERF-2 removed it by
+memoising the field chain; OPEN-1 wired the visibility the replication
+was always missing.
+
+| Change | Files | Rationale |
+|---|---|---|
+| 8-outcome `(P_c, P_d)` gate-power table built once per point; per-pulse loop reduced to a dict lookup + SPAD Monte Carlo. RNG draw order untouched. | `src/protocols/bb84_time_bin.py` | The chain is scalar attenuation + deterministic AMZIs, so 2M pulses performed 4M field propagations to obtain 8 distinct answers. Measured: 75 s → 1.9 s per 200k point (~40×), ~10 µs/pulse → a 10M point ≈ 1.7 min. |
+| `VISIBILITY = 0.934` at module scope (cited to Gobby's 3.3 % floor via `e_opt = (1−V)/2`), passed into `simulate_bb84_time_bin`; `--visibility` CLI flag keeps the V = 1.0 control runnable. | `analysis/val_gobby/validate_gobby.py` | OPEN-1: the validator silently ran a perfect decoder (V = 1.0), so its floor was pure afterpulsing, not the misalignment the paper compares against. |
+
+**Verification (the refactor acceptance test).** Old vs new implementation,
+200k pulses, distances {0, 4.4, 65, 101, 122} km, seed 42 — `qber`,
+`n_sifted`, `n_errors` bit-identical at every distance; `modulate` call
+counter = 12 per point regardless of pulse count. OPEN-1 physics check:
+V = 0.934, zero noise, 0 km → **3.357 %** (Gobby's 3.3 % floor); V = 0.934,
+full noise, 122 km → **8.33 %** vs Gobby's 8.9 %.
+
+**Tests:** 203/203 pass; `run_all.py --seed 42` 8/8 in 95.2 s (Gobby
+24.5 s, was 158 s).
+
+---
+
+## 2026-08-06 — Sixth pass: BLOCK-2 — impairment-table generator
+
+### Session: BLOCK-2
+
+The last code-side item: Table 11 (`paperwork/tables/val_system_table.tex`)
+was hand-written — no generating script, no CSV, no seed, no commit.
+`paperwork/` has since been deleted, but the reproducibility contract is
+now met by a named generator on the ARCH-1 time-bin chain.
+
+| Change | Files | Rationale |
+|---|---|---|
+| `val_system_scenarios.py` — 8 explicit impairment configs, each run at 100 km with recorded seed; prints the exact config dict per row; writes CSV + LaTeX table with script/seed/pulses/commit hash in the caption | `analysis/val_system_scenarios.py` (NEW), `val_system/val_system_scenarios--seed42.{csv,tex}` | Every table row is self-contained and regenerable at any budget (`--bits`, `--distance`). Replaces the hand-written table. |
+| `simulate_point()` gains independent `birefringence`/`attenuation`/`cd`/`pmd` toggles (`dispersion` remains the legacy alias) | `analysis/val_system.py` | The scenarios need per-impairment control; defaults unchanged, so the ARCH-1 panels are bit-identical. |
+
+**Results (2M pulses/row, seed 42, 100 km):** no impairments 2.81 % ± 0.24
+(4761 sifted); attenuation-only / +CD / +PMD / +birefringence all 1.16 % ±
+1.16 (86 sifted — bit-identical: rate-only impairments for time-bin);
++visibility 0.934 → 3.53 % (the (1−V)/2 floor); +DCR 10 kHz → 13.08 %;
+full chain 3.53 %. Attenuation-on rows are sample-limited at 2M pulses
+(±1.2 %, explicit in the artifacts; ~28 µs/pulse runtime).
+
+**Tests:** 203/203 pass (no component code touched).
+
+---
+
+## 2026-08-06 — Fifth pass: PHYS-5 — phenomenological birefringence model deleted
+
+### Session: PHYS-5 (+ compensation-flag bug found during the model test)
+
+#### Part 1 — The test that decided it
+
+Before touching anything, the quasi-static multi-section model was tested at
+long distances (test + results in `opto-sim-issues-and-fixes.md` §14):
+
+- **Matrix level:** sectional `θ(L)` saturates to uniform SU(2) (mean ≈ 2.2 rad,
+  Haar expectation) by ~5 km — the random walk scrambles within a few
+  correlation cells (per-section retardance δ ≈ 10 rad wraps mod 2π). The
+  phenomenological `θ = min(π, √(L/L_char)·π/2)` grows to the π clamp only by
+  ~150 km — fitted constants (L₀ = 75 km, Δn₀ = 0.87e-5), no literature source.
+  Unitarity err ~1e-13, power conserved to ~1e-12, 0.16 ms/apply at 122 km
+  (N = 2440 sections) — no speed advantage for the old model.
+- **Protocol level** (`bb84_duplinskiy`, 200k pulses): compensated QBER is
+  model-independent (~1.7 % floor — the calibration loop undoes any unitary J);
+  uncompensated QBER is realization-dependent with the sectional model
+  (38.7 %/23.0 % for seeds 42/7 — a per-installation unknown, correct physics)
+  vs the phenomenological deterministic 25.86 %.
+
+#### Part 2 — The bug the test exposed
+
+`--no-compensation` was a silent no-op: the per-pulse compensation was applied
+whenever the fibre had a Jones matrix, ignoring the `compensate` parameter
+(`if U_comp is not None` instead of `if compensate and U_comp is not None`).
+Fixed; the ARCH-3 control value (25.86 % @ seed 42) is re-verified. Regression
+test added in `tests/test_protocols.py` (comp 1.5 % vs uncomp 49.6 % @ 10 km,
+μ = 2, sectional, seed 42).
+
+#### Part 3 — The deletion
+
+| Change | Files | Rationale |
+|---|---|---|
+| `_build_jones_phenomenological`, `_apply_birefringence_phenomenological`, dead `_random_su2_rotation_rng`/`_random_su2_rotation` removed; `SECTIONAL_LIMIT` gone | `src/channel/fiber.py` | Single model at all lengths; `model='auto'` ≡ `'sectional'`; `model='phenomenological'` raises ValueError with a pointer to PHYS-5. Docstrings updated. |
+| 5 phenomenological tests → long-distance sectional; dispatch test → `auto ≡ sectional at all lengths` + `phenomenological raises` | `tests/test_fiber.py` | The former phenomenological tests (power conservation at 100 km, T/λ/seed dependence, output variation) still cover exactly the right properties, now for the one model that exists. |
+| Panels B–D rewritten on the single model | `analysis/validation/validate_birefringence.py` | B: long-distance ensemble plateau (uniform SU(2), |E_x|² → ½ within ~200 m); C/D: temperature & bend sensitivity at 2 m — the single-correlation-cell regime where δ(T)/δ(R) is visible (beyond ~1 km the ensemble mean is saturated and these effects are invisible by physics, not by modelling). Poincaré convergence unchanged: |mean(S)| = 0.944 → 0.034. |
+| `--birefringence-model` choices reduced; `compensate` flag fixed | `src/protocols/bb84_duplinskiy.py` | Choices now auto/sectional only. |
+| Docs | `AGENTS.md`, `README.md` | Hybrid-dispatch sections → single model; test count 203. |
+
+**Tests:** 203/203 pass (was 201; −6 +7 in `test_fiber.py`, +1 `test_protocols.py`).
+Harness: `run_all.py --seed 42 --skip gobby` — 7/7 PASS (114.6 s).
+
+**PHYS-5 outcome:** both temperature coefficients (`-3.0e-9` vs `-5e-7`) and
+both clamp values (`5e-10` vs `1e-10`) collapse to the confirmed sectional
+values. Manuscript items M2 (Eq. 15 coefficient) and M3 (clamp unification)
+now have a single answer: `-3.0e-9 /°C` and `5e-10`. No published number
+moves: time-bin (Gobby) never used birefringence; the Duplinskiy compensated
+table is model-independent; only the uncompensated control becomes
+seed-dependent (25.86 % @ seed 42 is still reproducible).
+
+---
+
+## 2026-08-06 — Fourth pass: ARCH-1 system validation rebuild + ARCH-3 polarization compensation
+
+### Session: ARCH-1 + ARCH-3
+
+#### Part 1 — ARCH-1: Section 5 rebuilt on the genuine time-bin SPAD chain
+
+| Change | Files | Rationale |
+|---|---|---|
+| `analysis/val_system.py` fully rewritten | `analysis/val_system.py` | The old demo (CWLaser → polarizer → phase modulator → fiber → PBS → APD, 1000 km sweep) was classically invalid: it reported QBER from a CW (unmodulated) carrier. The rebuild is the time-bin chain used by the Duplinskiy/Gobby work — CWLaser → MZM carve → encoder AMZI → FiberRealization → decoder AMZI → 2×SPAD — with the real impairment set (CD, PMD, birefringence, attenuation) and ID230 SPAD statistics (η = 0.10, dead 13 µs, afterpulse 5 %, DCR 15 Hz, 1 ns gate). |
+| Linearity shortcut | `analysis/val_system.py` | Per-bit field propagation costs ~16.7 ms, making per-point sweeps infeasible. The early/late basis pulses are propagated once per parameter point, and the per-bit probability is evaluated from the exact linearity identity `P_c = g0_c + 2·Re[S_c·e^(−jδ)]`, with `δ = φB − φA − θ` (θ phase jitter from 2πΔν·delay, θ_σ = 190.9 mrad). ~5 s per 1M-pulse point. |
+| MZM X-cut polarisation fix | `analysis/val_system.py` | The MZM is X-cut (modulates Ey only); the source must therefore be Y-polarized (`polarization_azimuth = π/2`), otherwise the unmodulated Ex component forms a CW floor that destroys the μ calibration. Also: `S_c`/`S_d` must be built with `complex()` (a `float()` cast silently zeroed the imaginary part). |
+| Panel set replaced | `analysis/val_system.py` | Old panels (QBER vs distance with bit-rate title, temperature, bend radius — flat for time-bin) → A: distance 0–122 km (all impairments vs attenuation-only); B: pulse σ 5–50 ps @ 75 km; C: decoder visibility 0.90–1.00 @ 75 km; D: μ 0.02–2.0 @ 75 km; E: DCR 0–10 kHz @ 122 km. Time-bin is immune to slow birefringence (both bins traverse the identical quasi-static operator); CD/PMD change rate, not QBER. |
+
+**ARCH-1 results (1M pulses/point, seed 42):** 0 km QBER 5.4 %; 75 km floor ≈ 6.4 % (decomposition: visibility (1−V)/2 = 3.3 %, phase jitter ~0.8 %, afterpulse ~1.5 %, double-click ~0.5 %); C: 8.5 %→4.3 % across V; D: 0 % @ μ = 0.02 (sample-limited, 24 sifted) → 6.2 % @ μ = 2 (2022 sifted); E: 0 %→16.7 % @ 10 kHz DCR; 122 km sifted = 17 (sample-limited). Artifacts: `val_system/val_system--seed42.{png,csv}` regenerated.
+
+#### Part 2 — ARCH-3: Duplinskiy polarization compensation
+
+| Change | Files | Rationale |
+|---|---|---|
+| `FiberRealization.birefringence_matrix()` | `src/channel/fiber.py` | Public accessor returning a copy of the quasi-static SU(2) fibre matrix (None when birefringence is disabled). |
+| Compensation in `bb84_duplinskiy.py` | `src/protocols/bb84_duplinskiy.py` | `compensate=True` (default) with `--no-compensation` control: `U_comp = J_channel.conj().T` applied per pulse between fibre and VOA — the fixed point of the paper's three-controller calibration loop for a quasi-static channel. Docstring rewritten (loop ⇔ inverse J). |
+| Accessor tests | `tests/test_fiber.py` | `TestBirefringenceMatrixAccessor` (5): unitarity, matches `apply()` with other impairments off, roundtrip J†J restores the field, None when disabled, quasi-static (same matrix across calls). |
+
+**ARCH-3 results (seed 42):** 0 km 2.83 % (460 sifted/13 err, 200k); 50 km compensated 1.72 % (58/1, 200k) and 0.98 % (307/3, 1M); 50 km uncompensated control 25.86 % (58/15, 200k). Paper (Duplinskiy et al., Opt. Express 25(23) 28886, 2017; arXiv 1709.06655): QBER ≈ 2 % at 50 km — replication matches within statistics, and the uncompensated control quantifies the necessity of the calibration loop.
+
+**Tests:** 201/201 pass (was 196; +5 accessor tests). Harness: `run_all.py --seed 42 --skip gobby` — 7/7 PASS, 66.3 s.
+
+---
+
+## 2026-08-06 — Third pass: birefringence literature validation, BB84 script consolidation, README reproducibility
+
+### Session: REPRO-4 + ARCH-2 + REPRO-2
+
+#### Part 1 — REPRO-4: real literature comparisons for birefringence
+
+| Change | Files | Rationale |
+|---|---|---|
+| `bend_birefringence(bend_radius, r_fiber=62.5e-6)` — public, documented | `src/channel/fiber.py` | The bend-induced birefringence `Δn_bend = 0.135·(r/R)²` (Ulrich [7] Eq. 1) was duplicated inline in both Jones builders with their own copies of the constants. Now a single cited function both builders call. |
+| `TestUlrichBendLaw` (10 tests) | `tests/test_fiber.py` | (1) Exact match against the published `0.135·(r/R)²` law across a bend-radius sweep (rtol 1e-12, stated tolerance); (2) channel-level: the bend term recovered from the *single-section retardance* (eigenphase of the SU(2) matrix, axis-independent) and compared to the law, tolerances 5–18 % absorbing the model's 10 % stochastic residual. Fibre length is scaled per radius so the retardance is exactly π/2 — an SU(2) matrix only carries retardance mod 2π, so unwrapped recovery needs δ < π. |
+| 13 self-consistency checks moved | `analysis/validation/validate_birefringence.py` → `tests/test_fiber.py` | The old script's 13 `[PASS]`-printing invariants (power conservation, temperature/wavelength/seed dependence, Poincaré variation, zero-length, auto-dispatch, `enabled=False`) are now `TestBirefringenceSelfConsistency` (13 tests). The validator keeps only what it validates: the 6-panel figure, Poincaré convergence figure + assertion, and the CSVs. Table CSV now records that the checks moved. |
+
+#### Part 2 — ARCH-2: five BB84 implementations, three active
+
+| Change | Files | Rationale |
+|---|---|---|
+| `bb84_ideal.py`, `bb84_high_bitrate.py` → `src/protocols/examples/` | moved files | Nothing in the repo imports them (grep-verified); they are legacy CW-based demos superseded by `bb84_time_bin.py`. The active set is now unambiguous: `bb84_time_bin.py` (Gobby validation), `bb84_test_dispersion.py` (dispersion study), `bb84_duplinskiy.py` (ARCH-3 replication). Smoke-tested: `python -m src.protocols.examples.bb84_ideal --fiber-length 5` → QBER 0.0. |
+| Docs updated | `README.md`, `AGENTS.md` | Architecture trees and script descriptions point at the new locations. |
+
+#### Part 3 — REPRO-2: README paths and invocations
+
+| Change | Files | Rationale |
+|---|---|---|
+| Gobby path fixed | `README.md` | `python analysis/validation/validate_gobby.py` → `python analysis/val_gobby/validate_gobby.py` (the doc's exact complaint — the file never lived in `analysis/validation/`). |
+| Test counts 77 → 173 | `README.md` | Two stale counts. |
+| "Exact invocations behind published results" table | `README.md` | Documents that the published Gobby table used `--bits 10000000` (10M pulses/point; default 200k), the `run_all.py` equivalents, and that the birefringence self-consistency checks now live in `tests/test_fiber.py`. |
+
+**Tests:** 196/196 pass (was 173; +13 self-consistency, +10 Ulrich bend law).
+
+**Key results:**
+- `bend_birefringence` matches Ulrich's law exactly (rtol 1e-12) and flows through the sectional Jones matrix: measured Δn_bend = 1.47e-5 at R = 6 mm vs law 1.46e-5 (within noise tolerance)
+- Validator harness: 7/7 validators pass (Birefringence 12.4 s, unchanged runtime); Gobby validator unchanged
+
+---
+
+## 2026-08-06 — Second pass: Gobby table columns, MZI visibility, validation harness, untested-module coverage
+
+### Session: BLOCK-1 + BLOCK-3 + REPRO-1 + REPRO-3 + REPRO-5
+
+Continues the code-side work from `opto-sim-issues-and-fixes.md` (first pass
+listed below). Manuscript items remain out of scope.
+
+#### Part 1 — BLOCK-1: Gobby table presented the analytic column as measured
+
+| Change | Files | Rationale |
+|---|---|---|
+| `analytical_qber()` → `model_qber()`; new `gobby_measured_qber()` | `analysis/val_gobby/validate_gobby.py` | The table's numeric column inherited the internal function name `analytical_qber` while being presented as Gobby's measured data — an integrity exposure. The measured values are now interpolated from the published Fig. 3 points (`GOBBY_DIST_KM = [4.4, 65, 101, 122]`, `GOBBY_QBER = [3.3, 3.3, 6.0, 8.9]`) via `np.interp`, so the columns are provably distinct. |
+| Table regenerated | `analysis/val_gobby/val_gobby_table.tex` | Columns now read "This work analytic (%)" and "Gobby et al. measured (%)". |
+
+#### Part 2 — BLOCK-3: `AsymmetricMZI` had no visibility or phase-error knob
+
+| Change | Files | Rationale |
+|---|---|---|
+| `visibility` (default 1.0) + `phase_error` (default 0.0) | `src/channel/interferometer.py` | Modelled as a combiner amplitude imbalance (r, s with r² + s² = 1, 2rs = V) rather than scalar field mixing, so power is conserved at the fringe: P_c ∝ (1 + V·cos Δφ), P_d ∝ (1 − V·cos Δφ), giving a minimum-error floor e_opt = (1 − V)/2 at Δφ = 0. `phase_error` shifts the fringe peak. `visibility` validated to (0, 1]. |
+| Params + CLI flags wired through | `src/protocols/bb84_time_bin.py` | `--visibility`, `--phase-error`. |
+| 8 tests (`TestAsymmetricMZIVisibility`) | `tests/test_interferometer.py` | Visibility fringe contrast, error floor, power conservation, phase-error fringe shift, parameter validation, backward compatibility. |
+
+**Verified — the audit's afterpulse hypothesis is now confirmed:**
+- 0 km QBER with `afterpulse_prob=0`: **2.786 % → 0.0000 %** — the short-range
+  floor is afterpulsing, not misalignment.
+- `visibility=0.934`, no noise, 1.5M pulses: **3.2961 %** ≈ Gobby's 3.3 %
+  short-range floor.
+- Fringe contrast matches V exactly to 4 decimals; `visibility=1.0` is
+  byte-identical to the old 50:50 combiner.
+
+#### Part 3 — REPRO-1: eager tkinter import broke headless runs
+
+| Change | Files | Rationale |
+|---|---|---|
+| `polarimeter()` is now a lazy wrapper; tkinter imported only on call | `src/visualization/__init__.py` | `import opto_sim` no longer needs a display server (CI/headless reproducibility). |
+
+#### Part 4 — REPRO-3: `run_all.py` was UTF-16 and checked only exit codes
+
+| Change | Files | Rationale |
+|---|---|---|
+| Re-encoded UTF-16LE (BOM) → UTF-8; rewritten as a harness | `run_all.py` | The file died with `SyntaxError: Non-UTF-8 code` before executing a line. The harness now runs all 8 validators (CD, PMD, attenuation, birefringence, APD, CW laser, MZM, Gobby), checks exit codes **and** the expected output file, supports `--skip` and `--gobby-bits`, and exits non-zero on any failure. The output-file check matters because `validate_apd`/`validate_cwlaser`/`validate_mzm` print no `[PASS]` marker and are assert-free. |
+
+**Verified:** full harness green — 96 s without Gobby, 158 s with 20k Gobby bits.
+
+#### Part 5 — REPRO-5: untested modules, and two defects found
+
+| Added | File | Covers |
+|---|---|---|
+| 20 tests | `tests/test_spad.py` | Dead time, DCR convergence, Poisson click rate 1 − exp(−qe·µ), afterpulse excess-rate ~5 %, afterpulse requires a prior click, PHYS-7 no-leak regression (re-armed detector must not fire a stale pending afterpulse). |
+| 35 tests | `tests/test_optics.py` | Unitarity (HWP/QWP/rotator/hadamard/circular_analyser), PBS vs analyser phase-blindness (PHYS-6 regression), projector idempotence, cascaded-polariser double extinction, VOA scaling, coupler split/combine bookkeeping. |
+| 20 tests | `tests/test_phase_modulator.py` | V_π formula (Alferness [2], Weis & Gaylord [1]), X-cut/Y-cut modulation axis, DC phase application, RF per-sample phase, V_π caching, parameter validation. |
+
+**Defects found and fixed by the new tests:**
+
+1. **`PhaseModulator` partial-`params` crash** — passing a partial dict
+   (e.g. `{'wavelength': ...}`) never merged with the defaults, so `get_vpi()`
+   died with `AttributeError: 'n_o'`. Fixed by merging `{**defaults, **params}`.
+   All production call sites pass `params=None`, so behaviour there is
+   unchanged. (`src/channel/phase_modulator.py`)
+2. **`coupler_combine` power doubling (legacy, unused)** — the 2-port combine
+   applied `[[1, j], [j, 1]]` without the 1/√2 normalization, doubling output
+   power. Both branches now apply the ideal 3 dB coupler scattering matrix
+   (`E_out1 = (E1 + j·E2)/√2`, `E_out2 = (j·E1 + E2)/√2`), which is unitary, and
+   returned powers are derived from the output fields per the project's
+   field-derived-power convention. (`src/channel/optics.py`)
+
+**Tests:** 173/173 pass (was 89 at session start; 97 after BLOCK-3; 171 after
+REPRO-5; 173 after the coupler fix — the one `xfail` became a real pass).
+
+**Key results:**
+- BLOCK-3 premise confirmed: the 0 km QBER floor is afterpulsing, not misalignment
+- Gobby's 3.3 % short-range floor reproduced as a visibility V = 0.934 → 3.2961 %
+- V_π(X-cut) = 3.8826 V, matching the crystal-derived value all BB84 scripts use
+
+**Still open (unchanged from the first pass):** BLOCK-2 (Table 11 script),
+ARCH-1/2/3, PHYS-5, REPRO-2, REPRO-4 remainder (Ulrich bend law), §10, M1–M14.
+Gobby validator still runs at default `visibility=1.0`; its short-range floor
+now has a physically attributable knob (V ≈ 0.934 → 3.3 %) if the replication
+target is the Gobby floor.
+
+---
+
 ## 2026-08-06 — Audit fixes: quasi-static fibre, impairment separation, physics corrections
 
 ### Session: ROOT-1 + impairment separation + PHYS-1/2/3/4/6/7 + PERF-1

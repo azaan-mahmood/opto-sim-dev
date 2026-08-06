@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
-from src.channel.fiber import propagate, apply_pmd, apply_birefringence
+from src.channel.fiber import (propagate, apply_pmd, apply_birefringence,
+                               bend_birefringence, FiberRealization)
 
 
 @pytest.fixture
@@ -176,6 +177,232 @@ class TestBirefringenceDepolarization:
             )
 
 
+class TestUlrichBendLaw:
+    """REPRO-4 fix #1: the bend-induced birefringence must match Ulrich's
+    published law Delta_n_bend = 0.135 * (r_fiber / R)^2 (Ulrich,
+    Rashleigh & Eickhoff, Opt. Lett. 5(6), 1980, Eq. 1 — ref [7] in
+    fiber.py). Tested both as a pure formula unit and end-to-end through
+    the sectional Jones matrix, where the bend term must appear in the
+    section retardance.
+    """
+
+    R_FIBER = 62.5e-6   # SMF-28 cladding radius used across the codebase
+
+    def test_bend_birefringence_matches_published_law(self):
+        """Exact match against 0.135*(r/R)^2 across a bend-radius sweep
+        (stated tolerance: rtol = 1e-12)."""
+        radii = np.array([0.002, 0.003, 0.005, 0.01, 0.02, 0.05, 0.1])
+        expected = 0.135 * (self.R_FIBER / radii) ** 2
+        measured = np.array([bend_birefringence(R) for R in radii])
+        assert np.allclose(measured, expected, rtol=1e-12)
+
+    def test_bend_birefringence_reference_case(self):
+        """2 mm bend on SMF-28: Delta_n_bend ~ 1.32e-4 (the canonical
+        tight-bend value used in the validation figure)."""
+        assert np.isclose(bend_birefringence(2e-3), 0.135 * (62.5e-6 / 2e-3) ** 2,
+                          rtol=1e-12)
+
+    def test_bend_birefringence_custom_fiber_radius(self):
+        """r_fiber is a parameter, not a hardcoded constant."""
+        assert np.isclose(bend_birefringence(5e-3, r_fiber=125e-6),
+                          0.135 * (125e-6 / 5e-3) ** 2, rtol=1e-12)
+
+    @staticmethod
+    def _section_jones(bend_radius, length_m=50.0, seed=1234):
+        """Full 2x2 Jones matrix of a single-section fibre (L < L_c, so
+        N = 1), via the public API only (FiberRealization.apply with the
+        two orthogonal basis inputs)."""
+        fr = FiberRealization(length_m, wavelength=1550e-9, temperature=25,
+                              bend_radius=bend_radius,
+                              model='sectional', attenuation=False, seed=seed)
+        E_h = np.array([[1.0, 0.0]], dtype=complex)
+        E_v = np.array([[0.0, 1.0]], dtype=complex)
+        U = np.stack([fr.apply(E_h)[0], fr.apply(E_v)[0]], axis=1)
+        return U
+
+    @pytest.mark.parametrize("R_mm, rtol", [
+        (6, 0.05), (8, 0.05), (10, 0.05), (15, 0.08), (30, 0.12), (60, 0.18),
+    ])
+    def test_bend_law_flows_through_sectional_jones(self, R_mm, rtol):
+        """Recover Delta_n_bend from the single-section retardance
+        delta = pi * |Delta_n| * L / lambda (eigenphase of the SU(2)
+        matrix, axis-independent) and compare against Ulrich's law.
+        The fibre length is scaled to each radius so the retardance is
+        exactly pi/2 — an SU(2) matrix only carries retardance mod 2*pi,
+        so an unwrapped comparison needs delta < pi. Tolerance absorbs
+        the model's 10 % stochastic residual on the base birefringence."""
+        wavelength = 1550e-9
+        base_dn = 5.0e-8     # Agrawal [6] Sec 4.1 nominal, 25 C (no temp term)
+
+        dn_bend_expected = bend_birefringence(R_mm * 1e-3)
+        L_m = 0.5 * wavelength / (base_dn + dn_bend_expected)  # half = pi/2
+        assert L_m < 50.0, "length must stay within one correlation cell"
+
+        U = self._section_jones(R_mm * 1e-3, length_m=L_m)
+        delta = np.abs(np.angle(np.linalg.eigvals(U)[0]))
+        assert 0 < delta <= np.pi / 2 + 1e-9, "retardance must be unwrapped"
+
+        dn_measured = delta * wavelength / (np.pi * L_m)
+        dn_bend_measured = dn_measured - base_dn
+        assert np.isclose(dn_bend_measured, dn_bend_expected, rtol=rtol), (
+            f"R = {R_mm} mm: measured Delta_n_bend = {dn_bend_measured:.3e}, "
+            f"Ulrich law = {dn_bend_expected:.3e}"
+        )
+
+    def test_bend_radius_changes_jones_matrix(self):
+        """No-bend vs 6 mm-bend single-section fibres must differ."""
+        U_flat = self._section_jones(None)
+        U_bent = self._section_jones(6e-3)
+        assert not np.allclose(U_flat, U_bent, atol=1e-6)
+
+
+class TestBirefringenceSelfConsistency:
+    """REPRO-4 fix #2: the 13 self-consistency checks formerly living in
+    analysis/validation/validate_birefringence.py moved into the test
+    suite, where they belong. They are internal invariants of the two
+    birefringence models (not literature comparisons — those live in
+    TestBirefringenceDepolarization and TestUlrichBendLaw)."""
+
+    WAVELENGTH = 1550e-9
+
+    @staticmethod
+    def _field(n=1000):
+        return np.random.randn(n, 2) + 1j * np.random.randn(n, 2)
+
+    def test_power_conservation_sectional(self):
+        E = self._field()
+        P_in = np.mean(np.abs(E) ** 2)
+        for L_m in [1, 10, 100, 1000]:
+            E_out = apply_birefringence(E.copy(), L_m, wavelength=self.WAVELENGTH,
+                                        model='sectional')
+            P_out = np.mean(np.abs(E_out) ** 2)
+            assert abs(P_out - P_in) / P_in < 1e-12
+
+    def test_temperature_dependence_sectional(self):
+        E = np.ones((100, 2), dtype=complex)
+        np.random.seed(43)
+        Js = [apply_birefringence(E.copy(), 1000, wavelength=self.WAVELENGTH,
+                                  temperature=T, model='sectional')[0, 0]
+              for T in [0, 25, 50]]
+        assert not np.allclose(Js[0], Js[1])
+
+    def test_wavelength_dependence_sectional(self):
+        E = np.ones((100, 2), dtype=complex)
+        np.random.seed(44)
+        Js = [apply_birefringence(E.copy(), 1000, wavelength=lam,
+                                  model='sectional')[0, 0]
+              for lam in [1310e-9, 1550e-9]]
+        assert not np.allclose(Js[0], Js[1])
+
+    def test_seed_dependence_sectional(self):
+        E = np.ones((100, 2), dtype=complex)
+        np.random.seed(42)
+        J1 = apply_birefringence(E.copy(), 100, wavelength=self.WAVELENGTH,
+                                 model='sectional')[0, 0]
+        np.random.seed(142)
+        J2 = apply_birefringence(E.copy(), 100, wavelength=self.WAVELENGTH,
+                                 model='sectional')[0, 0]
+        assert not np.allclose(J1, J2)
+
+    def test_output_variation_sectional(self):
+        E = np.array([[1.0, 0.0]], dtype=complex)
+        np.random.seed(42)
+        outputs = [apply_birefringence(E.copy(), 1500, wavelength=self.WAVELENGTH,
+                                       model='sectional')[0] for _ in range(50)]
+        ex_powers = [np.abs(o[0]) ** 2 for o in outputs]
+        assert np.allclose([np.abs(o[0]) ** 2 + np.abs(o[1]) ** 2
+                            for o in outputs], 1.0, atol=1e-12)
+        assert np.std(ex_powers) > 0.05
+
+    def test_power_conservation_long_distance_sectional(self):
+        """The multi-section model must conserve power at long distances
+        (former phenomenological regime; 5th-pass PHYS-5 — the model was
+        removed, sectional serves all lengths)."""
+        E = self._field()
+        P_in = np.mean(np.abs(E) ** 2)
+        for L_m in [5000, 50000, 100000]:
+            E_out = apply_birefringence(E.copy(), L_m, wavelength=self.WAVELENGTH,
+                                        model='sectional')
+            P_out = np.mean(np.abs(E_out) ** 2)
+            assert abs(P_out - P_in) / P_in < 1e-12
+
+    def test_zero_length_identity(self):
+        E = self._field(100)
+        E_out = apply_birefringence(E.copy(), 0, wavelength=self.WAVELENGTH)
+        assert np.allclose(E_out, E)
+
+    def test_temperature_dependence_long_distance_sectional(self):
+        E = np.ones((100, 2), dtype=complex)
+        np.random.seed(45)
+        Js = [apply_birefringence(E.copy(), 50000, wavelength=self.WAVELENGTH,
+                                  temperature=T, model='sectional')[0, 0]
+              for T in [0, 25, 50]]
+        assert not np.allclose(Js[0], Js[1])
+
+    def test_wavelength_dependence_long_distance_sectional(self):
+        E = np.ones((100, 2), dtype=complex)
+        np.random.seed(46)
+        Js = [apply_birefringence(E.copy(), 50000, wavelength=lam,
+                                  model='sectional')[0, 0]
+              for lam in [1310e-9, 1550e-9]]
+        assert not np.allclose(Js[0], Js[1])
+
+    def test_seed_dependence_long_distance_sectional(self):
+        E = np.ones((100, 2), dtype=complex)
+        np.random.seed(42)
+        J1 = apply_birefringence(E.copy(), 50000, wavelength=self.WAVELENGTH,
+                                 model='sectional')[0, 0]
+        np.random.seed(142)
+        J2 = apply_birefringence(E.copy(), 50000, wavelength=self.WAVELENGTH,
+                                 model='sectional')[0, 0]
+        assert not np.allclose(J1, J2)
+
+    def test_output_variation_long_distance_sectional(self):
+        """At 100 km the multi-section model is fully scrambled (uniform
+        SU(2) per realization), so a fresh draw must vary the output
+        strongly."""
+        E = np.array([[1.0, 0.0]], dtype=complex)
+        np.random.seed(42)
+        outputs = [apply_birefringence(E.copy(), 100e3, wavelength=self.WAVELENGTH,
+                                       model='sectional')[0]
+                   for _ in range(50)]
+        ex_powers = [np.abs(o[0]) ** 2 for o in outputs]
+        assert np.std(ex_powers) > 0.05
+
+    def test_auto_equals_sectional_at_all_lengths(self):
+        """'auto' and 'sectional' are the same model at every length
+        (5th-pass PHYS-5: the phenomenological model was removed)."""
+        E = np.ones((10, 2), dtype=complex)
+        for L_m in [100, 100000, 122000]:
+            np.random.seed(52)
+            out_auto = apply_birefringence(E.copy(), L_m,
+                                           wavelength=self.WAVELENGTH,
+                                           model='auto')
+            np.random.seed(52)
+            out_sec = apply_birefringence(E.copy(), L_m,
+                                          wavelength=self.WAVELENGTH,
+                                          model='sectional')
+            assert np.allclose(out_auto, out_sec), \
+                f"auto should equal sectional at L={L_m} m"
+
+    def test_phenomenological_model_removed_raises(self):
+        """The phenomenological model was deleted (PHYS-5, 5th pass); its
+        name must fail loudly rather than silently dispatch."""
+        E = np.ones((10, 2), dtype=complex)
+        for L_m in [100, 50000]:
+            with pytest.raises(ValueError):
+                apply_birefringence(E.copy(), L_m, wavelength=self.WAVELENGTH,
+                                    model='phenomenological')
+        with pytest.raises(ValueError):
+            FiberRealization(L_m=50000, model='phenomenological')
+
+    def test_enabled_false_returns_unchanged(self):
+        E = self._field(100)
+        E_out = apply_birefringence(E.copy(), 10000, wavelength=self.WAVELENGTH,
+                                    enabled=False)
+        assert np.allclose(E_out, E)
+
+
 class TestOrderedProductTreeReduction:
     """PERF-1: _ordered_product replaces an O(N) Python loop with an
     O(log N) vectorised pairwise tree reduction. Matrix multiplication is
@@ -197,10 +424,67 @@ class TestOrderedProductTreeReduction:
 
         rng = np.random.default_rng(N)  # vary the seed with N for coverage
         # Random unitary-ish 2x2 complex matrices (need not be physical
-        # Jones matrices — associativity is a property of matrix
+        # Jones matrices �?" associativity is a property of matrix
         # multiplication in general, not specific to SU(2)).
         J = rng.normal(size=(N, 2, 2)) + 1j * rng.normal(size=(N, 2, 2))
 
         expected = self._naive_ordered_product(J)
         actual = _ordered_product(J)
         assert np.allclose(actual, expected, atol=1e-10)
+
+
+class TestBirefringenceMatrixAccessor:
+    """FiberRealization.birefringence_matrix() — the quasi-static Jones
+    matrix, exposed for receiver-side polarization compensation."""
+
+    def test_returns_unitary_matrix(self):
+        fibre = FiberRealization(L_m=50_000, cd=False, pmd=False,
+                                 attenuation=False, seed=7)
+        J = fibre.birefringence_matrix()
+        assert J is not None
+        assert J.shape == (2, 2)
+        # SU(2): J^dagger @ J = I to float precision
+        np.testing.assert_allclose(J.conj().T @ J, np.eye(2), atol=1e-10)
+
+    def test_matches_apply_with_other_impairments_off(self):
+        """With CD/PMD/attenuation disabled, apply() must equal J @ E."""
+        fibre = FiberRealization(L_m=50_000, cd=False, pmd=False,
+                                 attenuation=False, seed=7)
+        J = fibre.birefringence_matrix()
+        rng = np.random.default_rng(3)
+        E = rng.normal(size=(5, 2)) + 1j * rng.normal(size=(5, 2))
+        np.testing.assert_allclose(
+            fibre.apply(E),
+            np.transpose(J @ np.transpose(E)),
+            rtol=1e-12, atol=1e-14,
+        )
+
+    def test_compensation_roundtrip_recovers_field(self):
+        """Applying J^dagger after J must restore the input exactly —
+        the basis of active polarization compensation (Duplinskiy et
+        al. 2017 calibration loop)."""
+        fibre = FiberRealization(L_m=50_000, cd=False, pmd=False,
+                                 attenuation=False, seed=7)
+        J = fibre.birefringence_matrix()
+        Jinv = J.conj().T
+        rng = np.random.default_rng(3)
+        E = rng.normal(size=(5, 2)) + 1j * rng.normal(size=(5, 2))
+        E_fibre = np.transpose(J @ np.transpose(E))
+        E_back = np.transpose(Jinv @ np.transpose(E_fibre))
+        np.testing.assert_allclose(E_back, E, rtol=1e-10, atol=1e-12)
+
+    def test_returns_none_when_birefringence_disabled(self):
+        fibre = FiberRealization(L_m=50_000, birefringence=False, seed=7)
+        assert fibre.birefringence_matrix() is None
+
+    def test_quasi_static_same_matrix_every_call(self):
+        """The matrix must not change between apply() calls."""
+        fibre = FiberRealization(L_m=50_000, cd=False, pmd=False,
+                                 attenuation=False, seed=7)
+        J1 = fibre.birefringence_matrix()
+        rng = np.random.default_rng(3)
+        E = rng.normal(size=(3, 2)) + 1j * rng.normal(size=(3, 2))
+        for _ in range(5):
+            fibre.apply(E)
+        J2 = fibre.birefringence_matrix()
+        np.testing.assert_array_equal(J1, J2)

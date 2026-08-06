@@ -25,11 +25,11 @@
 
 ## Summary
 - **Time-bin phase-encoding BB84 implemented**: pulsed laser, AsymmetricMZI, time-bin protocol, Gobby replication validation
-- **77 tests all pass** (48 original + 8 pulsed laser + 21 AMZI)
+- **203 tests all pass**
 - **Gobby 2004 replication**: 0 km QBER = 3.19% (paper: ~3.3%) — excellent baseline match
 - **Manuscript updated**: 28 pages, 7 validated components, 38 references — new AsymmetricMZI, SPAD, time-bin BB84 validation sections
 - **New files**: `src/channel/interferometer.py`, `src/protocols/bb84_time_bin.py`, `tests/test_interferometer.py`, `analysis/val_gobby/validate_gobby.py`
-- **Performance**: ~2600 pulses/s on 3rd Gen i5 — 2.5M pulses in ~16 min, 25M pulses in ~2.7h
+- **Performance**: ~2600 pulses/s on 3rd Gen i5 — 2.5M pulses in ~16 min, 25M pulses in ~2.7h (pre-PERF-2); after PERF-2 (7th pass): ~10 µs/pulse, a 10M-pulse point ≈ 1.7 min
 - **Next**: Long-distance statistics need more pulses; consider increasing mu or using batched simulation for speed
 
 ## Goal
@@ -63,10 +63,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `propagate()` no longer takes `pin` or returns `pout`
 - Signal impairments applied in order: birefringence → chromatic dispersion → PMD → attenuation
 - **Attenuation**: `E *= sqrt(10^(-α·L/10))` (Keiser [1] Eq 3.6), default 0.182 dB/km (SMF-28 at 1550 nm)
-- **Birefringence**: Hybrid dual-model dispatch (automatic based on fibre length):
-  - **Short fibres** (L < `SECTIONAL_LIMIT` = 2 km, `model='sectional'`): Multi-section ordered product of random-axis SU(2) matrices. `N = round(L / section_length)` sections, each with independent random axis and phase `Δβ·Δz = 2π·|Δn|·Δz/λ`. Physically correct beat length (L_B ≈ 31 m, Δn₀ = 5×10⁻⁸) with temperature (`T_coeff = -3×10⁻⁹/°C`) and bend (Ulrich [7]) modulation, stochastic residual, and clamping. Suitable for DV-QKD and DPS QKD. Performance scales as O(N) — fast at default section_length=100 m.
-  - **Long fibres** (L >= 2 km, `model='phenomenological'`): Single SU(2) rotation with angle `θ = min(π, √(L/L_char)·π/2)` (Menyuk & Wai 1994). `L_char = L₀·(Δn₀/|Δn|)²` with L₀ = 75 km, Δn₀ = 0.87×10⁻⁵, `T_coeff = -5×10⁻⁷/°C`. Produces gradual distance-dependent QBER for long-haul BB84. Switched automatically because the multi-section model converges to uniform SU(2) within ~1 km regardless of parameters.
-  - Dispatch: `apply_birefringence(model='auto')` or `propagate(model='auto')`; override with `'sectional'` or `'phenomenological'`. `SECTIONAL_LIMIT = 2000 m`.
+- **Birefringence**: single multi-section model at all lengths (the former phenomenological model was deleted in the 5th pass, PHYS-5): ordered product of random-axis SU(2) matrices. `N = round(L / section_length)` sections, each with independent random axis and phase `Δβ·Δz = 2π·|Δn|·Δz/λ`. Physically correct beat length (L_B ≈ 31 m, Δn₀ = 5×10⁻⁸) with temperature (`T_coeff = -3×10⁻⁹/°C`) and bend (Ulrich [7]) modulation, stochastic residual, and clamping. Quasi-static: `FiberRealization` draws the matrix once per fibre. Performance scales as O(N) via pairwise tree reduction — ~0.16 ms/apply at 122 km (N = 2440).
 - **Chromatic dispersion** (disabled by default): FFT-based, `H(Ω) = exp(-j·β₂·Ω²·L/2)` applied to both Ex and Ey (Agrawal [6] Eq 2.4.11). Requires `dt` (sampling interval) and assumes the field is the complex envelope.
 - **PMD** (disabled by default): Frequency-domain DGD with Maxwellian-distributed differential group delay (Razavi [5]). Applied alongside CD.
 - Parameters: `fiber_length (km)`, `E`, `dt` (required for cd/pmd), `wavelength`. Impairments independently toggled: `birefringence`, `cd`, `pmd`, `attenuation` (all bool, defaults True/None/None/True). Legacy `dispersion` flag sets both `cd` and `pmd` when not explicitly provided. `attenuation_factor`, `temperature`, `bend_radius`, `pm_dispersion`, `section_length`, `model`.
@@ -109,26 +106,23 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - Also removed `caption` package (was only needed for `\captionof`, no longer used).
 - `journal_paper_outline.pdf` now compiles at 13 pages with xelatex.
 
-### Fiber Birefringence — Hybrid dispatch
-- Two models:
-  - **Sectional** (L < 2 km): first-principles multi-section, L_B ≈ 31 m (Agrawal §4.1)
-  - **Phenomenological** (L >= 2 km): `θ = min(π, √(L/L_char)·π/2)`, L₀ = 75 km
-- Auto-dispatch via `model='auto'`; override with `model='sectional'` or `'phenomenological'`
-- Old symmetric Jones matrix `diag(exp(±j·Δβ·L/2))` superseded (retained in git history)
-- Bend model `Δn_bend = 0.135·(r_fiber/R)²` (Ulrich [7]) shared by both models
+### Fiber Birefringence — single multi-section model (PHYS-5)
+- One model at all lengths: multi-section ordered product of random-axis SU(2) matrices, L_B ≈ 31 m (Agrawal §4.1), L_c = 50 m default (Menyuk & Wai [10])
+- `model='auto'` ≡ `model='sectional'`; `model='phenomenological'` raises ValueError (removed 5th pass — fitted `θ = min(π, √(L/L_char)·π/2)`, L₀ = 75 km, Δn₀ = 0.87e-5 had no literature backing and no speed advantage; 0.16 ms/apply at 122 km)
+- Ensemble mean polarization saturates to uniform SU(2) within ~1 correlation cell (per-section retardance δ ≈ 10 rad wraps mod 2π)
 
 ### Gobby Validation (Time-bin BB84)
 - `analysis/val_gobby/validate_gobby.py` runs QBER vs distance (0–122 km, 9 points)
 - Default 200k pulses per point; 10M pulses needed >80 km for statistical significance
-- 10M-pulse results: 0 km QBER = 2.43% (paper ~3.3%), 122 km QBER = 4.55% (paper 8.9%)
-- Systematic offset vs paper attributed to uncharacterised environmental noise in Gobby's lab
+- `--visibility` CLI (default **0.934**, OPEN-1/7th pass): `e_opt = (1−V)/2 = 3.3%` — Gobby's stated short-range floor; `1.0` = perfect-decoder control. V=0.934, zero noise → 3.36% at 0 km; V=0.934 at 122 km → 8.33% vs paper 8.9%
+- 10M-pulse results (pre-OPEN-1, V=1.0): 0 km QBER = 2.43% (paper ~3.3%), 122 km QBER = 4.55% (paper 8.9%); systematic offset vs paper attributed to uncharacterised environmental noise — superseded by the V=0.934 regeneration (OPEN-2)
 - Analytical model: QBER(L) = (P_dark/2)/(μ·η·10^{-αL/10} + P_dark) + QBER_opt
 
 ### BB84 Scripts
-- `bb84_ideal.py` / `bb84_high_bitrate.py`: use CWLaser → `sample_field()` → polarizer → phase modulator → propagate (dispersion flag) → PBS → APD
+- `examples/bb84_ideal.py` / `examples/bb84_high_bitrate.py` (legacy demos, moved to `src/protocols/examples/`): use CWLaser → `sample_field()` → polarizer → phase modulator → propagate (dispersion flag) → PBS → APD
 - Both accept `--dispersion` CLI flag (default False for backward compatibility in ideal/bitrate scripts)
 - `bb84_test_dispersion.py`: MZM-carved Gaussian pulses (5–30 ps σ) for broadband field generation; dispersion=True by default
-- `bb84_duplinskiy.py`: SPAD-based BB84 example (Duplinskiy et al. 2017). 0 km back-to-back QBER validates SPAD + PM + PBS chain (2.6% vs paper ~2%).
+- `bb84_duplinskiy.py`: SPAD-based BB84 example (Duplinskiy et al. 2017). Polarization compensation (inverse J, default ON; `--no-compensation` to disable). 50 km: 0.98% vs paper ~2%; uncompensated control: 25.9%.
 - QBER with CW laser (1 MHz linewidth) is 0% regardless of dispersion flag — near-monochromatic field is CD/PMD-agnostic
 - QBER with 5 ps MZM-carved pulses + dispersion at 100 km: **15.0 %** (z/LD ≈ 87, PMD >> pulse width)
 
@@ -138,7 +132,7 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `analysis/val_att/val_att--seed42.png`: Attenuation vs distance SMF-28 (0.0000% error)
 - `analysis/val_biref/val_biref--seed42.png`: Birefringence L_B vs R (Yuan Fig 1) [old model]
 - `analysis/val_birefringence/val_birefringence--seed42.png`: Random-axis birefringence validation (6 panels)
-- `val_system/val_system--seed42.png`: System-level demo: QBER vs distance 0–1000 km, 250 MHz bit rate
+- `val_system/val_system--seed42.png`: System-level time-bin BB84 demo (ARCH-1 rebuild): QBER vs distance/pulse width/visibility/μ/DCR, SPAD path
 
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
 - `analysis/qber_vs_bitrate.png`: 0% at 215 MHz → 35% at 10 GHz
@@ -156,13 +150,17 @@ python -m pytest tests/ -v --seed=123         # custom RNG seed
 python -m pytest tests/test_cwlaser.py -v     # single file
 ```
 
-### Current coverage (77 tests, all passing)
+### Current coverage (203 tests, all passing)
 | File | Tests | What they check |
 |---|---|---|
-| `tests/test_cwlaser.py` | 11 | Power convention, `sample_field` shape, phase noise scaling, polarisation vector, seeded reproducibility, `instantaneous_field` shapes, `power_out`, zero-linewidth edge case, RIN scaling |
-| `tests/test_mzm.py` | 13 | `V_pi` derivation, null/peak transmission, quadrature bias, transfer symmetry, push-pull vs single-drive, mode validation, X-cut vs Y-cut `V_pi`, array modulation, insertion loss, crystal-cut component selection |
-| `tests/test_fiber.py` | 10 | Attenuation formula and distance scaling, birefringence unitarity and phase shift, temperature sensitivity, dispersion `dt` requirement and power conservation, output shape, zero-length edge case, wavelength dependence, seeded reproducibility |
 | `tests/test_apd.py` | 11 | Responsivity formula, signal current scaling, zero-power, bandwidth scaling of shot noise, thermal noise floor, `output()` return type and details dict, `detect_photons` edge cases, DCR formula, seeded reproducibility |
+| `tests/test_cwlaser.py` | 20 | Power convention, `sample_field` shape, phase noise scaling, polarisation vector, seeded reproducibility, `instantaneous_field` shapes, `power_out`, zero-linewidth edge case, RIN scaling |
+| `tests/test_fiber.py` | 52 | Attenuation formula and distance scaling, birefringence (unitarity, phase shift, Ulrich bend law, 13 self-consistency checks, matrix accessor), temperature sensitivity, dispersion `dt` requirement and power conservation, output shape, zero-length edge case, wavelength dependence, seeded reproducibility |
+| `tests/test_interferometer.py` | 29 | AMZI delay/phase response, visibility, polarisation behaviour, power conservation |
+| `tests/test_mzm.py` | 13 | `V_pi` derivation, null/peak transmission, quadrature bias, transfer symmetry, push-pull vs single-drive, mode validation, X-cut vs Y-cut `V_pi`, array modulation, insertion loss, crystal-cut component selection |
+| `tests/test_optics.py` | 36 | VOA attenuation, polariser/rotator/WP behaviour, beam-splitter power balance |
+| `tests/test_phase_modulator.py` | 20 | Phase response, Vπ convention, `sample_field` shapes |
+| `tests/test_spad.py` | 20 | Dead time, DCR, afterpulsing, gated detection, ID230 specs |
 | `tests/conftest.py` | — | Auto-seeds `random` and `np.random` at configured start; `--seed` CLI option (default 42); `rng_seed` fixture |
 
 ### Seed convention
@@ -197,17 +195,22 @@ opto-sim-dev/
 │   ├── val_birefringence/     # Random-axis birefringence validation (6-panel)
 │   ├── val_mzm/               # MZM validation outputs
 
-│   ├── val_system.py          # System-level demo
+│   ├── val_system.py          # System-level time-bin BB84 demo (SPAD path)
+│   ├── val_system_scenarios.py  # Impairment-table generator (BLOCK-2, CSV+TeX)
 │   ├── laser_characterization.py   # Active: CWLaser dashboard (Agg, headless)
 │   ├── qber_vs_distance_dispersion.py  # Dispersion QBER sweep
 │   ├── *.png
 │   └── *.tex / *.pdf
-├── tests/                     # pytest suite (48 tests)
+├── tests/                     # pytest suite (203 tests)
 │   ├── conftest.py            # --seed CLI, auto-seed at session start
 │   ├── test_apd.py
 │   ├── test_cwlaser.py
 │   ├── test_fiber.py
-│   └── test_mzm.py
+│   ├── test_interferometer.py
+│   ├── test_mzm.py
+│   ├── test_optics.py
+│   ├── test_phase_modulator.py
+│   └── test_spad.py
 ├── src/
 │   ├── lasers/
 │   │   ├── __init__.py        # Exports: CWLaser
@@ -233,10 +236,12 @@ opto-sim-dev/
 │   │   └── stokes.py
 │   ├── protocols/
 │   │   ├── __init__.py
-│   │   ├── bb84_ideal.py           # CW laser, optional dispersion
-│   │   ├── bb84_high_bitrate.py    # Bitrate-sweep variant
+│   │   ├── bb84_time_bin.py        # Time-bin phase-encoding BB84 (active)
 │   │   ├── bb84_test_dispersion.py # MZM-carved pulses, dispersion=on by default
-│   │   └── bb84_duplinskiy.py      # Duplinskiy et al. replication (SPAD, VOA)
+│   │   ├── bb84_duplinskiy.py      # Duplinskiy et al. replication (SPAD, VOA)
+│   │   └── examples/
+│   │       ├── bb84_ideal.py       # Legacy CW-based BB84 demo
+│   │       └── bb84_high_bitrate.py# Legacy bitrate-sweep variant
 │   └── common/                # README images only
 ├── research_roadmap.md
 ├── AGENTS.md
@@ -250,6 +255,22 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `src/protocols/bb84_time_bin.py` | PERF-2 (7th pass): 8-outcome gate-power table built once per point (12 `modulate` calls), per-pulse loop = lookup + SPAD MC; bitwise-equal to the old chain, ~40× faster (~10 µs/pulse) |
+| `analysis/val_gobby/validate_gobby.py` | OPEN-1 (7th pass): `VISIBILITY = 0.934` (cited to Gobby's 3.3 % floor) actually passed to `simulate_bb84_time_bin`; `--visibility` CLI flag; V=0.934+no-noise → 3.36 % at 0 km |
+| `analysis/val_system_scenarios.py` | BLOCK-2 (6th pass): NEW impairment-table generator — 8 explicit configs @ 100 km, recorded seed, CSV + `.tex` with script/seed/commit in caption; `simulate_point()` gained independent birefringence/attenuation/cd/pmd toggles |
+| `src/channel/fiber.py` | PHYS-5 (5th pass): phenomenological model deleted (`_build_jones_phenomenological`, `_apply_birefringence_phenomenological`, dead `_random_su2_rotation*`); `SECTIONAL_LIMIT` removed; `model='auto'` ≡ `'sectional'` at all lengths; `'phenomenological'` raises ValueError |
+| `analysis/validation/validate_birefringence.py` | Panels B–D rewritten on the single multi-section model: long-distance ensemble plateau (uniform SU(2) within ~200 m), temperature & bend sensitivity at 2 m (single correlation cell, visible δ(T)/δ(R)) |
+| `tests/test_fiber.py` | 5 phenomenological tests → long-distance sectional (power at 100 km, T/λ/seed dependence, output variation); dispatch test → `auto ≡ sectional at all lengths` + `phenomenological raises` |
+| `src/protocols/bb84_duplinskiy.py` | PHYS-5: `--birefringence-model` choices reduced to auto/sectional. Bug fix: `compensate` flag now actually disables compensation (was a silent no-op) |
+| `tests/test_protocols.py` | NEW: compensation-flag regression (uncompensated QBER 49.6% vs compensated 1.5% @10 km μ=2) |
+| `analysis/val_system.py` | ARCH-1: full rebuild on time-bin SPAD chain (CWLaser→MZM carve→encoder AMZI→fiber→decoder AMZI→2×SPAD); linearity shortcut (~5 s/point); panels A distance, B pulse σ, C visibility, D μ, E DCR; floor ≈ 6.4% @75 km (V 3.3% + jitter 0.8% + afterpulse 1.5% + double-click 0.5%) |
+| `src/channel/fiber.py` | ARCH-3: `FiberRealization.birefringence_matrix()` accessor (copy of quasi-static J, None if disabled) |
+| `src/protocols/bb84_duplinskiy.py` | ARCH-3: polarization compensation via inverse J (default ON, `--no-compensation` control); 50 km QBER 0.98% (1M) vs paper ~2% |
+| `tests/test_fiber.py` | +5 `TestBirefringenceMatrixAccessor` tests (unitarity, match-apply, roundtrip, disabled→None, quasi-static) |
+| `val_system/val_system--seed42.png` | ARCH-1 figure regenerated: 2×3 grid (panels A–E + notes), 1M pulses/point |
+| `opto-sim-issues-and-fixes.md` | Section 13: ARCH-1 (SPAD rebuild) + ARCH-3 (compensation) resolved |
+| `CHANGELOG.md` | Fourth pass: ARCH-1/ARCH-3 entry |
+| `README.md` | Third pass: fixed Gobby path, counts, exact invocation table |
 | `analysis/val_gobby/val_gobby--seed42.png` | Regenerated with 10M pulses (was 200k). Clean curve beyond 80 km. |
 | `analysis/val_gobby/validate_gobby.py` | Run with 10M pulses — numbers updated in manuscript. |
 | `paperwork/tables/val_gobby_table.tex` | Updated with 10M-pulse results (23546 → 154 sifted bits, 2.43% → 4.55% QBER). |
