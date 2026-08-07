@@ -120,9 +120,14 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     start_i = max(0, interference_idx - gate_half_samples)
     end_i = min(n_samples, interference_idx + gate_half_samples + 1)
 
-    alice_bits, alice_bases = [], []
-    bob_bits, bob_bases = [], []
-    has_click = []
+    # Sifting is accumulated inline rather than into per-pulse lists.  The
+    # lists were O(num_bits) in memory (five of them), which is fine at the
+    # 1e6-pulse runs this was written for but reaches several GB at the
+    # ~1e8 pulses a target-sifted sweep needs at 122 km.  Counting inline
+    # is O(1) and touches no RNG draw, so results are bit-identical.
+    n_sifted = 0
+    n_errors = 0
+    n_clicks = 0
 
     # --- Precompute the 8 distinct field-chain outcomes (PERF-2) ---
     # The channel is scalar attenuation and the AMZIs are linear and
@@ -175,23 +180,17 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         else:
             bob_bit = -1  # no click — discard
 
-        alice_bits.append(alice_bit)
-        alice_bases.append(alice_basis)
-        bob_bits.append(bob_bit)
-        bob_bases.append(bob_basis)
-        has_click.append(click_c or click_d)
+        # --- Sifting: same basis AND a click ---
+        if click_c or click_d:
+            n_clicks += 1
+            if alice_basis == bob_basis:
+                n_sifted += 1
+                if alice_bit != bob_bit:
+                    n_errors += 1
 
         if verbose and (pulse_idx + 1) % max(1, num_bits // 10) == 0:
             print(f"  Pulse {pulse_idx+1}/{num_bits}", flush=True)
 
-    # --- Sifting ---
-    sifted_indices = [i for i in range(num_bits)
-                      if alice_bases[i] == bob_bases[i] and has_click[i]]
-    sifted_alice = [alice_bits[i] for i in sifted_indices]
-    sifted_bob = [bob_bits[i] for i in sifted_indices]
-
-    n_sifted = len(sifted_alice)
-    n_errors = sum(a != b for a, b in zip(sifted_alice, sifted_bob))
     qber = n_errors / n_sifted if n_sifted > 0 else 0.0
 
     fiber_loss_dB = alpha_dB * fiber_length
@@ -209,7 +208,6 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     }
 
     if verbose:
-        n_clicks = sum(has_click)
         print(f"\nTime-bin BB84 — {fiber_length} km")
         print(f"  Fibre loss: {fiber_loss_dB:.1f} dB")
         print(f"  Mu: {mu} photons/pulse")

@@ -4,6 +4,52 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-06 — Gobby replication measured and diagnosed; statistical-power tooling
+
+### Session: OPEN-2/OPEN-3 full-power runs, V/DCR refit, analytic-model fix, two memory bugs
+
+The headline: the 122 km Gobby point was **5.30 %**, not the 8.33 % a
+12-sifted-bit run had reported, and the simulated curve was **flat**.
+After diagnosis and refitting, the chain reproduces Gobby across 122 km to
+a mean residual of **0.36 pp**.
+
+| Change | Files | Rationale |
+|---|---|---|
+| `--target-sifted N` budgeting | `analysis/val_gobby/validate_gobby.py`, `analysis/val_system_scenarios.py` | The sifted fraction spans 164× across the Gobby sweep (2.3e-3 at 0 km to 1.4e-5 at 122 km), so a flat pulse budget starves the only end anyone scrutinises. Flat 10M leaves 122 km at σ = 2.34 pp against a 3.78 pp effect — 1.6σ, unable to settle anything. Pilots the sifted rate, scales, retries on undershoot. Measured 288k pulses at 0 km vs 4.45M at 65 km for matched 0.85 pp error bars. |
+| Write guard | both scripts | `check_statistical_power()` runs **before any file is written** and raises with an actionable message. Caught the documented pathologies exactly: Gobby at 20k pulses (*"122 km: 0 sifted"*), scenarios at 60k (*"+ CD: 4 sifted; + PMD: 4 sifted"* — four rows identical because they held the same single error). `--allow-underpowered` for smoke runs. |
+| **Two O(N) memory bugs** | `analysis/val_system.py`, `src/protocols/bb84_time_bin.py` | Both accumulated five per-pulse Python lists then sifted afterwards — multiple GB at the ~1e8 pulses `--target-sifted` needs. **This killed the first scenario sweep** (observed at 2.1 GB, climbing). Now sifted inline with counters, O(1). No RNG draw touched; **bit-identical**, verified at four configurations each. |
+| Targeting knife-edge | both scripts | `--target-sifted 3000` defaulted `--min-sifted` to the same 3000, and a one-shot pilot extrapolation undershoots ~half the time. An 8-row sweep completed *and* passed its code-path check, then was rejected at the final write for landing at 2422–2668 — an hour discarded for a 20 % miss. Retry with `1.15 + 3/√n` headroom; `MIN_SIFTED` now below target. |
+| **`model_qber()` rewritten** | `analysis/val_gobby/validate_gobby.py` | Disagreed with the Monte Carlo by ~3× on the dark term (ratios 2.5–3.6), and both were plotted in the same figure as if they agreed. Three defects: counted one detector's dark rate when both dark-count; halved the dark error term that should be whole; added misalignment as an unweighted constant rather than a share of clicks. Afterpulsing absent entirely. Replaced with a single weighted ratio; both limits now exact. Mean \|residual\| vs MC: **2.86 → 0.59 pp**. Docstring carries a "do not fit parameters against this function" warning. |
+| CD code-path check | `analysis/val_system_scenarios.py`, `analysis/val_system.py` | `simulate_point` gained a `delay` parameter (`delay=None` bit-identical). At the Gobby 5.8 ns delay CD cannot move QBER at all — CD and the AMZI are both LTI and commute, so CD acts identically on both ports and cannot move the port ratio the bit comes from; bin crosstalk would need z ≈ 5,674 km. Criterion is the **sifted rate**, not the QBER: measured Δ(QBER) ≤ 0.7σ but Δ(sifted) 6–12σ at 191/400/800/1500 km. Reports LIVE at 11.6σ. |
+| `--dcr` exposed | `analysis/val_gobby/validate_gobby.py` | Detector parameters are a *fitted input* to this replication, not a given. |
+
+**Key results:**
+
+- **§16 hypothesis refuted.** 122 km measured 5.30 ± 0.49 % against Gobby's 8.9 % (7.3σ). The old 8.33 % was 1 error in 12 bits and landed near the published value by chance. Simulated slope +0.011 pp/100 km — flat. Visibility is distance-independent, so it could never have created a distance trend.
+- **Two defects, opposite signs, partly cancelling.** (a) V = 0.934 was fitted with noise *off* (3.357 %) then applied with `afterpulse_prob = 0.05`, double-counting the floor — afterpulsing measured in isolation at **2.262 ± 0.176 %**. (b) DCR = 15 Hz is the ID230 spec, a 2020-era part on a 2004 experiment; `P_dark/p_signal = 2.5e-4` even at 122 km, so nothing could produce Gobby's rise.
+- **Refit reproduces Gobby.** V = 0.9792, DCR = 1,788 Hz (bisected against the **MC**, not the analytic model): mean \|residual\| **0.36 pp**, 8 of 9 points within 1.4σ, 122 km at **9.02 ± 0.57 %** vs 8.90 %. The three 122 km values across the session — 5.30, 17.49 (analytic-fitted DCR), 9.02 — bracket the diagnosis. **See the retraction below: this fits, but for the wrong reason.**
+- **Caveats recorded:** two free parameters; 100 km remains a genuine 3.1σ miss at a *measured* Gobby distance.
+- **Scenario nulls now real.** CD, PMD and birefringence rows came out **bit-identical** to attenuation-only (2514 sifted, 74 errors each) versus the original 86 sifted with one shared error, while visibility (6.11 %) and dark counts (13.01 %) move by 6σ and 14σ through the same machinery.
+- 203/203 tests pass.
+
+**Scenario sweep (BLOCK-2 / OPEN-3) completed and emitted.** All 8 rows cleared the target: CD, PMD and birefringence came out **bit-identical to attenuation-only at 3758 sifted bits** (2.93 ± 0.27 %, 110 errors each), while visibility (6.05 %) and dark counts (13.24 %) move by 8σ and 19σ through the same code path. The CD code-path check reports **LIVE at 11.6σ** on the sifted rate. `val_system_scenarios--seed42.{csv,tex}` written.
+
+### Retraction, same session — GOBBY-1
+
+The paper's own parameters were then located, and they **supersede the refit above**. Recorded in full as **GOBBY-1** in `opto-sim-issues-and-fixes.md` (specified, deliberately **not implemented**).
+
+Gobby states **α = 0.2 dB/km**, **η_Bob = 0.045** *(including Bob's 5 dB apparatus loss)*, **gate width 3.5 ns**, **2 MHz**, **80 ps**, and a measured **error probability per clock cycle P_e = 8.5×10⁻⁷** — of which only **3.2×10⁻⁷ is detector dark count**, the remaining **5.3×10⁻⁷ being stray light from the 1.3 µm clock laser**, a source this chain does not model at all.
+
+Against those: our **signal is 3.68× too high** (wrong α, and Bob's 5 dB silently discarded) and our **error rate 57× too low**, making the error/signal ratio at 122 km **209× too small**. That — not missing physics — is why the sweep came out flat.
+
+- **The "119× the ID230 spec" characterisation is withdrawn.** Correcting the signal by its 3.68× error puts the required error rate at 4.85×10⁻⁷ against Gobby's measured 8.5×10⁻⁷ — **within 1.75×**. The fitted 1,788 Hz was never a dark count rate; it was a lumped error term absorbing the missing Bob loss and wrong α. Calling it a DCR was a category error.
+- **Visibility is an output, not an input.** The paper gives `V = S/(S + 2·P_e)` with `S = mu·10^(−αL/10)·η_Bob`. Verified against its own stated values: **99.25 % at 65 km** (paper > 99 %) and **90.58 % at 122 km** (paper 88.4 %). Injecting `visibility=0.934` therefore double-counts the error physics — the same mistake as the V/afterpulsing double-count, one level up. OPEN-1 and the entire §16 visibility hypothesis rest on it.
+- Residual after (1−V)/2 is **2.9–4.2 pp and roughly distance-independent**, matching the paper's acknowledged **third error source** and consistent with the 2.26 % afterpulse floor measured here.
+
+**Still outstanding:** implement GOBBY-1 §18.5 (re-parameterise; drive error counts from the measured P_e instead of fitting; stop injecting visibility), after which the 122 km point becomes a *prediction against measured inputs* rather than a two-parameter fit. `val_gobby_table.tex` must **not** be regenerated at the superseded (V = 0.9792, DCR = 1,788 Hz) values.
+
+---
+
 ## 2026-08-06 — Eighth pass (OPEN-3 groundwork): gate-width knob, runtime measurement, budget decision
 
 ### Session: OPEN-3 measurement + `gate_width` parameter

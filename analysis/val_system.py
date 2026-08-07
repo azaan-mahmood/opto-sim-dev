@@ -108,13 +108,26 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
                    dcr=15.0, temperature=25, bend_radius=None,
                    pmd_coeff_ps_sqrt_km=0.1, birefringence=True,
                    attenuation=True, cd=None, pmd=None,
-                   gate_width=None):
+                   gate_width=None, delay=None):
     """Run the time-bin BB84 Monte Carlo at one parameter point.
 
     `gate_width` (s, default 1 ns) sets both the SPAD gate and the
-    integration window; used by the CD positive control in
-    `val_system_scenarios.py` (OPEN-3), which narrows the gate below the
-    CD-broadened pulse width so spill-over measurably moves the QBER.
+    integration window.
+
+    `delay` (s, default `DELAY` = 5.8 ns) is the AMZI differential delay,
+    i.e. the time-bin separation.  It exists for the OPEN-3 *code-path
+    check*: at the Gobby delay, chromatic dispersion cannot produce bin
+    crosstalk (CD and the AMZI are both LTI and therefore commute, so CD
+    cannot move the constructive/destructive port ratio at all; and even
+    ignoring that, spill across 5.8 ns would need z ~ 5,674 km).  Shrinking
+    the delay to ~200 ps brings the crosstalk threshold down to z ~ 191 km,
+    where CD *does* measurably move the QBER — which demonstrates the CD
+    code path is live rather than silently skipped.  That configuration is
+    a code-path check, **not** a physical scenario.
+
+    Passing `delay=None` reproduces the module constants exactly
+    (bit-identical output); any other value recomputes the sample window
+    and the laser phase-jitter scale locally.
 
     Returns dict with qber (fraction), n_sifted, n_errors, plus the
     per-point configuration.  See module docstring for the linearity
@@ -129,10 +142,23 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
     np.random.seed(seed)
 
     photon_energy = H * C0 / LAM
-    delay_samples = int(DELAY / DT)
 
-    t = np.arange(N_SAMPLES) * DT
-    pulse_center = DELAY / 2.0
+    # Default path uses the module constants verbatim so output stays
+    # bit-identical; a custom delay resizes the window and rescales the
+    # Wiener phase-jitter sigma (which grows as sqrt(delay)).
+    if delay is None:
+        delay_s = DELAY
+        n_samples = N_SAMPLES
+        theta_sigma = THETA_SIGMA
+    else:
+        delay_s = float(delay)
+        n_samples = int(np.ceil((2.0 * delay_s + 5.0 * SIGMA_MAX) / DT))
+        theta_sigma = np.sqrt(2.0 * np.pi * LINE_WIDTH * delay_s)
+
+    delay_samples = int(delay_s / DT)
+
+    t = np.arange(n_samples) * DT
+    pulse_center = delay_s / 2.0
 
     # --- Source: CW laser + MZM-carved Gaussian pulse ---
     # The MZM is X-cut: it modulates Ey only.  The source must therefore
@@ -149,7 +175,7 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
     mzm = MZM(mode='push-pull', bias_voltage=Vpi)
     # Small-signal carve at quadrature: envelope proportional to V_pulse
     V_pulse = Vpi * 0.3 * np.exp(-0.5 * ((t - pulse_center) / pulse_sigma) ** 2)
-    E_cw = laser.sample_field(dt=DT, n_samples=N_SAMPLES)
+    E_cw = laser.sample_field(dt=DT, n_samples=n_samples)
     E_carved = mzm.modulate(E_in=E_cw, V=V_pulse)
     # Calibrate pulse energy to mu photons (project convention: calibrate
     # once at the source output)
@@ -204,9 +230,14 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
                  dark_count_rate=dcr, afterpulse_prob=AFTERPULSE,
                  gate_width=gate_width)
 
-    alice_bits, alice_bases = [], []
-    bob_bits, bob_bases = [], []
-    has_click = []
+    # Sifting is accumulated inline rather than into per-pulse lists.
+    # The lists were O(num_bits) in memory (five of them), which is fine at
+    # the 1e6 pulses this script used to run but reaches multiple GB at the
+    # ~1e8 pulses `--target-sifted` needs at 100 km -- the original
+    # 8th-pass scenario run was killed by exactly that.  Counting inline is
+    # O(1) and touches no RNG draw, so results are bit-identical.
+    n_sifted = 0
+    n_errors = 0
 
     for i in range(num_bits):
         # --- Alice: encode phase phi_A (X: 0/pi, Y: pi/2 / 3pi/2) ---
@@ -219,7 +250,7 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
         phi_B = basis_b * np.pi / 2.0
 
         # Laser phase jitter across the AMZI delay (Wiener, per bit)
-        theta = np.random.normal(0.0, THETA_SIGMA)
+        theta = np.random.normal(0.0, theta_sigma)
         delta = phi_B - phi_A - theta
         e_delta = np.exp(-1j * delta)
         P_c = g0_c + 2.0 * np.real(S_c * e_delta)
@@ -239,20 +270,12 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
         else:
             bob_bit = -1
 
-        alice_bits.append(bit_a)
-        alice_bases.append(basis_a)
-        bob_bits.append(bob_bit)
-        bob_bases.append(basis_b)
-        has_click.append(click_c or click_d)
-
-    # --- Sifting (PHYS-3): same basis AND a click ---
-    n_sifted = 0
-    n_errors = 0
-    for i in range(num_bits):
-        if alice_bases[i] == bob_bases[i] and has_click[i]:
+        # --- Sifting (PHYS-3): same basis AND a click ---
+        if basis_a == basis_b and (click_c or click_d):
             n_sifted += 1
-            if alice_bits[i] != bob_bits[i]:
+            if bit_a != bob_bit:
                 n_errors += 1
+
     qber = n_errors / n_sifted if n_sifted > 0 else 0.0
 
     return {'qber': qber, 'n_sifted': n_sifted, 'n_errors': n_errors}
