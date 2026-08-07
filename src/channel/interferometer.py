@@ -14,8 +14,22 @@ import numpy as np
 #     — first demonstration of fibre-based phase-encoded QKD.
 # [4] Gobby, C., Yuan, Z. L. & Shields, A. J., "Quantum key distribution
 #     over 122 km of standard telecom fiber", Appl. Phys. Lett. 84(19),
-#     3762-3764, 2004. — Gobby's 3.3% QBER floor at short range is
-#     interferometer visibility: e_opt = (1 - V)/2, so V = 0.934.
+#     3762-3764, 2004. — source of the 5.8 ns delay and the visibility
+#     relation e_opt = (1 - V)/2.
+#
+#     CORRECTION: an earlier version of this note read "Gobby's 3.3 % QBER
+#     floor at short range is interferometer visibility, so V = 0.934".
+#     That is wrong, and the error propagated into the Gobby replication.
+#     The paper gives visibility in closed form as an *output* of the link
+#     budget, V = S/(S + 2*P_e) with S the signal click probability and
+#     P_e the measured error probability per clock — which yields V > 0.99
+#     at short range, not 0.934.  The 3.3 % floor is not visibility alone.
+#     Deriving a V from that floor and injecting it applies the same error
+#     physics twice.  See GOBBY-1 (section 18) in
+#     opto-sim-issues-and-fixes.md.  The `visibility` parameter below is
+#     still correct machinery — it is a genuine decoder imperfection knob —
+#     but it must not be used to reproduce an error rate that the link
+#     budget already produces.
 
 
 class AsymmetricMZI:

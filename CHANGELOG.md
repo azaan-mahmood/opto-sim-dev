@@ -4,6 +4,86 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-07 — GOBBY-1: the link budget, corrected; Gobby's slope reproduced with no fitted parameters
+
+### Session: implement §18.5, run the nine-point sweep, fix a derived-column defect
+
+The headline: **the simulated curve now has Gobby's slope** — fitted
+**+4.99 pp/100 km** against the paper's own **+4.39**, where the previous
+sweep fitted **+0.011** (flat). The flatness was never missing physics; it
+was a mis-specified link budget. Correcting it removed the flatness
+**without adding a mechanism and without fitting anything**, and
+supersedes the two-parameter fit recorded on 2026-08-06.
+
+**Result (9 points, `--target-sifted 3000`, seed 42, 4 h 33 min,
+1.56×10⁹ pulses):** mean |residual| **1.22 pp** over Gobby's four
+genuinely measured points, signed mean −0.33 pp.
+
+| z (km) | Simulated | Gobby | Δ |
+|---|---|---|---|
+| 4 | 1.96 ± 0.23 | 3.3 (measured @4.4) | −1.34 |
+| 65 | 2.86 ± 0.25 | 3.3 (measured) | −0.44 |
+| 100 | 4.67 ± 0.35 | 6.0 (measured @101) | −1.33 |
+| 122 | **10.69 ± 0.43** | 8.9 (measured) | **+1.79** |
+
+Compare: the previous session scored 0.36 pp with **two** fitted
+parameters; this scores 1.22 pp with **zero**. That is the intended
+trade — the old fit landed close for the wrong reason, its 1,788 Hz
+"dark count rate" being a lumped term absorbing the missing 5 dB of Bob
+loss and the wrong α.
+
+### Re-parameterisation — `analysis/val_gobby/validate_gobby.py`
+
+| Parameter | From | To |
+|---|---|---|
+| `ALPHA_dB` | 0.182 | **0.2** (paper's value) |
+| `ETA` → `ETA_BOB` | 0.10 | **0.045** — η_Bob, including Bob's 5 dB apparatus loss, which the bare detector QE silently discarded |
+| `GATE_WIDTH` | 1 ns | **3.5 ns** |
+| `REP_RATE` / `PULSE_WIDTH` | 2.5 MHz / 100 ps | **2 MHz / 80 ps** |
+| `DCR` → `P_E` | 15 Hz | **8.5e-7/clock** — Gobby's *measured* total error probability (dark 3.2e-7 + 1.3 µm clock-laser stray light 5.3e-7, deliberately lumped), 242.9 Hz equivalent |
+| `VISIBILITY` | 0.934 injected | **1.0** — V is an OUTPUT, `V = S/(S+2·P_e)` |
+| `--dcr` | — | **`--p-e`**, plus new `--afterpulse` |
+| `PILOT_BITS` / `CEILING` | 200k / 500M | **2M / 1e9** |
+
+Net effect of the old parameterisation: signal **3.68× too high**, error
+rate **57× too low**, error/signal ratio — the only thing QBER measures —
+off by **209×**.
+
+### Bugs found
+
+| Bug | Location | Consequence |
+|---|---|---|
+| **`alpha_dB` never passed to the Monte Carlo** | `simulate_qber()` | The MC used `simulate_bb84_time_bin`'s own 0.182 default while the analytic curve used the module constant. They agreed *by coincidence*. Changing `ALPHA_dB` alone would have moved the curve and left the data untouched, and the figure would have read as a modelling disagreement. |
+| **Nine rows of "measured" over four measurements** | table writer | `gobby_measured_qber()` is `np.interp` over four published points, but the column was headed "Gobby et al. measured" at all nine distances. Below 4.4 km `np.interp` clamps rather than interpolates, so a flat 3.3 % across four rows was **one published number repeated four times**, presented as data. Same species as BLOCK-1, one step milder. Rows now carry `(m)` / `(m@x)` / `(i)`; measured rows print the published value at the published distance (`6.0 (m@101)`, not the interpolated 5.9). |
+| Stale reference comment | `src/channel/interferometer.py` | Ref [4] asserted "Gobby's 3.3 % floor is interferometer visibility, so V = 0.934" — the claim §18.4 refutes, and the origin of the injected-visibility error. Corrected in place. |
+
+### Verified before the sweep
+
+- `model_qber(V=1, a=0)` reproduces the closed form `P_e/(S+2P_e)` to 1e-9.
+- `predicted_visibility()` reproduces the paper's stated visibilities:
+  **0.9925 at 65 km** (paper: >0.99) and **0.9058 at 122 km** (paper: 0.884).
+- **The gate widening is energy-neutral for signal** — 0.050000 photons at
+  1 ns vs 0.050057 at 3.5 ns — while background scales exactly 3.5× and
+  lands on **8.500e-7**, Gobby's measured P_e to the digit.
+- 203/203 tests pass.
+
+### Open, and deliberately not closed by fitting
+
+- **122 km overshoots by 1.79 pp (4.1σ)**, having previously undershot by
+  3.60. The MC runs **1.56× above the closed form** there — the largest
+  divergence in the sweep, in the regime the closed form disclaims — so
+  the excess is in the detector state machine, not the link budget. The
+  encoder split (our 0.05 photons vs Gobby's 0.04) predicts the *opposite*
+  sign, so the underlying excess is larger than 1.79 pp.
+- **The 3.3 % floor is undershot by 0.4–1.3 pp.** Afterpulsing at the
+  ID230 datasheet value supplies ~2.3 pp of the paper's acknowledged third
+  error source; the remainder is unmodelled and reported as unmodelled.
+- Next step is a decomposition run (`--afterpulse 0`, `--p-e 0`), **not**
+  tuning `afterpulse_prob` — which would work, and would turn the whole
+  sweep back into a fit.
+
+---
+
 ## 2026-08-06 — Gobby replication measured and diagnosed; statistical-power tooling
 
 ### Session: OPEN-2/OPEN-3 full-power runs, V/DCR refit, analytic-model fix, two memory bugs
