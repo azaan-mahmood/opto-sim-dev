@@ -1,19 +1,86 @@
 import numpy as np
 
+# --- LITERATURE SOURCES ---
+# [1] Zeilinger, A., "General properties of lossless beam splitters in
+#     interferometry", Am. J. Phys. 49(9), pp. 882-883, 1981.
+#     The general 2x2 unitary for a lossless four-port, expressed via the
+#     Pauli matrices.  Source of the coupler scattering matrices below.
+# [2] Collett, E., "Field Guide to Polarization", SPIE Press, 2005.
+#     Jones calculus; ideal polarisers and polarising beam splitters as
+#     the diagonal operators diag(1,0) and diag(0,1).
+# [3] Saleh, B. E. A. & Teich, M. C., "Fundamentals of Photonics",
+#     3rd ed., Wiley, 2019.  Beam splitters, couplers, wave retarders.
+#
+# COUPLER PHASE CONVENTION -- read before adding a coupler.
+# Zeilinger [1] shows the lossless 2x2 unitary is
+#     U = exp(i*phi) * [[r, i*t], [i*conj(t), conj(r)]],  |r|^2 + |t|^2 = 1,
+# and that the "imaginary" form [[t, i*r], [i*r, t]] and the "real" form
+# [[t, r], [r, -t]] are both unitary, differing only in where the phase
+# reference sits.  They are physically equivalent *only if one convention
+# is used consistently*.
+#
+# THIS MODULE USES THE REAL FORM, matching `AsymmetricMZI`.  Mixing the
+# two is not a cosmetic difference: with the imaginary form the two-beam
+# interference term goes as sin(delta_phi) rather than cos(delta_phi), so
+# a protocol that encodes in {0, pi} -- as BB84 phase encoding does --
+# lands exactly on the zeros and the fringe vanishes entirely.  That bug
+# produced a flat ~50% QBER and is documented in GOBBY-2 (section 19) of
+# opto-sim-issues-and-fixes.md.
+#
+# RETARDER PHASE CONVENTION -- read before adding a wave plate.
+# `halfwave` and `quarterwave` use the standard Jones forms [2],
+#     J_HWP(t) = [[cos 2t, sin 2t], [sin 2t, -cos 2t]],
+# with NO absolute-phase prefactor.  Some sources write these with a
+# leading `j` (or exp(-i*pi/2), exp(-i*pi/4)); that is the absolute-phase
+# variant and it multiplies the whole matrix, carrying no physical content.
+#
+# Both functions used to carry such a prefactor.  It made `halfwave` return
+# a *purely imaginary* field for a real input (measured |Im|/|Re| = 1.6e16)
+# -- invisible in |E|^2 for a single path, but a real relative phase as
+# soon as two interfering paths pass through different numbers of
+# retarders.  Removed; see GOBBY-4 (section 21) in
+# opto-sim-issues-and-fixes.md.
+#
+# What is NOT a global phase: the relative `i` between the fast and slow
+# axes of `quarterwave`.  That is the retardance -- the entire point of the
+# component -- and it stays.
+
 
 def coupler_split(power, E, ratio=0.5):
-    if 0 <= ratio <= 1:
-        port_power = power * ratio
-        tap_power = power * (1-ratio)
-        jones = np.array([
-            [1, 1],
-            [1, -1]
-        ])
-        port_E = E
-        tap_E = jones @ np.transpose(E)
-        return port_power, port_E, tap_power, np.transpose(tap_E)
-    else:
+    """Split one input across the two output ports of a 2x2 coupler.
+
+    Amplitude splitting for a lossless coupler [1]: with a single
+    populated input, the outputs are sqrt(ratio) and sqrt(1 - ratio)
+    times the input field, so the *powers* divide as ratio : (1 - ratio)
+    and the total is conserved.  Real convention (see the module note).
+
+    Parameters
+    ----------
+    power : float — input power (bookkeeping; the returned powers are
+        `power * ratio` and `power * (1 - ratio)`).
+    E : ndarray (N, 2) — complex-envelope field.
+    ratio : float in [0, 1] — fraction of the power sent to the port arm
+        (default 0.5, an ideal 3 dB coupler).
+
+    Returns
+    -------
+    (port_power, port_E, tap_power, tap_E)
+
+    Notes
+    -----
+    An earlier version returned the *unscaled* input as `port_E` and a
+    Hadamard-mixed copy as `tap_E`, so `ratio` affected only the returned
+    powers while the fields ignored it entirely — the two were mutually
+    inconsistent.  Any caller relying on the old field behaviour was
+    relying on a bug.
+    """
+    if not 0 <= ratio <= 1:
         raise Exception("Incorrect Ratio")
+    port_power = power * ratio
+    tap_power = power * (1 - ratio)
+    port_E = E * np.sqrt(ratio)
+    tap_E = E * np.sqrt(1.0 - ratio)
+    return port_power, port_E, tap_power, tap_E
 
 
 def coupler_combine(power_port, port_E, power_tap, tap_E, out_ports=1):
@@ -47,19 +114,31 @@ def coupler_combine(power_port, port_E, power_tap, tap_E, out_ports=1):
         raise Exception("Incorrect Number of Ports. Argument accepted is 1 or 2.")
 
 def halfwave(E, theta=0, rotation=True):
+    """Half-wave plate, standard Jones form (no absolute-phase prefactor).
+
+        J_HWP(t) = [[cos 2t,  sin 2t],
+                    [sin 2t, -cos 2t]]
+
+    which is what the matrix below is, via cos^2 - sin^2 = cos 2t and
+    2 sin t cos t = sin 2t.  Real, so a real input gives a real output --
+    a HWP is a reflection on the Poincare sphere and introduces no phase.
+
+    See the RETARDER PHASE CONVENTION note in the module header for why
+    the `exp(-i*pi/2)` prefactor this used to carry was removed.
+    """
     if not rotation:
-        half_matrix = np.exp(-1j*np.pi/2)*np.array([
+        half_matrix = np.array([
             [1, 0],
             [0, -1]
-        ])
+        ], dtype=complex)
         E_half = half_matrix @ np.transpose(E)
         return np.transpose(E_half)
     elif rotation:
         theta = np.radians(theta)
-        half_matrix = np.exp(-1j*np.pi/2)*np.array([
+        half_matrix = np.array([
             [np.cos(theta)**2 - np.sin(theta)**2, 2*np.cos(theta)*np.sin(theta)],
             [2*np.cos(theta)*np.sin(theta), -np.cos(theta)**2 + np.sin(theta)**2]
-        ])
+        ], dtype=complex)
 
         E_half = half_matrix @ np.transpose(E)
         return np.transpose(E_half)
@@ -68,19 +147,30 @@ def halfwave(E, theta=0, rotation=True):
 
 
 def quarterwave(E, theta=0, rotation=True):
+    """Quarter-wave plate, standard Jones form (no absolute-phase prefactor).
+
+    The relative `i` between the fast and slow axes is the **retardance**
+    and is the entire physical content of the component -- it stays.  Only
+    the overall `exp(-i*pi/4)` prefactor was removed; see the RETARDER
+    PHASE CONVENTION note in the module header.
+
+    Consequently an H-polarised input now emerges real rather than rotated
+    45 degrees into the complex plane, while H at 45 degrees still becomes
+    circular with E_y = -i*E_x.
+    """
     if not rotation:
-        quarter_matrix = np.exp(-1j*np.pi/4)*np.array([
+        quarter_matrix = np.array([
             [1, 0],
             [0, -1j]
-        ])
+        ], dtype=complex)
         E_quarter = quarter_matrix @ np.transpose(E)
         return np.transpose(E_quarter)
     elif rotation:
         theta = np.radians(theta)
-        quarter_matrix = np.exp(-1j*np.pi/4)*np.array([
+        quarter_matrix = np.array([
             [np.cos(theta) ** 2 + 1j * np.sin(theta) ** 2, (1 - 1j) * np.sin(theta) * np.cos(theta)],
             [(1 - 1j) * np.sin(theta) * np.cos(theta), np.sin(theta) ** 2 + 1j * np.cos(theta) ** 2]
-        ])
+        ], dtype=complex)
         E_quarter = quarter_matrix @ np.transpose(E)
         return np.transpose(E_quarter)
     else:
@@ -241,6 +331,65 @@ def pbs(E):
     E_x = E[:, 0]
     E_y = E[:, 1]
     return E_x, E_y
+
+
+def pbc(E_h, E_v):
+    """Polarising beam combiner — the inverse of `pbs()`.
+
+    Places two independent fields onto orthogonal polarisation axes of a
+    single spatial mode: `E_h` onto H (column 0), `E_v` onto V (column 1).
+    In Jones terms the two inputs are acted on by the complementary
+    projectors diag(1,0) and diag(0,1) and summed [2], so the operation is
+    lossless and `pbs(pbc(a, b)) == (a, b)` exactly.
+
+    This is what makes *deterministic* polarisation routing expressible.
+    A non-polarising combiner (`beam_combiner`) adds two fields into the
+    same mode, which interferes them and costs half the light at the
+    complementary port; a PBC keeps both in full because they occupy
+    orthogonal states.
+
+    Parameters
+    ----------
+    E_h, E_v : ndarray (N,) or (N, 2)
+        Fields for the H and V axes.  (N,) is the natural pairing with
+        `pbs()`'s return.  An (N, 2) input must be single-polarisation —
+        its populated column is taken — since a PBC cannot combine two
+        already-orthogonal states without loss.
+
+    Returns
+    -------
+    ndarray (N, 2) — complex envelope carrying both inputs.
+
+    Raises
+    ------
+    ValueError — if an (N, 2) input has both columns populated, or if the
+        two inputs differ in length.
+    """
+    def _scalar(E, name):
+        E = np.asarray(E)
+        if E.ndim == 1:
+            return E
+        if E.ndim == 2 and E.shape[1] == 2:
+            occupied = [c for c in (0, 1) if np.any(np.abs(E[:, c]) > 0)]
+            if len(occupied) > 1:
+                raise ValueError(
+                    f"pbc: {name} carries both polarisations; a polarising "
+                    f"beam combiner needs single-polarisation inputs, one "
+                    f"per axis."
+                )
+            return E[:, occupied[0]] if occupied else E[:, 0]
+        raise ValueError(f"pbc: {name} must be (N,) or (N, 2), got {E.shape}")
+
+    h = _scalar(E_h, "E_h")
+    v = _scalar(E_v, "E_v")
+    if h.shape != v.shape:
+        raise ValueError(
+            f"pbc: inputs must be the same length, got {h.shape} and {v.shape}")
+
+    out = np.zeros((h.shape[0], 2), dtype=complex)
+    out[:, 0] = h
+    out[:, 1] = v
+    return out
 #
 # Version 2
 # def beam_splitter(E, power):

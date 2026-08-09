@@ -153,3 +153,66 @@ class TestValidation:
     def test_custom_params_override_defaults(self):
         pm = PhaseModulator(crystal_cut='X', params={'L': 2 * L})
         assert np.isclose(pm.Vpi, vpi_x() / 2, rtol=1e-9)
+
+
+class TestBiasOffsetVoltage:
+    """`bias_offset_v` -- the same static bias error as `phase_error_rad`,
+    stated in the units a modulator is actually set in.
+
+    Gobby et al. (2004) attribute their QBER floor first to "slight
+    inaccuracies of the phase modulator biases".  Expressing that as a
+    voltage puts it on the scale the hardware lives on rather than leaving
+    it a bare angle: the conversion runs through this modulator's own
+    crystal-derived V_pi, so nothing external is assumed.
+    """
+
+    def test_converts_through_vpi(self, pm_x):
+        pm = PhaseModulator(crystal_cut='X', bias_offset_v=pm_x.Vpi / 4)
+        assert np.isclose(pm.phase_error_rad, np.pi / 4, rtol=1e-12)
+
+    def test_full_vpi_gives_pi(self, pm_x):
+        pm = PhaseModulator(crystal_cut='X', bias_offset_v=pm_x.Vpi)
+        assert np.isclose(pm.phase_error_rad, np.pi, rtol=1e-12)
+
+    def test_round_trip_against_gobby_floor(self, pm_x):
+        """20.93 deg <-> 451.5 mV, the offset reproducing a 3.3% floor."""
+        deg = np.degrees(np.arccos(1.0 - 2.0 * 0.033))
+        volts = np.radians(deg) * pm_x.Vpi / np.pi
+        assert np.isclose(volts, 0.4515, atol=5e-4)
+        pm = PhaseModulator(crystal_cut='X', bias_offset_v=volts)
+        assert np.isclose(np.degrees(pm.phase_error_rad), deg, rtol=1e-9)
+
+    def test_y_cut_uses_its_own_vpi(self, pm_y):
+        """Conversion is per-device, not a shared constant."""
+        pm = PhaseModulator(crystal_cut='Y', bias_offset_v=pm_y.Vpi / 2)
+        assert np.isclose(pm.phase_error_rad, np.pi / 2, rtol=1e-12)
+
+    def test_both_units_at_once_raises(self):
+        """One mechanism, two unit systems: accepting both would sum them
+        silently, which is how a bias error gets double-counted."""
+        with pytest.raises(RuntimeError, match="same static bias error"):
+            PhaseModulator(crystal_cut='X', bias_offset_v=0.45,
+                           phase_error_rad=0.36)
+
+    def test_default_is_inert(self, pm_x, field):
+        """Zero bias must leave the component exactly as it was."""
+        assert pm_x.bias_offset_v == 0.0
+        assert pm_x.phase_error_rad == 0.0
+        base = PhaseModulator(crystal_cut='X')
+        assert np.array_equal(pm_x.modulate(field, 1.0),
+                              base.modulate(field, 1.0))
+
+    def test_bias_shifts_the_modulated_axis(self, pm_x, field):
+        """The offset must actually reach the field, on the X-cut axis."""
+        pm = PhaseModulator(crystal_cut='X', bias_offset_v=pm_x.Vpi / 2)
+        out = pm.modulate(field, 0.0)
+        assert np.allclose(out[:, 1], field[:, 1] * np.exp(1j * np.pi / 2),
+                           atol=1e-12)
+        assert np.allclose(out[:, 0], field[:, 0])
+
+    def test_equivalent_to_radian_form(self, pm_x, field):
+        """Both spellings are the same mechanism, so they must agree."""
+        a = PhaseModulator(crystal_cut='X', bias_offset_v=pm_x.Vpi / 3)
+        b = PhaseModulator(crystal_cut='X', phase_error_rad=np.pi / 3)
+        assert np.allclose(a.modulate(field, 0.7), b.modulate(field, 0.7),
+                           atol=1e-12)

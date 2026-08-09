@@ -228,3 +228,67 @@ class TestSPADAfterpulse:
             if s.detect(0.0, 26e-6) == 1:         # stale afterpulse would
                 leaked += 1                       # fire on this first gate
         assert leaked == 0, f"afterpulse leaked in {leaked}/{trials} trials"
+
+
+class TestDetectionProbabilityIsPoissonInDetectedPhotons:
+    """P(click) = 1 - exp(-eta*mu), not eta*(1 - exp(-mu)).
+
+    Photons are detected independently, so the *detected* count is Poisson
+    with mean `eta*mu`.  The older form read "at least one photon arrives,
+    then one coin flip at eta", which undercounts whenever more than one
+    photon can arrive: for two photons the chance of detecting at least one
+    is 1 - (1-eta)^2, not eta.
+
+    The two agree as mu -> 0, which is why the error survived in the
+    weak-coherent regime the simulator is mostly used in.  It was found as
+    a residual disagreement between `validate_gobby.signal_click_prob()`
+    and the Monte Carlo (GOBBY-7b §24.5).
+    """
+
+    @staticmethod
+    def _p_click(det, n_photons):
+        """Analytic click probability for a gate carrying `n_photons`."""
+        return 1.0 - np.exp(-det.qe * n_photons)
+
+    def _power_for(self, det, n_photons):
+        return n_photons * det.h * det.frequency / det.gate_width
+
+    def test_collapses_to_eta_mu_in_the_weak_limit(self):
+        d = spad(wavelength=1550e-9, quantum_efficiency=0.045)
+        mu = 1e-6
+        assert self._p_click(d, mu) == pytest.approx(d.qe * mu, rel=1e-5)
+
+    def test_saturates_toward_unity_for_a_bright_pulse(self):
+        """The old form capped at eta; this must approach 1."""
+        d = spad(wavelength=1550e-9, quantum_efficiency=1.0)
+        assert self._p_click(d, 20.0) > 0.999
+        # what the superseded form would have given at eta = 1, mu = 2
+        assert 1.0 * (1.0 - np.exp(-2.0)) == pytest.approx(0.8647, abs=1e-3)
+        assert self._p_click(d, 2.0) == pytest.approx(0.8647, abs=1e-3)
+
+    def test_differs_from_the_superseded_form_at_the_gobby_point(self):
+        """mu = 0.0769 photons, eta = 0.045: the two differ by 3.6%."""
+        d = spad(wavelength=1550e-9, quantum_efficiency=0.045)
+        mu = 0.1 * (2.0 / (1.0 + 1.6))
+        old = d.qe * (1.0 - np.exp(-mu))
+        new = self._p_click(d, mu)
+        assert new > old
+        assert new / old == pytest.approx(1.0371, abs=2e-3)
+
+    def test_monte_carlo_click_rate_matches_the_closed_form(self):
+        """The implementation, not just the formula."""
+        np.random.seed(11)
+        d = spad(wavelength=1550e-9, quantum_efficiency=0.2,
+                 dead_time=0.0, dark_count_rate=0.0, afterpulse_prob=0.0)
+        mu = 0.5
+        p = self._p_click(d, mu)
+        power = self._power_for(d, mu)
+        n = 40000
+        clicks = sum(d.detect(power, i * 1e-6) for i in range(n))
+        se = np.sqrt(p * (1 - p) / n)
+        assert abs(clicks / n - p) < 4 * se
+
+    def test_rate_is_monotonic_in_efficiency(self):
+        d_lo = spad(wavelength=1550e-9, quantum_efficiency=0.1)
+        d_hi = spad(wavelength=1550e-9, quantum_efficiency=0.9)
+        assert self._p_click(d_hi, 0.5) > self._p_click(d_lo, 0.5)

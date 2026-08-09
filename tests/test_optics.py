@@ -7,7 +7,7 @@ polarisers, VOA attenuation, and coupler power bookkeeping.
 import numpy as np
 import pytest
 from src.channel.optics import (
-    circular_analyser, pbs, hadamard, polarizer, voa,
+    circular_analyser, pbs, pbc, hadamard, polarizer, voa,
     halfwave, quarterwave, polarization_rotator,
     coupler_split, coupler_combine,
 )
@@ -231,12 +231,69 @@ class TestWaveplates:
         assert np.allclose(E_out[:, 1], -1j * E_out[:, 0], atol=1e-12)
 
     def test_quarterwave_zero_angle_leaves_h(self):
-        """QWP aligned with H leaves H unchanged up to a global phase."""
+        """QWP aligned with H leaves H genuinely unchanged.
+
+        This used to assert `exp(-1j*pi/4)` while its own docstring said
+        "up to a global phase" -- it was pinning the absolute-phase
+        prefactor.  With that prefactor removed (GOBBY-4 section 21) an
+        aligned QWP is the identity on its own fast axis, so the expected
+        value is 1.0.
+        """
         E = np.zeros((10, 2), dtype=complex)
         E[:, 0] = 1.0
         E_out = quarterwave(E, rotation=False)
-        assert np.allclose(E_out[:, 0], np.exp(-1j * np.pi / 4), atol=1e-12)
+        assert np.allclose(E_out[:, 0], 1.0, atol=1e-12)
         assert np.allclose(E_out[:, 1], 0.0, atol=1e-12)
+
+
+class TestRetarderPhaseConvention:
+    """Retarders carry no absolute-phase prefactor.
+
+    A global phase is unobservable in |E|^2 for a single path, but becomes
+    a real relative phase the moment two interfering paths pass through
+    different numbers of retarders -- which is why the simulator carries
+    none.  `halfwave` previously returned a *purely imaginary* field for a
+    real input (|Im|/|Re| = 1.6e16).
+    """
+
+    @pytest.mark.parametrize("theta", [0.0, 22.5, 45.0, 67.5, 90.0, 30.0])
+    def test_halfwave_real_in_real_out(self, theta):
+        """A HWP is a reflection on the Poincare sphere: no phase at all."""
+        N = 32
+        E = np.zeros((N, 2), dtype=complex)
+        E[:, 0] = np.linspace(0.2, 1.0, N)
+        E[:, 1] = np.linspace(1.0, 0.3, N)
+        out = halfwave(E, theta=theta, rotation=True)
+        assert np.abs(out.imag).max() <= 1e-12 * np.abs(out.real).max()
+
+    def test_halfwave_unrotated_real_in_real_out(self):
+        N = 16
+        E = np.zeros((N, 2), dtype=complex)
+        E[:, 0] = 1.0
+        E[:, 1] = 0.5
+        out = halfwave(E, rotation=False)
+        assert np.abs(out.imag).max() <= 1e-12 * np.abs(out.real).max()
+
+    def test_quarterwave_keeps_its_retardance(self):
+        """Only the *global* factor went; the axis-to-axis i is physical.
+
+        H at 45 degrees must still become circular -- if this breaks, the
+        deletion touched the matrix body rather than the prefactor.
+        """
+        E = np.zeros((10, 2), dtype=complex)
+        E[:, 0] = 1.0
+        out = quarterwave(E, theta=45, rotation=True)
+        assert np.allclose(out[:, 1], -1j * out[:, 0], atol=1e-12)
+        assert np.isclose(np.sum(np.abs(out[:, 0]) ** 2), 5.0, rtol=1e-12)
+        assert np.isclose(np.sum(np.abs(out[:, 1]) ** 2), 5.0, rtol=1e-12)
+
+    @pytest.mark.parametrize("theta", [0.0, 22.5, 45.0, 90.0])
+    def test_retarders_remain_unitary(self, field, theta):
+        """Removing a unit-modulus prefactor cannot change power."""
+        for func in (halfwave, quarterwave):
+            out = func(field, theta=theta, rotation=True)
+            assert np.isclose(np.sum(power(out)), np.sum(power(field)),
+                              rtol=1e-12)
 
     def test_rotator_rotates_linear(self):
         """90-degree rotation must swap H and V."""
@@ -303,3 +360,77 @@ class TestCoupler:
     def test_combine_invalid_ports_raises(self, field):
         with pytest.raises(Exception):
             coupler_combine(1.0, field, 1.0, field, out_ports=3)
+
+    @pytest.mark.parametrize("ratio", [0.1, 0.25, 0.5, 1 / 2.6, 0.75, 0.9])
+    def test_split_fields_conserve_energy(self, field, ratio):
+        """The *fields* must carry the split, not just the returned powers.
+
+        The previous implementation returned the unscaled input as
+        `port_E` and a Hadamard-mixed copy as `tap_E`, so `ratio` moved
+        the reported powers while the fields ignored it — the two were
+        mutually inconsistent.  Zeilinger [1]: a lossless coupler splits
+        amplitude as sqrt(ratio) / sqrt(1-ratio).
+        """
+        _, port_E, _, tap_E = coupler_split(1.0, field, ratio=ratio)
+        E_in = np.sum(np.abs(field) ** 2)
+        E_out = np.sum(np.abs(port_E) ** 2) + np.sum(np.abs(tap_E) ** 2)
+        assert np.isclose(E_out, E_in, rtol=1e-12)
+
+    @pytest.mark.parametrize("ratio", [0.1, 0.25, 0.5, 1 / 2.6, 0.75, 0.9])
+    def test_split_fields_carry_the_ratio(self, field, ratio):
+        _, port_E, _, tap_E = coupler_split(1.0, field, ratio=ratio)
+        E_in = np.sum(np.abs(field) ** 2)
+        assert np.isclose(np.sum(np.abs(port_E) ** 2) / E_in, ratio, rtol=1e-12)
+        assert np.isclose(np.sum(np.abs(tap_E) ** 2) / E_in, 1 - ratio,
+                          rtol=1e-12)
+
+    def test_split_half_reduces_to_3dB(self, field):
+        """ratio=0.5 must reproduce the ideal 3 dB coupler exactly."""
+        _, port_E, _, tap_E = coupler_split(1.0, field, ratio=0.5)
+        assert np.allclose(port_E, field / np.sqrt(2), atol=1e-15)
+        assert np.allclose(tap_E, field / np.sqrt(2), atol=1e-15)
+
+
+class TestPolarisingBeamCombiner:
+    """`pbc` is the inverse of `pbs` (Collett [2] Jones calculus).
+
+    A non-polarising combiner interferes its inputs and loses half the
+    light to the complementary port; a PBC keeps both in full because
+    they occupy orthogonal states.  That is what makes deterministic
+    polarisation routing possible.
+    """
+
+    def test_roundtrip_is_exact(self):
+        N = 64
+        a = np.exp(1j * np.linspace(0, 2.0, N))
+        b = 0.4 * np.exp(1j * np.linspace(1.0, -1.5, N))
+        h, v = pbs(pbc(a, b))
+        assert np.array_equal(h, a)
+        assert np.array_equal(v, b)
+
+    def test_lossless(self):
+        N = 64
+        a = np.exp(1j * np.linspace(0, 2.0, N))
+        b = 0.4 * np.exp(1j * np.linspace(1.0, -1.5, N))
+        out = pbc(a, b)
+        assert np.isclose(np.sum(np.abs(out) ** 2),
+                          np.sum(np.abs(a) ** 2) + np.sum(np.abs(b) ** 2),
+                          rtol=1e-12)
+
+    def test_accepts_single_polarisation_2d_input(self):
+        N = 32
+        a2 = np.zeros((N, 2), dtype=complex)
+        a2[:, 0] = np.linspace(1, 2, N)
+        b2 = np.zeros((N, 2), dtype=complex)
+        b2[:, 1] = np.linspace(0, 1, N)
+        out = pbc(a2, b2)
+        assert np.allclose(out[:, 0], a2[:, 0])
+        assert np.allclose(out[:, 1], b2[:, 1])
+
+    def test_rejects_dual_polarisation_input(self, field):
+        with pytest.raises(ValueError, match="both polarisations"):
+            pbc(field, field[:, 0])
+
+    def test_rejects_length_mismatch(self):
+        with pytest.raises(ValueError, match="same length"):
+            pbc(np.ones(10, dtype=complex), np.ones(11, dtype=complex))

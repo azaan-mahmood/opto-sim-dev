@@ -124,10 +124,29 @@ class spad(apd):
             photon_energy = self.h * self.frequency
             # Expected photons in gate: mu = P * t_gate / (h*nu)
             mu = power * self.gate_width / photon_energy
-            # P(>=1 photon) = 1 - exp(-mu)
-            p_photon = 1.0 - np.exp(-mu)
-            # Detection probability: eta * P(>=1)
-            if np.random.random() < self.qe * p_photon:
+            # Each photon is detected INDEPENDENTLY with probability eta, so
+            # the detected count is Poisson(eta*mu) and
+            #
+            #     P(click) = 1 - exp(-eta*mu)
+            #
+            # This previously read `qe * (1 - exp(-mu))`, i.e. "at least one
+            # photon arrives, THEN one coin flip at eta".  That undercounts:
+            # if two photons arrive the chance of detecting at least one is
+            # 1 - (1-eta)^2, not eta.  Both forms agree as mu -> 0, which is
+            # why it survived -- the error grows with intensity:
+            #
+            #     mu = 0.001   -0.05 %      mu = 0.5   -20.4 %
+            #     mu = 0.077   -3.58 %      mu = 2.0   -54.8 %
+            #
+            # It was found as the residual disagreement between
+            # `validate_gobby.signal_click_prob()` and the Monte Carlo:
+            # predicted 0.9625 against a measured 0.9533 +/- 0.0123, 0.75
+            # sigma.  See GOBBY-7b §24.5 in opto-sim-issues-and-fixes.md.
+            #
+            # One RNG draw either way, so pulse-for-pulse stream alignment
+            # is unchanged and any difference is physical.
+            p_click = 1.0 - np.exp(-self.qe * mu)
+            if np.random.random() < p_click:
                 click = 1
 
         # --- Update state on click -------------------------------------------

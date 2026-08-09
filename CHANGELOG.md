@@ -4,6 +4,335 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-09 — the mechanisms Gobby names, at the components that cause them
+
+### Session: GOBBY-7d — the nine-point sweep, and the two defects it exposed
+
+| Change | Files | Rationale |
+|---|---|---|
+| **`run_duration` — drift clock separated from the detector clock** | `src/protocols/bb84_time_bin.py` | Drift advanced as `pulse_idx / repetition_rate`, so the pulse budget chosen for *statistical power* silently set the simulated *experiment duration*. Detector clock keeps true `1/f` spacing (dead time and afterpulsing are defined against real elapsed time); only drift moves to the declared duration. `None` is bit-identical to the old behaviour. |
+| **Bias solved jointly with drift** | `analysis/val_gobby/validate_gobby.py` | `arccos(1 - 2*E_MOD)` is the bias-**only** solution; applying drift on top counted it twice. `_bias_for_aggregate()` solves the time-average instead. |
+| **Nine-point sweep re-run and artifacts regenerated** | `analysis/val_gobby/*` | OPEN-2 (P0) closed. |
+| **Drift-clock and joint-solve invariants** | `tests/test_polmux_interferometer.py` | Accumulated drift at the final pulse is 6.00° at any budget from 1e3 to 1e9 pulses. |
+
+**Key results:**
+
+- **The sweep did its job by failing first.** Run at the corrected model it produced **13.52 % at 122 km against Gobby's 8.9 %**, and every point matched a drift-aware prediction to within statistics (122 km predicted 13.54 %). The 122 km point needs 1e9 pulses = **500 s at 2 MHz**, against the paper's stated *two-minute* transfer — accumulating 25° of drift where theirs accumulates 6, and inflating the effective modulation error from 3.31 % to 8.60 %. The whole 4.6 pp excess was that.
+- **The flaw was introduced in GOBBY-7**, where a run-duration knob was considered during planning and dropped as overreach. Recorded as such, not presented as a discovery. **More pulses must mean a better estimate of the same experiment, not a longer experiment.**
+- **A second defect surfaced once the duration was set to the paper's 120 s**: the 0 km floor read 4.30 % against 3.3 %. Gobby attribute the floor to bias inaccuracy "**as well as phase drift during the experiment**" — 3.3 % is the *aggregate of both*, so deriving the bias from the full 3.3 % and then adding drift double-counts. Solved jointly: **d0 = 17.864°**, drifting to 23.864°, time-averaging to exactly **3.300 %** — a ramp *centred on* the 20.93° the naive reading assigns.
+- **This is the fifth occurrence of one pattern.** §19.5 records three cases of "a number of roughly the right magnitude arriving through the wrong mechanism"; this session adds the afterpulse default standing in for the modulation error, and the bias absorbing drift's share. The recurrence is the point — it is the characteristic failure mode of replicating an aggregate whose components are *named but not individually quantified*.
+- **The sweep, measured**, against Gobby's four real measurements (§18.9 established the other five rows compare against nearest-matched values and are not evidence):
+
+  | km | this work | Gobby | residual | sigma |
+  |---|---|---|---|---|
+  | 4.4 | 3.25 ± 0.29 % | 3.3 % | −0.05 | 0.2σ |
+  | 65 | 3.69 ± 0.28 % | 3.3 % | +0.39 | 1.4σ |
+  | 101 | 5.31 ± 0.35 % | 6.0 % | −0.62 | 1.8σ |
+  | **122** | **9.50 ± 0.43 %** | **8.9 %** | **+0.60** | **1.4σ** |
+
+  **Mean |residual| 0.414 pp, nothing beyond 1.8σ.**
+- **Statistical power holds.** Every row exceeds the 3,000-sifted target (minimum 3,384) and **nothing is clipped** — 122 km used 663e6 pulses against the 1e9 ceiling, where the pre-fix run hit the ceiling exactly. The committed artifact is no longer a 20,000-pulse smoke run with zero sifted bits at 122 km.
+- **Nothing is fitted anywhere in the chain.** `P_E` measured, `MU_EFF` derived from the 1.6:1 split, `e_mod` from Fig. 3, drift rate and transfer duration from the text, `afterpulse_prob = 0` from §19.5's three grounds.
+- 315 tests pass.
+
+---
+
+### Session: GOBBY-7c — a SPAD detection-probability defect, and the afterpulse double-count
+
+| Change | Files | Rationale |
+|---|---|---|
+| **`spad.detect` Poisson form corrected** | `src/detectors/spad.py` | Computed `eta*(1 - exp(-mu))` — "at least one photon arrives, *then* one coin flip at eta". Photons are detected independently, so the detected count is Poisson(`eta*mu`) and the exact form is `1 - exp(-eta*mu)`. **Affects every protocol in the repository.** `apd.py` checked and correct — it applies `qe` before the Poisson draw. |
+| **`AFTERPULSE_PROB = 0.0`** | `analysis/val_gobby/validate_gobby.py` | §19.5 concluded this from the paper long ago but the code never carried it. With `e_mod` implemented since GOBBY-6, keeping 0.05 double-counted the floor. |
+| **Stale documentation reasserted** | `opto-sim-issues-and-fixes.md` | Each claim re-derived against current behaviour rather than the heading rewritten. |
+| **Poisson-form and saturation tests** | `tests/test_spad.py`, `tests/test_analytic_gobby.py` | Both defects that drove `S_mc/S_analytic` off unity are now guarded. |
+
+**Key results:**
+
+- **The unattributed residual from GOBBY-7b is found, and it was a real physics defect — not a Gobby artifact.** Chasing it *before* committing an hour to the nine-point sweep is what surfaced it. The old form predicted 0.9625 of the analytic value against the measured **0.9533 ± 0.0123** — 0.75σ, which identified it.
+- **The error grows with intensity**, so it was benign where the simulator has mostly been used and badly wrong outside it: −0.05% at `mu` = 0.001, −3.58% at Gobby's operating point, **−20.4% at `mu` = 0.5, −54.8% at `mu` = 2.0**. Classical visibility measurements, alignment runs and any high-`mu` study were substantially wrong.
+- **Agreement with the Monte Carlo after both fixes**: 0 km **1.019 ± 0.012**, 40 km 1.011 ± 0.025, 65 km 0.985 ± 0.031 — ~2%, consistent with unity across the range, from 0.954 / 1.012 / 0.994 before. One RNG draw either way, so stream alignment is unchanged and the difference is purely physical.
+- **The afterpulse default was double-counting the floor.** §19.5 had already established `afterpulse_prob = 0` on three sourced grounds — Fig. 3's dashed curve starting at ~0, the stated `P_e` having no afterpulse term, and the closing summary naming three mechanisms without it — but the code stayed at the ID230 0.05 because until GOBBY-6 afterpulsing was the only thing supplying a floor. On defaults the 0 km QBER read **5.806%** against Gobby's 3.3%; the 2.5 pp excess is exactly the `p_ap/2` §19.5 predicts. Corrected: **3.088 ± 0.247%**, 0.86σ from the stated value.
+- **Ownership was checked, and nothing moved.** `afterpulse_prob` *is* a SPAD parameter (`spad.py`, default 0.05 = ID230); the constant in `validate_gobby` is the replication-level override, which is where a claim about Gobby's apparatus belongs rather than one about SPADs generally.
+- **Numbers previously reported are restated with the correction named**, not quietly replaced — floor 3.253 → 3.088%, jitter control 3.579 → 3.369%, `S_mc/S_analytic` 0.954 → 1.019. The `T_INT` pass corrected the analytic helper and the Monte Carlo was bit-identical across it; this pass corrects the physical chain, so movement was expected.
+- 308 tests pass.
+
+**Documentation reasserted rather than patched.** §19's heading still read "⚠️ OPEN (top priority)" though GOBBY-2 closed several passes ago; §20.6's "Modulation error is not implemented" was false since GOBBY-6 — and the concern it raised, that afterpulsing and `e_mod` were two mechanisms producing a similar number, turned out to be live and is what this pass acted on. §20.6's arm-equalisation bullet was re-checked and **left standing, still true**.
+
+---
+
+### Session: GOBBY-7b — `signal_click_prob()` was missing `T_INT`; jitter demoted
+
+| Change | Files | Rationale |
+|---|---|---|
+| **`T_INT` applied in `signal_click_prob()`** | `analysis/val_gobby/validate_gobby.py` | It computed `MU * T_link * ETA_BOB` and never applied the polarisation-multiplexed interferometer transmission `2/(1+r)` = 0.769231, putting it **41% above** what the chain delivers. Imported from `src/analytic/gobby_model.py` rather than restated, so one definition and the existing traceability test keeps covering it. Propagates to `model_qber()` and `predicted_visibility()`, which is the point. |
+| **Jitter demoted to a negative result** | `src/channel/phase_modulator.py`, `src/protocols/bb84_time_bin.py`, `validate_gobby.py` | `phase_noise_rad` *is* the drive-voltage-noise knob. Never a default anywhere; `PHASE_NOISE_RAD` marked diagnostic-only. Kept, not deleted — modulators with genuinely random shot-to-shot error exist. |
+| **Saturation bound + regression guards** | `tests/test_analytic_gobby.py` | The reason a signal error could never explode the QBER, plus a guard so the `T_INT` omission cannot silently return. |
+
+**Key results:**
+
+- **The 41% was a real omission, not a measurement artifact**, and decomposes cleanly at 0 km: **`T_INT` 23.1 pp**, detector dead time 3.1 pp, unattributed residual ~4.7 pp. `0.769231 × 0.9533 × 0.9689 = 0.7105` closes against the measurement. **Restoring `T_INT` is not fitting** — no value is chosen; one the repository already derives from the stated 1.6:1 split is used where it belongs.
+- **Three independent checks improved together**, which is the evidence it was a defect rather than a comparison artifact — no single number was targeted:
+  - mean |residual| over Gobby's four measured points **0.378 → 0.221 pp** (122 km −0.89 → +0.36, 100 km −0.80 → −0.28, 80 km −0.38 → −0.17);
+  - visibility @ 122 km **0.9058 → 0.8809** against the stated **0.884**, i.e. +0.022 off → −0.003 off — the sharpest test, the paper giving a value there rather than a bound;
+  - visibility @ 65 km 0.9903, still above the stated >0.99.
+- **The residual is bounded, not attributed.** After `T_INT` the form is a few percent optimistic — 0.954 ± 0.012 at 0 km, 1.012 ± 0.025 at 40 km, 0.994 ± 0.031 at 65 km — with **no significant distance dependence** (0 and 65 km differ by 1.2σ). Ruled out: gate width, pulse width, the `T_INT` machinery itself. Recorded as a quantified docstring bound rather than guessed at. Dead time is deliberately not carried in a first-order optical budget.
+- **The 65 km cross-check still fails and is still not tuned**: 0.485% against the stated <0.4%, over by 21%. The bound would allow `P_E <= 7.00e-07` against the 8.50e-07 carried. A regression test asserts it keeps missing, so a later change cannot launder it into a pass.
+- **The Monte Carlo did not move** — the check that matters, since this corrected the analytic helper and not the physical chain. Floor still 3.253 ± 0.258% at 0 km; jitter control still 3.579 ± 0.267%.
+- **Why the defect stayed survivable:** `P_e/(S + 2*P_e)` saturates at 1/2 as `S → 0`, so a signal error shifts the share within a bounded range (+0.008 pp at 0 km to +1.675 pp at 122 km) and can never blow it up. Now asserted in `TestErroneousCountSaturation` rather than argued in prose.
+- 303 tests pass (276 + 27).
+
+**Retracted:** an interim estimate in this session scaled S by a constant `K = 0.7105` at every distance and reported 0.254 pp with a 0.525% miss. Wrong in method — dead time is distance-dependent and vanishes at range, so a constant is not the right correction. The `T_INT` fix is both more defensible and better: 0.221 pp, 0.485%.
+
+---
+
+### Session: GOBBY-7 — arm-length drift implemented, bias in volts, two prose cross-checks
+
+| Change | Files | Rationale |
+|---|---|---|
+| **`phase_drift_rad_s` on `AsymmetricMZI`** | `src/channel/interferometer.py` | Gobby *measure* interferometer phase drift at <0.05°/s and the code had no such parameter. It is **arm-length** drift — "variations in the relative lengths of the two arms" — so it is a property of the interferometer. New `arm_phase_offset(t)` owns the law; `modulate` gains `t=0.0`. |
+| **`bias_offset_v` on `PhaseModulator`** | `src/channel/phase_modulator.py` | "Slight inaccuracies of the phase modulator biases" is literally a bias voltage. Converted through the existing crystal-derived `V_pi` (3.8826 V), so 20.93° reads as 451.5 mV. Supplying it *and* `phase_error_rad` raises — one mechanism, two unit systems. No signature change. |
+| **Protocol queries, never restates** | `src/protocols/bb84_time_bin.py` | Supplies only its clock, reusing the `pulse_idx / repetition_rate` the SPAD calls already computed, and subtracts the component's own `t=0` value since the PERF-2 coefficients were extracted at rest. Neither law is written down in the protocol. |
+| **Gobby default: jitter → static bias** | `analysis/val_gobby/validate_gobby.py` | The old default was justified by "drive noise is random per pulse" — the one mechanism the arithmetic rules out. The paper says "biases" and "drift"; neither is per-pulse noise. |
+| **Two cross-checks from the prose** | same | `print_paper_cross_checks` reports both stated bounds on every run, pass or fail. |
+| **`bias_offset_v` wired into Duplinskiy** | `src/protocols/bb84_duplinskiy.py` | Overfitting guard: the test suite requires a **non-Gobby** protocol to exercise the parameter. |
+
+**Key results:**
+
+- **Drive-voltage noise is ruled out as the mechanism, and the negative result is recorded.** Reproducing the 3.3% floor would need 451.5 mV = **11.6% of V_pi**; realistic drive electronics sit at 0.1–1%, worth 0.0002–0.025% QBER.
+- **The framing was corrected, not patched.** There is no more-fundamental number behind the 3.3% — it is a measured aggregate from a hand-biased apparatus. The bias magnitude being derived from it is **the correct treatment of an experimental result**, not a shortcoming. GOBBY-6 §23.3's caution is rewritten accordingly; what survives is that it remains not a measurement of their modulator.
+- **Drift verified end-to-end at measurable amplitude.** 0.091% is too small to resolve without ~1e8 pulses, so the mechanism was tested by sweeping the phase 0 → 90° across a 2e6-pulse run: **18.342 ± 0.833%** against the analytic time-average **18.169%** (0.21σ), and exactly 0.000% with drift off. The cited rate checks arithmetically at 6.000° over their 2-minute transfer, 0.075° over a 1.5 s run. **The rate is passed unscaled** — rescaling it to fit a shorter run would turn a cited constant into a fitted one.
+- **The floor holds under the corrected default.** Static bias measures **3.253 ± 0.258%** at 0 km against Gobby's stated **3.300%** (0.18σ); the old jitter default gave 3.579 ± 0.267%. Both within ~1σ, so this changes provenance rather than the result.
+- **One prose cross-check passes, one fails — and the failing one is reported, not fixed.** Device visibility >99.9% is satisfied (balanced arms give 1.0). Erroneous counts at 65 km **miss**: 0.525% against the stated <0.4%, over by 31%. Tuning `P_E` to pass would re-fit exactly what GOBBY-1 unfitted.
+- **A larger discrepancy surfaced while checking it.** `signal_click_prob()` runs **~41% above** what the chain delivers (0 km: 4.50e-03 vs 3.20e-03 measured), which is what flips the 65 km verdict. It also underpins `model_qber()` and `predicted_visibility()`, i.e. every analytic column. **Deliberately untouched** — a separate change with its own verification.
+- **LiNbO3 bias drift deferred on a physical criterion, not for convenience.** Its relaxation runs minutes to days, so over runs of this length it is indistinguishable from a constant offset and is already absorbed by `bias_offset_v`. Recorded with four sources (including the RC-circuit model form) and a falsifiable trigger: implement when a protocol simulates tens of minutes or longer.
+- **Overfitting checked against the codebase.** Five modules construct `PhaseModulator` and the Gobby chain is not one of them. `bias_offset_v` is therefore exercised by `bb84_duplinskiy` in tests — accepting it, staying bit-identical at zero, raising QBER at half-V_pi.
+- 295 tests pass (276 + 19). Transmission still 0.7692307692307693; default `'balanced'` path bit-identical at 0/65/122 km with both new parameters present and zero.
+
+**Known omission, with its number:** the gap between our device visibility of 1.0 and the paper's stated >0.999 bound is real residual imperfection worth at most 0.050% QBER, ≤1.5% of the floor. Not modelled, the same treatment linewidth received.
+
+---
+
+## 2026-08-08 — PERF-2 extended to stochastic phases; linewidth and modulation error
+
+### Session: GOBBY-6 — the floor reproduced from stated parameters, nothing fitted
+
+| Change | Files | Rationale |
+|---|---|---|
+| **PERF-2 extended, not refactored** | `src/protocols/bb84_time_bin.py` | PERF-2's 8 precomputed outcomes are exact only while the response is deterministic; a per-pulse random phase makes it continuous. The same linearity argument extends: `P(delta) = g0 + 2*Re(S*exp(i*delta))`, with `(g0, S)` fixed by three evaluations at `delta = 0, pi/2, pi`. Three field propagations **per point** instead of per pulse; any phase thereafter is two multiplies. Documented in the module docstring — it is why a 1e8-pulse sweep is feasible and is easy to lose in a later refactor. |
+| **Coefficients extracted from the chain, not re-derived** | same | No second expression of the physics to drift out of step, and correct for both topologies without special-casing. |
+| **Consistency assertion added** | same | See below — the negative control exposed that the closed form had stopped deriving the phase-sign convention from the physics. |
+| **`linewidth` / `path_mismatch`** | `src/protocols/bb84_time_bin.py`, `analysis/val_gobby/validate_gobby.py` | The chain had no laser model at all. Every real laser has a linewidth, and a 2026 replicator must be able to express their apparatus. |
+| **`phase_error_rad` / `phase_noise_rad`** | `src/channel/phase_modulator.py` | Modulation error as a static offset or per-pulse jitter. |
+
+**Key results:**
+
+- **The floor is reproduced from stated parameters with nothing fitted.** `e_mod + P_e` measures **3.407 ± 0.226 %** at 0 km against Gobby's stated **3.3 %** (a second independent run gave 3.579 ± 0.267 %; both within ~1σ).
+- **Contribution budget — what earns its place.** `e_mod` is **85 % of the floor** and load-bearing: without it the chain has no floor at all (0.08 % with afterpulsing correctly off). `P_e` is load-bearing at range, not at the floor (0.03 % at 0 km → 5.96 % at 122 km). **Linewidth is negligible at realistic trim** — 0.0047 % predicted at 3 MHz / 10 ps, 0.14 % of the floor — so it is **kept and documented with its number**, rather than silently included as though it mattered or omitted so a replicator with poor trim cannot express their apparatus.
+- **Linewidth couples through the residual mismatch, not the AMZI delay.** The S-L and L-S routes traverse the same total path, so the frequency-noise term cancels — which is why the delay line and stretcher exist, and how >99 % visibility works with an 80 ps pulsed source. Measured against the closed form at four (dnu, d_tau) points, all within ~1σ. Producing the full 3.3 % floor this way would need `d_tau` of 2.17–21.7 ns, larger than the 5.8 ns delay itself. **That is why the paper omits it** — in a path-matched scheme it is irrelevant to the QBER. The omission is correct; no claim about the source is made.
+- **Both modulation-error models give 3.299 %** — static `d = 20.93°`, jitter `s = 21.17°`, a 1.1 % difference in angle. The choice describes the hardware rather than matching a number; jitter is the default since drive noise is random per pulse.
+- **A negative control caught a hole in itself.** The gate first read "failure" at relative difference 1.0 on the four matched-basis entries — a comparison artifact, since those are the *extinguished* ports where relative error is undefined (baseline ~8.7e-44 by direct interference, closed form ~1e-28 from cancellation, i.e. float64 epsilon × full scale). On absolute error against `P_max` the form is bit-identical at **1.785e-16**, with a 1 mrad offset showing at 5e-4. But **the Bob-sign control gave the same value as the pass** — vacuous, because the coefficients are extracted at `phi_B = 0` and so never observe the sign, leaving the per-pulse formula to *assume* `delta = phi_A - phi_B`. The GOBBY-4 §21.2 phase-arm coupling would no longer have been caught. Fixed by asserting the closed form against the chain at `phi_B != 0`; verified that flipping the sign now trips it.
+- 276 tests pass. Transmission still exactly 0.769231; bit-to-port mapping unchanged in both bases; default `'balanced'` path bit-identical.
+
+**Recorded caution:** 21° is a derived consequence of taking Gobby's stated 3.3 % at face value within this model — not a measurement of their modulator, and not checked against era specifications.
+
+**Not usable, not quoted:** the 122 km column of the first budget run produced `e_mod + P_e` *below* `P_e` alone — non-physical, marking the run as under-powered rather than anything being wrong. The long end is characterised analytically; a properly powered long-range budget belongs with the nine-point sweep.
+
+**Still open:** the nine-point sweep, deferred until `e_mod` existed. With it in place and nothing fitted, that run becomes the test of the raw claim.
+
+---
+
+## 2026-08-08 — Retarder global phases removed; phase-arm change confirmed MC-vs-analytic
+
+### Session: GOBBY-5 — the conjecture pays off
+
+**A conjecture that something in the chain was not real-valued is what
+produced this fix.** The X basis was the suspected site and came back clean,
+but the hypothesis directed an audit that found the actual defect — nobody
+inspects retarders no live code calls without a reason to.
+
+| Change | Files | Rationale |
+|---|---|---|
+| **Retarder global prefactors deleted** | `src/channel/optics.py` | `halfwave` carried `exp(-i*pi/2) = -1j` and `quarterwave` `exp(-i*pi/4)`, multiplying the entire Jones matrix. Unlike the coupler `i` (a choice between valid conventions), a global prefactor has **no physical content** — invisible in `\|E\|^2` for one path, a real relative phase as soon as two interfering paths pass different retarder counts. The standard Jones form omits it, and the module's matrix body was already that form, so this was a deletion rather than a reformulation. |
+| **Retardance preserved** | `src/channel/optics.py` | The relative `i` between `quarterwave`'s fast and slow axes stays — that is the retardance and the whole point of the component. |
+| Convention note | `src/channel/optics.py` | Added beside the existing coupler note, distinguishing a global prefactor (removed) from a relative axis phase (kept). |
+| Phase-pinning test corrected | `tests/test_optics.py` | `test_quarterwave_zero_angle_leaves_h` asserted `exp(-1j*pi/4)` under a docstring reading "up to a global phase" — it asserted the very thing it called incidental. Now `1.0`. |
+
+**Key results:**
+
+- **`halfwave` \|Im\|/\|Re\|: 1.6e+16 -> 0.** A real input had been coming out *purely* imaginary. `quarterwave` H-aligned: 1.0 -> 0. Retardance at 45° preserved (`E_y = -i E_x`).
+- **No power-based test moved**, which is the expected signature: a unit-modulus prefactor cannot change `|E|^2`. Every other retarder test was already phase-blind — itself evidence the prefactor carried nothing.
+- **Phase-arm change confirmed end to end.** §21.2 verified it at the gate-table level; this pass tests the whole chain against the closed form. Link budget only (`afterpulse_prob=0`): MC/analytic **1.278 / 0.893 / 1.114** at 65/100/122 km, weighted mean **1.061 ± 0.131 — 0.47σ from unity**, every point within 1σ.
+- **The `MU_EFF` prediction held.** On identical MC numbers, the old fitted 0.0793 gave a weighted mean of 1.091 and the derived value gives 1.061 — the ratio moved **2.8 % toward 1.0**, matching the 3.12 % mismatch it removed.
+- **The 3.12 % provably cannot propagate.** The elasticity is analytic: `(dQBER/QBER)/(dS/S) = -V·(e_counts/QBER) <= V <= 1`. Measured 0.009 / 0.127 / 0.405 / **0.567** at 4.4/65/101/122 km — predicted ΔQBER matching a finite difference to the third decimal. **Worst case 0.567, strictly sub-unity**: a 3.12 % move in `mu_eff` yields at most 1.77 % in QBER. The mapping is a contraction, not an amplification. `ALPHA_DB`, `ETA_BOB`, `P_E`, `E_MOD` are independent literals and do not move at all; the MC never reads `MU_EFF`, which is what keeps the 0.769/0.793 comparison a cross-check rather than a tautology.
+- 276 tests pass (was 264). Transmission still exactly 0.769231; bit-to-port mapping unchanged in both bases; default `'balanced'` path bit-identical.
+
+**Still deferred:** `coupler_combine`'s `1j` (GOBBY-4 §21.3) — a legitimate
+coupler convention merely inconsistent with the real form this module
+adopted, which is a different category from a prefactor carrying no physical
+content. Modulation error remains unimplemented (GOBBY-2 §19.9 step 3), so
+only the link-budget comparison is currently meaningful.
+
+---
+
+## 2026-08-08 — Analytic model finalised (no fits); encoder phase arm corrected
+
+### Session: GOBBY-4 — remove the last fitted parameter; put the phase on the arm that carries it
+
+**The analytic model contained one fitted parameter and its docstring denied
+it.** `src/analytic/gobby_model.py` set `MU_EFF = 0.0793` by *inverting
+Gobby's measured fringe visibilities* — fitting to the very data the model
+exists to predict — beneath a header reading "Every parameter is from the
+source paper. Nothing is fitted." That single number was the entire
+"analytic vs Gobby" discrepancy; the formulations and stated parameters were
+correct throughout.
+
+It was standing in for the **interferometer transmission**, which is
+derivable from stated values:
+
+```
+T_int  = 2/(1 + r) = 0.769231      r = 1.6, stated
+mu_eff = mu * T_int = 0.076923     mu = 0.1, stated
+```
+
+| Change | Files | Rationale |
+|---|---|---|
+| **`MU_EFF` derived, not fitted** | `src/analytic/gobby_model.py` | `MU`, `SPLIT_RATIO`, `T_INT` added; `MU_EFF = MU * T_INT`. Every factor stated or derived in closed form from a stated value. Per-constant citations. |
+| **No-fitting rule written into the module** | `src/analytic/gobby_model.py` | Stated as a rule, not a description: no parameter — physical models or analytic comparisons — may be fitted to data the model exists to reproduce, unless the source states it as fitted. **Every parameter must carry a citable source.** |
+| **`phase_arm` on `AsymmetricMZI`** | `src/channel/interferometer.py` | Which arm holds the modulator fixes the *sign* of the relative phase. Default `'long'` preserves all existing behaviour. |
+| **Encoder phase moved to the encoded arm** | `src/protocols/bb84_time_bin.py` | Gobby encodes on Alice's **short** arm; the code was applying `phi_A` to the long arm, which carries the reference. Two coupled changes: `phase_arm='short'` **and** Bob's sign `exp(-i*phi_B)` -> `exp(+i*phi_B)`. |
+
+**Key results:**
+
+- **Cost of removing the fit: 0.026 pp.** Residuals against Gobby's four measured points are +0.03 / +0.49 / −0.25 / +0.36, **mean 0.282 pp** against the fitted value's 0.256 pp. The model now predicts rather than reproduces.
+- **Independent cross-check retained** (as a check, never an input): inverting Gobby's stated visibilities gives `mu_eff/mu = 0.793` against the geometry's 0.769 — **3 % agreement between two unrelated routes**.
+- **The traceability guard is exact equality.** `test_mu_eff_is_derived_not_fitted` asserts `MU_EFF == MU * T_INT`, so writing the literal 0.0793 fails even though the two agree to 3 %. A rule that is only a comment is not a rule.
+- **Phase-arm fix verified by gate-table equivalence, captured before any edit.** Production vs baseline across 3 distances × 8 entries × 2 ports: **max relative difference 2.35e-16, nothing changed**. Intensities are untouched because `cos` is even — which is exactly why the bug survived every existing test.
+- **With a negative control, because a check that cannot fail proves nothing.** Applying the arm move *without* the sign flip changes the table by **1.00** and does so on **Y0Y and Y1Y only** — the Y basis inverts, X is untouched. That confirms the equivalence check can actually detect a sign error.
+- 264 tests pass (was 259). Default `'balanced'` path bit-identical at 0/65/122 km; transmission still exactly 0.769231.
+
+**Convention audit — recorded, deliberately not fixed.** Measured
+`max|Im|/max|Re|` through the polmux chain in the X basis: **0.000e+00 at
+every stage — real end to end**. The imaginary fields are not from the
+time-bin chain. Per component: `coupler_split`/`pbs`/`pbc`/`voa` clean;
+`coupler_combine` **1.0** (still the `1j` convention); `circular_analyser`
+**1.0** (by design, and live in four protocols); `quarterwave` **1.0**;
+`halfwave` **1.6e+16** — a real input comes out *purely* imaginary. Written
+up as GOBBY-4 §21.3 with scope for a later pass. `|E|^2` is unaffected so no
+published number is wrong, but the simulator is meant to be physically real.
+
+**Numbers superseded:** §19.3's decomposition table and §19.2's derivation
+were computed at the fitted 0.0793 and are correct only for that value.
+§19.3's sensitivity row "0.0793 / from V / 0.26 pp" becomes
+"0.0769 / derived / 0.28 pp".
+
+---
+
+
+## 2026-08-08 — Generic unbalanced-MZI components; the μ/2 loss was ours
+
+### Session: GOBBY-3 — polarisation-multiplexed topology from generic parts
+
+The Gobby chain gated only `μ/2`. §19.7 resolved that by feeding
+`2·μ_eff = 0.1586` — a scalar with no physical referent, putting 1.59× the
+paper's stated `μ` into a replication whose claim is source traceability.
+The real cause was modelling the wrong interferometer: a balanced 50:50
+pair produces four paths and dumps half the light into satellite bins the
+gate discards, whereas Gobby's polarising beam combiner/splitter routes
+deterministically, so `S-S` and `L-L` never form.
+
+Fixed by adding the missing **generic** capability rather than a
+Gobby-shaped class. Nothing in `src/` knows the number 1.6.
+
+| Change | Files | Rationale |
+|---|---|---|
+| **`coupler_split` fixed** | `src/channel/optics.py` | It applied a bogus Hadamard to the fields and let `ratio` move only the returned *powers* — the two were mutually inconsistent. **The old field behaviour was wrong, not merely different**; any caller relying on it was relying on a bug (only tests did). Now amplitude-splits as `√ratio` / `√(1−ratio)` per **Zeilinger, Am. J. Phys. 49(9), 882–883, 1981**. |
+| **`pbc` added** | `src/channel/optics.py` | Polarising beam combiner, inverse of `pbs`, per **Collett, *Field Guide to Polarization*, SPIE 2005**. A non-polarising combiner interferes its inputs and loses half the light; a PBC keeps both because they occupy orthogonal states. This is what makes deterministic routing expressible. |
+| **Coupler phase convention documented** | `src/channel/optics.py` | Zeilinger: `[[t, ir],[ir, t]]` and `[[t, r],[r, −t]]` are both unitary, equivalent *only if used consistently*. Mixing them is not cosmetic — the imaginary form makes interference go as `sin Δφ`, and BB84 encodes in `{0, π}` where `sin` vanishes. The module now commits to the real form. |
+| **`AsymmetricMZI` generalised** | `src/channel/interferometer.py` | `split_ratio=0.5` (default preserves behaviour exactly); `recombine=False` taps the arms; the decoder accepts a pre-split `(E_a, E_b)` pair. Arm tapping and injection are ordinary requirements for an unbalanced MZI. |
+| Topology composed, not hard-coded | `src/protocols/bb84_time_bin.py` | `interferometer='polarisation_multiplexed'` wires split → delay → modulate → `pbc` → fibre → `pbs` → delay → `voa` → recombine. Balancing uses the **existing** `voa` at `10·log10(r)` dB. `split_ratio` is a caller argument. |
+| Bespoke class deleted | `src/channel/interferometer.py` | An earlier `PolarizationMultiplexedAMZI` hard-coded the topology and re-implemented coupler algebra inline. Removed. |
+
+**Key results:**
+
+- **The geometry predicts the signal.** Equalising the arms discards the excess reference power: transmission `2·κ_A` = **0.769231 measured, exact**. Inverting Gobby's *stated* visibilities via `V = S/(S + 2·P_e)` independently gives `μ_eff/μ = 0.793`. **3 % agreement, zero free parameters** — and it explains the ~21 % shortfall §19.7 left unattributed.
+- **MC/analytic excess gone.** Link budget only: 1.36 / **0.976** / 1.31 at 65/100/122 km, consistent with 1.0. §19.10(2) recorded **1.9–2.5×**. The best-powered point matches the 0.769/0.793 = 0.970 ratio the two independent derivations predict. §19.10(2)'s premise is withdrawn — the excess was structural, not detector-side.
+- **Default path bit-identical** at 0/65/122 km; balanced chain still gates exactly 0.500.
+- **Two bugs found that the existing tests could not catch**: the `sin Δφ` convention error, and Bob's phase on the encoded arm giving `φ_A + φ_B`, which inverts *only* the Y basis. Both produced ~48 % QBER end to end. Twenty passing tests missed them because each swept phase continuously or checked energy — none asserted bit→port. `TestBB84Mapping` now does.
+- 259/259 tests pass (was 242).
+
+**Still open:** modulation error is not implemented (GOBBY-2 §19.9 step 3), so the chain's floor comes from afterpulsing while the analytic carries `e_mod = 3.3 %` — different mechanisms, similar magnitude, exactly the pattern §19.5 warns about. Only the link-budget comparison is currently meaningful. Arm equalisation is an inference, not a paper statement. The nine-point sweep has not been re-run at the corrected topology.
+
+---
+
+## 2026-08-07 — GOBBY-2 step ②: the afterpulse=0 sweep — the floor collapses, and the MC/analytic excess is a 3 dB encoder split, not the detector
+
+### Session: run §19.9(2) at full power, root-cause the ~2× MC/analytic excess
+
+Step ②'s prediction held exactly where it was sharp and failed where the
+step was designed to look: **the 3.3 % floor collapses** — 0 km goes
+**2.55 % → 0.08 %** with `afterpulse_prob = 0` — so afterpulsing really
+was standing in for the missing e_mod. But the MC/analytic excess does
+**not** collapse: it holds at **~2×** across the sweep. It was never a
+detector-state-machine effect — it is the **50:50 encoder split**.
+
+**Result (9 points, `--target-sifted 3000`, seed 42, ≈1.64×10⁹ pulses,
+≈1 h 20 m logged run):**
+
+| z (km) | MC | analytic | MC/analytic | Gobby |
+|---|---|---|---|---|
+| 0 | 0.08 ± 0.05 | 0.019 | 4.4× | 3.3 (i) |
+| 4 | 0.03 ± 0.03 | 0.023 | 1.2× | 3.3 (m@4.4) |
+| 10 | 0.08 ± 0.05 | 0.030 | 2.8× | 3.3 (i) |
+| 20 | 0.11 ± 0.06 | 0.047 | 2.3× | 3.3 (i) |
+| 40 | 0.30 ± 0.09 | 0.119 | 2.5× | 3.3 (i) |
+| 65 | 0.87 ± 0.14 | 0.374 | 2.3× | 3.3 (m) |
+| 80 | 1.77 ± 0.22 | 0.741 | 2.4× | 4.4 (i) |
+| 100 | 3.51 ± 0.27 | 1.82 | 1.9× | 6.0 (m@101) |
+| 122 | **8.90 ± 0.40** | 4.71 | 1.9× | 8.9 (m) |
+
+Rows below 40 km are noise: with the floor gone everything reads
+0.03–0.11 %, and the ratio column there is meaningless.
+
+### Root cause — the chain's gate captures μ/2, not μ
+
+A balanced double AMZI (50:50 encoder + 50:50 decoder) sends **half** the
+launched energy to the central interference peak and a quarter to each
+satellite bin, which the gate excludes. The chain therefore delivers
+`μ/2` at the gate. Verified twice:
+
+- direct check (2M pulses, dark = 0, afterpulse = 0, V = 1):
+  `P(click) = 0.002241` vs `μ·η_Bob = 0.0045` → **ratio 2.008**;
+- sifted fraction at 0 km: `1.10e-3` = `(μ·η_Bob)/2` exactly.
+
+The closed form with the halved signal then reproduces the Monte Carlo:
+**3.51 % @100 km** (the measured 3.5054, to the digit), **8.61 % @122 km**
+(measured 8.90; the 0.29 pp tail is dead-time/tie-break), and — with
+GOBBY-1's `a = 0.05` — **10.59 % @122 km** vs GOBBY-1's measured 10.69.
+
+**This corrects the GOBBY-1 attribution.** §18.6's "1.56× at 122 km —
+excess in the detector state machine" was the analytic side comparing a
+full-`μ` closed form against a chain that gates `μ/2`. There is no
+state-machine excess to instrument.
+
+### The 122 km point is a coincidence — do not report it as validation
+
+8.90 % vs the paper's 8.9 % looks like a hit but is two compensating
+defects: the missing e_mod (−3.3 pp, flat) cancels the halved-signal
+error share (+3.9 pp, distance-dependent) only near 122 km. At 65 km the
+same two effects read **0.87 % against Gobby's 3.3 %**.
+
+### Decision recorded for steps ③–④ (§19.7, §19.9)
+
+Feed the chain `mu = 2·μ_eff = 0.1586` so the gate receives
+`μ_eff = 0.0793` — QBER-identical (`S/(S+2·P_e)` unchanged) to modelling
+Gobby's apparatus directly — chosen over implementing a 1.6:1 encoder or
+documenting the 2× offset. e_mod goes on the `PhaseModulator` as
+`phase_error_rad = 0.3653 rad` (static offset, §19.6). Code changes for
+steps ③–④ were deliberately **not** made this session; this sweep record
+and the root cause are the deliverable.
+
+---
+
 ## 2026-08-07 — GOBBY-1: the link budget, corrected; Gobby's slope reproduced with no fitted parameters
 
 ### Session: implement §18.5, run the nine-point sweep, fix a derived-column defect

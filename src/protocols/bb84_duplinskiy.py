@@ -66,6 +66,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               mu=0.1, bob_loss_dB=2.0,
                               gate_width=20e-9, rep_rate=10e6,
                               compensate=True, model='auto',
+                              bias_offset_v=0.0,
                               seed=None, verbose=False):
     """BB84 simulation matching the Duplinskiy et al. experimental setup.
 
@@ -81,6 +82,11 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     compensate : bool — apply Bob's polarization compensation (the
         inverse of the fibre's quasi-static Jones matrix) before
         decoding, mirroring the paper's calibration loop (default True).
+    bias_offset_v : float — static bias error on Alice's phase modulator,
+        as a drive voltage (default 0 = perfectly biased).  Converted by
+        `PhaseModulator` through its crystal-derived V_pi.  Setting a
+        modulator's bias imperfectly is universal to phase-modulated QKD,
+        not specific to any one experiment.
     seed : int or None — RNG seed.
     model : str — birefringence model for the fibre: 'auto' (default) or
         'sectional'. 'phenomenological' was removed in the fifth pass
@@ -105,7 +111,8 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     power_per_pulse = mu * photon_energy / gate_width
 
     # Phase modulators (LiNbO3, X-cut)
-    pm_alice = PhaseModulator(crystal_cut='X', modulation='DC')
+    pm_alice = PhaseModulator(crystal_cut='X', modulation='DC',
+                              bias_offset_v=bias_offset_v)
     pm_bob = PhaseModulator(crystal_cut='X', modulation='DC')
     Vpi = pm_alice.Vpi
 

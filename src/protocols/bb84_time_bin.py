@@ -6,6 +6,57 @@ Signal chain:
 
 Based on Gobby, Yuan & Shields (2004), Appl. Phys. Lett. 84, 3762.
 
+Performance: the interference closed form (PERF-2, extended)
+------------------------------------------------------------
+**This is why a 1e8-pulse sweep is feasible at all.  Preserve it.**
+
+PERF-2 observed that the field chain is deterministic given the three
+discrete choices (alice_basis, alice_bit, bob_basis), so 8 precomputed
+outcomes replace one field propagation per pulse — a 2,000,000-pulse run
+had been doing 4,000,000 propagations to obtain 8 distinct answers.
+
+That form is exact only while the response is deterministic.  A per-pulse
+random phase — laser linewidth against a residual path mismatch, or
+modulator drive noise — makes it continuous, and 8 answers no longer
+cover it.
+
+**The same linearity argument extends, and the extension is exact rather
+than an approximation.**  The chain is linear, so the two interfering
+paths superpose and the gated power is exactly
+
+    P(delta) = g0 + 2*Re(S * exp(i*delta)),    delta = phi_A - phi_B,
+
+for constants (g0, S) fixed by the point's parameters.  Three evaluations
+at delta = 0, pi/2, pi determine them:
+
+    g0    = (P(0) + P(pi)) / 2
+    Re(S) = (P(0) - P(pi)) / 4
+    Im(S) = (g0 - P(pi/2)) / 2
+
+So the cost is three field propagations per *point* — not per pulse — and
+any phase thereafter costs two multiplies.  PERF-2 generalised from
+"8 fixed answers" to "one closed form, any phase": strictly more capable
+at the same per-pulse cost.
+
+Two properties worth not losing in a later refactor:
+
+* The coefficients are extracted *from the field chain itself* rather than
+  re-derived by hand.  There is therefore no second expression of the
+  physics that can drift out of step with the components, and the form is
+  correct for both interferometer topologies without special-casing.
+* Because they are extracted by sweeping phi_A at phi_B = 0, they carry no
+  information about how phi_B enters, and the per-pulse formula *assumes*
+  delta = phi_A - phi_B.  A consistency assertion after the extraction
+  checks that assumption against the chain at phi_B != 0, so the field
+  chain stays authoritative — it fires on exactly the encoder
+  phase_arm / Bob sign coupling that GOBBY-4 section 21.2 had to verify by
+  hand.
+
+Verified bit-identical to the 8-entry table at 0/65/122 km (max absolute
+error 1.8e-16 of full scale, i.e. the float64 floor), with negative
+controls: a spurious 1 mrad phase offset shows up at 5e-4, and a flipped
+Bob sign trips the consistency assertion.
+
 References
 ----------
 [1] Gobby, C., Yuan, Z. L., & Shields, A. J. (2004). Quantum key
@@ -19,12 +70,15 @@ References
     634-635.
 """
 import argparse
+import math
 import numpy as np
 import random
 import sys
 
 sys.path.insert(0, 'src')
 from src.channel.interferometer import AsymmetricMZI
+from src.channel.phase_modulator import PhaseModulator
+from src.channel.optics import pbs, pbc, voa
 from src.detectors.spad import spad
 
 
@@ -40,6 +94,11 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                             spad_eta=0.10, dark_count_rate=15.0,
                             afterpulse_prob=0.05, dead_time=13e-6,
                             visibility=1.0, phase_error=0.0,
+                            interferometer='balanced', split_ratio=1.6,
+                            linewidth=0.0, path_mismatch=0.0,
+                            phase_error_rad=0.0, phase_noise_rad=0.0,
+                            bias_offset_v=0.0, phase_drift_rad_s=0.0,
+                            run_duration=None,
                             seed=None, verbose=False):
     """BB84 time-bin phase-encoding simulation.
 
@@ -62,6 +121,92 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         default 1.0 (ideal).  Optical misalignment error e_opt = (1 - V)/2.
     phase_error : float — static decoder phase offset (radians),
         default 0.0; represents imperfect AMZI path-length matching.
+    interferometer : {'balanced', 'polarisation_multiplexed'}
+        Which AMZI pair to use (default 'balanced', unchanged behaviour).
+
+        'balanced' is the generic 50:50 `AsymmetricMZI`.  It produces four
+        paths, two of which are non-interfering satellite bins at t = 0
+        and t = 2*delay carrying half the launched energy, which the gate
+        then discards -- so only mu/2 reaches the detectors.
+
+        'polarisation_multiplexed' is `PolarizationMultiplexedAMZI`, the
+        apparatus Gobby et al. actually describe: a polarising beam
+        combiner/splitter routes Alice-short -> Bob-long and
+        Alice-long -> Bob-short, so only two paths exist, there are no
+        satellites, and the full mu reaches the single interference peak.
+        Use this for the Gobby replication.  See GOBBY-2 (section 19) in
+        opto-sim-issues-and-fixes.md.
+    split_ratio : float — Alice's reference:encoded intensity ratio,
+        used only by 'polarisation_multiplexed' (default 1.6, per Gobby).
+    linewidth : float — laser linewidth (Hz, default 0 = off).
+    path_mismatch : float — RESIDUAL delay mismatch between the S-L and
+        L-S routes after the delay line and fibre stretcher (s, default 0).
+
+        Linewidth couples to the QBER *only* through this residual, as
+        `sigma = sqrt(2*pi*linewidth*path_mismatch)`.  It does **not**
+        couple through the full AMZI delay: the two interfering routes
+        traverse the same total path, so the frequency-noise term cancels.
+        That cancellation is why the delay line and stretcher exist, and
+        why >99% fringe visibility is achievable from an 80 ps pulsed
+        source whose coherence time is far shorter than the 5.8 ns delay.
+
+        Both default to 0 so existing behaviour is unchanged.  1550 nm DFB
+        diodes run from several hundred kHz to ~10 MHz (current parts cite
+        2-3.2 MHz); Gobby state no value, so any choice here is a
+        documented assumption, never a derived or fitted quantity.  At
+        realistic trim the contribution is <0.02% — see the contribution
+        budget in GOBBY-6.
+    phase_error_rad : float — STATIC phase offset applied to every pulse
+        (rad, default 0).  Models a modulator calibration offset.
+    phase_noise_rad : float — per-pulse Gaussian phase jitter, sigma in
+        radians (default 0).  Models modulator drive noise.  Adds in
+        quadrature with the linewidth term above, both being zero-mean
+        Gaussians entering the same relative phase.
+
+        **A negative result, kept but never a default.** Drive noise was
+        tested as the source of Gobby's 3.3% floor and ruled out: it would
+        need 11.8% of V_pi, against the 0.1-1% real electronics deliver,
+        and a static bias reproduces the floor better (3.253% vs 3.579%,
+        stated 3.300%).  Retained because modulators with genuinely random
+        shot-to-shot error exist — see `PhaseModulator` for the full
+        argument, and GOBBY-7 §24.1/§24.4.
+    bias_offset_v : float — the same static bias error as
+        `phase_error_rad`, expressed as a modulator drive voltage (default
+        0).  Converted by `PhaseModulator` through its crystal-derived
+        V_pi; supplying both raises there.  This is the mechanism Gobby
+        et al. (2004) name first, "slight inaccuracies of the phase
+        modulator biases".
+    phase_drift_rad_s : float — rate (rad/s) at which the decoder's arm
+        imbalance drifts, default 0 (no drift).  This is *interferometer*
+        arm-length drift, a distinct mechanism from modulator bias, and it
+        is owned by `AsymmetricMZI.arm_phase_offset` — this function only
+        supplies the clock.  Gobby measure < 0.05 deg/s = 8.727e-4 rad/s
+        with both setups enclosed against air convection.
+
+        It matters only for long runs.  Accumulated phase is rate * t, so
+        a 2-minute key transfer (their figure) reaches 6.0 deg and 0.091%
+        QBER, while a 3e6-pulse run at 2 MHz lasts 1.5 s and contributes
+        essentially nothing.
+    run_duration : float or None — physical duration of the experiment
+        being simulated, in seconds (default None).  Sets the *drift*
+        clock only; the detector clock always keeps true 1/repetition_rate
+        spacing, because dead time and afterpulsing are defined against
+        real elapsed time.
+
+        None ties drift to the pulse budget (`num_bits / repetition_rate`),
+        which is the historical behaviour and is bit-identical to it.
+        **Prefer setting it.**  The pulse budget is chosen for statistical
+        power, so leaving drift tied to it means asking for tighter error
+        bars silently lengthens the simulated experiment.  That is what
+        made the Gobby 122 km point read 13.52% against a stated 8.9%: it
+        needed 1e9 pulses = 500 s at 2 MHz, accumulating 25 deg of drift
+        where their two-minute transfer accumulates 6 (GOBBY-7c).
+
+        With it set, the simulated pulses are a uniform sample across a run
+        of that length.  The count may exceed what the apparatus actually
+        sent in that time — that is the point, and what makes it a
+        lower-variance estimate of the same expectation rather than a
+        longer run.
     seed : int or None — RNG seed.
     verbose : bool — print progress.
 
@@ -97,10 +242,55 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     pulse = gaussian_pulse(t - pulse_center, sigma, A=pulse_amplitude)
     E_pulse = pulse[:, np.newaxis] * np.array([1.0, 0.0], dtype=complex)  # X-polarised
 
-    # Build AMZI components
-    enc = AsymmetricMZI(delay=delay, mode='encoder')
-    dec = AsymmetricMZI(delay=delay, mode='decoder',
-                        visibility=visibility, phase_error=phase_error)
+    # Build AMZI components.
+    #
+    # 'balanced'  -- one field carries both time bins, so Bob's coupler
+    #   produces four paths: S-S and L-L land at t=0 and t=2*delay as
+    #   non-interfering satellites carrying half the energy, which the gate
+    #   discards.  Only mu/2 reaches the detectors.
+    #
+    # 'polarisation_multiplexed' -- Alice's arms leave on orthogonal
+    #   polarisations (PBC) and Bob's PBS routes them into opposite arms,
+    #   so only S-L and L-S exist.  No satellites; the full mu reaches the
+    #   single interference peak.  Composed below from generic components.
+    if interferometer not in ('balanced', 'polarisation_multiplexed'):
+        raise ValueError(
+            f"interferometer must be 'balanced' or "
+            f"'polarisation_multiplexed', got {interferometer!r}")
+
+    kappa = 1.0 / (1.0 + split_ratio)     # encoded (short) arm power share
+    polmux = interferometer == 'polarisation_multiplexed'
+
+    if polmux:
+        if visibility != 1.0:
+            raise ValueError(
+                "visibility is not a free input for the "
+                "polarisation-multiplexed topology: the arm amplitudes "
+                "determine it. Injecting one would re-apply error physics "
+                "the link budget already produces -- see GOBBY-2 section "
+                "19.4 in opto-sim-issues-and-fixes.md."
+            )
+        # Alice: unbalanced splitter, arms taken out separately so a PBC
+        # can put them on orthogonal axes.  Her modulator sits in the
+        # SHORT arm, because that is the arm carrying the encoded pulse
+        # ("the encoded pulse (through Alice's short arm)" -- Gobby).  The
+        # reference travels the long arm unmodulated.
+        enc = AsymmetricMZI(delay=delay, mode='encoder', split_ratio=kappa,
+                            phase_arm='short')
+        # Bob: arms arrive pre-split from the PBS.
+        dec = AsymmetricMZI(delay=delay, mode='decoder',
+                            phase_error=phase_error,
+                            phase_drift_rad_s=phase_drift_rad_s)
+        # Equalising the arms is what buys the >0.99 visibility the source
+        # reports; an unequal pair caps V at 2*sqrt(r)/(1+r) = 0.973 for
+        # r = 1.6.  Attenuate the stronger (reference) arm with a real VOA.
+        balance_dB = 10.0 * np.log10(split_ratio)
+    else:
+        enc = AsymmetricMZI(delay=delay, mode='encoder')
+        dec = AsymmetricMZI(delay=delay, mode='decoder',
+                            visibility=visibility, phase_error=phase_error,
+                            phase_drift_rad_s=phase_drift_rad_s)
+        balance_dB = 0.0
 
     # SPAD detectors (constructive and destructive ports)
     spad_c = spad(wavelength=wavelength, quantum_efficiency=spad_eta,
@@ -129,31 +319,178 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     n_errors = 0
     n_clicks = 0
 
-    # --- Precompute the 8 distinct field-chain outcomes (PERF-2) ---
-    # The channel is scalar attenuation and the AMZIs are linear and
-    # deterministic, so the gate powers (P_c, P_d) depend only on the
-    # three discrete choices (alice_basis, alice_bit, bob_basis).  They
-    # are computed once per point instead of per pulse — a 2,000,000-
-    # pulse run used to perform 4,000,000 field propagations to obtain
-    # 8 distinct answers.  No RNG is drawn in the table build, and the
-    # per-pulse draw order is unchanged, so the results are bit-identical
-    # to the per-pulse field chain (verified: tests, and the PERF-2
-    # equivalence harness).
     PHI_A = {'X': {0: 0.0, 1: np.pi},
              'Y': {0: np.pi / 2.0, 1: 3.0 * np.pi / 2.0}}
     PHI_B = {'X': 0.0, 'Y': np.pi / 2.0}
-    gate_table = {}
-    for a_basis in ('X', 'Y'):
-        for a_bit in (0, 1):
-            E_field = enc.modulate(E_pulse, dt, phase=PHI_A[a_basis][a_bit])
-            E_field *= fiber_loss_lin
-            for b_basis in ('X', 'Y'):
-                E_c, E_d = dec.modulate(E_field, dt, phase=PHI_B[b_basis])
-                P_c = float(np.mean(np.sum(np.abs(E_c[start_i:end_i]) ** 2,
-                                           axis=1)))
-                P_d = float(np.mean(np.sum(np.abs(E_d[start_i:end_i]) ** 2,
-                                           axis=1)))
-                gate_table[(a_basis, a_bit, b_basis)] = (P_c, P_d)
+
+    def _gate_powers(phi_a, phi_b):
+        """Run the field chain once and return the gated (P_c, P_d)."""
+        if polmux:
+            # Alice: unbalanced split, arms kept separate.  `enc` is
+            # built with phase_arm='short', so phi_A lands on the
+            # encoded pulse and the reference stays unmodulated.
+            E_enc, E_ref = enc.modulate(E_pulse, dt, phase=phi_a,
+                                        recombine=False)
+            # Polarising beam combiner: reference -> H, encoded -> V.
+            E_field = pbc(E_ref[:, 0], E_enc[:, 0])
+        else:
+            E_field = enc.modulate(E_pulse, dt, phase=phi_a)
+
+        E_field = E_field * fiber_loss_lin
+
+        if polmux:
+            # Bob's PBS routes by polarisation: Alice's reference (H)
+            # into Bob's short arm, Alice's encoded (V) into his long
+            # arm -- the L-S and S-L paths.  Only these two exist, so
+            # there are no satellite bins.
+            h, v = pbs(E_field)
+            arm_ref = np.column_stack([h, np.zeros_like(h)])
+            arm_enc = np.column_stack([v, np.zeros_like(v)])
+            # Equalise with a real attenuator before interfering.
+            arm_ref = voa(arm_ref, balance_dB)
+            # Bob's modulator sits in his short arm, which carries
+            # Alice's reference.  phi_A rides the encoded path and phi_B
+            # the reference path, so the interfering pair differ by
+            # phi_A - phi_B -- the convention PHI_A and PHI_B assume.
+            #
+            # The sign here is coupled to `enc`'s phase_arm: with phi_A
+            # on the encoded arm the reference must carry +phi_B.
+            # Flipping one without the other gives phi_A + phi_B and
+            # inverts the Y basis while leaving X untouched -- verified
+            # as the negative control for the gate-table equivalence
+            # check.
+            arm_ref = arm_ref * np.exp(1j * phi_b)
+            E_c, E_d = dec.modulate((arm_ref, arm_enc), dt)
+        else:
+            E_c, E_d = dec.modulate(E_field, dt, phase=phi_b)
+
+        P_c = float(np.mean(np.sum(np.abs(E_c[start_i:end_i]) ** 2, axis=1)))
+        P_d = float(np.mean(np.sum(np.abs(E_d[start_i:end_i]) ** 2, axis=1)))
+        return P_c, P_d
+
+    # --- Interference coefficients: PERF-2, extended (see module docstring)
+    #
+    # PERF-2 precomputed the 8 outcomes reachable from the discrete
+    # (a_basis, a_bit, b_basis) choices.  That is exact only while the
+    # response is deterministic; a per-pulse random phase -- laser
+    # linewidth against a residual path mismatch, or modulator noise --
+    # makes it continuous and puts 8 answers out of reach.
+    #
+    # The same linearity argument extends.  The chain is linear, so the
+    # two interfering paths superpose and the gated power is exactly
+    #
+    #     P(delta) = g0 + 2*Re(S * exp(i*delta)),   delta = phi_A - phi_B,
+    #
+    # for constants (g0, S) fixed by the point's parameters.  Three
+    # evaluations at delta = 0, pi/2, pi determine them:
+    #
+    #     g0     = (P(0) + P(pi)) / 2
+    #     Re(S)  = (P(0) - P(pi)) / 4
+    #     Im(S)  = (g0 - P(pi/2)) / 2
+    #
+    # Extracting the coefficients from the field chain itself, rather than
+    # re-deriving them by hand, keeps this exact by construction for both
+    # topologies -- there is no second expression of the physics to drift
+    # out of step.  Any delta then costs two multiplies.
+    def _coeffs(index):
+        P0 = _gate_powers(0.0, 0.0)[index]
+        Ph = _gate_powers(np.pi / 2.0, 0.0)[index]
+        Pp = _gate_powers(np.pi, 0.0)[index]
+        g0 = 0.5 * (P0 + Pp)
+        return g0, complex(0.25 * (P0 - Pp), 0.5 * (g0 - Ph))
+
+    g0_c, S_c = _coeffs(0)
+    g0_d, S_d = _coeffs(1)
+
+    # The coefficients above are extracted by sweeping phi_A at phi_B = 0,
+    # so they carry no information about how phi_B enters.  The per-pulse
+    # formula then *assumes* delta = phi_A - phi_B.  If Bob's sign in
+    # `_gate_powers` were ever flipped, that assumption would silently
+    # become wrong and the closed form would keep returning the old
+    # answers -- the field chain would no longer be authoritative.
+    #
+    # So assert it: evaluate the chain at points with phi_B != 0 and
+    # require the closed form to reproduce them.  Three extra field
+    # evaluations at build time, and it fails loudly on exactly the
+    # phase-arm/sign coupling that GOBBY-4 section 21.2 had to verify by
+    # hand.
+    _scale = max(abs(g0_c) + 2.0 * abs(S_c), 1e-300)
+    for _pa, _pb in ((0.0, np.pi / 2.0), (np.pi, np.pi / 2.0),
+                     (np.pi / 2.0, np.pi / 2.0)):
+        _ref_c, _ref_d = _gate_powers(_pa, _pb)
+        _e = np.exp(1j * (_pa - _pb))
+        _got_c = g0_c + 2.0 * (S_c * _e).real
+        _got_d = g0_d + 2.0 * (S_d * _e).real
+        if (abs(_got_c - _ref_c) > 1e-9 * _scale
+                or abs(_got_d - _ref_d) > 1e-9 * _scale):
+            raise RuntimeError(
+                "interference closed form disagrees with the field chain at "
+                f"(phi_A={_pa:.4f}, phi_B={_pb:.4f}): the assumed relative "
+                "phase delta = phi_A - phi_B does not match the chain. This "
+                "usually means the encoder's phase_arm and Bob's phase sign "
+                "have been changed independently -- they are coupled. See "
+                "GOBBY-4 section 21.2."
+            )
+
+    # Per-pulse random phase.  Both sources are zero-mean Gaussians and
+    # add in the same delta, so one draw covers them:
+    #   * laser linewidth against the RESIDUAL path mismatch left after
+    #     the delay line and stretcher (the matched S-L / L-S routes
+    #     cancel the full-delay term -- see the module docstring);
+    #   * phase-modulator drive noise.
+    theta_sigma = math.sqrt(2.0 * math.pi * linewidth * path_mismatch) \
+        if (linewidth > 0.0 and path_mismatch > 0.0) else 0.0
+    theta_sigma = math.hypot(theta_sigma, phase_noise_rad)
+
+    # Alice's modulator.  Built even when every knob is zero so that the
+    # bias law -- volts to radians through the crystal-derived V_pi -- and
+    # the "not both units at once" check live in the component and are not
+    # restated here.  Pushing pulses through `modulate` would cost a field
+    # propagation each; reading the resolved offset costs nothing.
+    pm_alice = PhaseModulator(crystal_cut='X', modulation='DC',
+                              phase_error_rad=phase_error_rad,
+                              bias_offset_v=bias_offset_v)
+    static_phase_error = pm_alice.phase_error_rad
+
+    # Bob's arm-length drift, likewise owned by the interferometer.  The
+    # coefficients above were extracted with the chain at t = 0, so they
+    # already contain `arm_phase_offset(0)`; only the increment since then
+    # belongs in `delta`.  Subtracting the component's own t=0 value keeps
+    # the ramp itself out of this file.
+    arm_offset_0 = dec.arm_phase_offset(0.0)
+    drifting = dec.phase_drift_rad_s != 0.0
+
+    # TWO CLOCKS, and they are not the same clock.
+    #
+    #   detector clock  t_pulse = pulse_idx / repetition_rate
+    #       Real elapsed time between gates.  Dead time and afterpulsing
+    #       are defined against it and must keep true 1/f spacing.
+    #
+    #   drift clock     t_drift = (pulse_idx / num_bits) * run_duration
+    #       Position within the *experiment's* drift profile.
+    #
+    # They coincide only when num_bits/repetition_rate == run_duration.
+    # Keeping one clock for both is wrong, and wrong in a way that hides:
+    # the pulse budget is chosen for statistical power, so tying drift to
+    # it means a longer run silently becomes a longer *experiment*.  In the
+    # Gobby sweep the 122 km point needs 1e9 pulses = 500 s at 2 MHz, which
+    # accumulated 25 deg of drift against the 6 deg of their stated
+    # two-minute transfer and inflated the effective modulation error from
+    # 3.31% to 8.60% -- the QBER read 13.52% against their 8.9%, and the
+    # whole excess was this.  See GOBBY-7c.
+    #
+    # More pulses must mean a better estimate of the same experiment, not a
+    # longer one.  With `run_duration` set, the simulated pulses are a
+    # uniform sample across a run of that length; the count may exceed what
+    # the apparatus actually sent in that time, which is exactly what makes
+    # it a lower-variance estimate of the same expectation.
+    #
+    # Default None keeps the old behaviour (drift tied to the pulse budget)
+    # so nothing changes for callers that do not declare a duration.
+    if run_duration is not None and num_bits > 1:
+        _drift_scale = float(run_duration) / (num_bits - 1)
+    else:
+        _drift_scale = 1.0 / repetition_rate
 
     for pulse_idx in range(num_bits):
         # --- Alice's encoding ---
@@ -163,12 +500,23 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         # --- Bob's decoding basis ---
         bob_basis = random.choice(['X', 'Y'])
 
-        # --- Interference power from the precomputed table ---
-        P_c, P_d = gate_table[(alice_basis, alice_bit, bob_basis)]
+        # --- Interference power from the precomputed coefficients ---
+        t_pulse = float(pulse_idx) / repetition_rate
+        delta = (PHI_A[alice_basis][alice_bit] - PHI_B[bob_basis]
+                 + static_phase_error)
+        if drifting:
+            # Drift clock, NOT the detector clock -- see the note above.
+            delta += dec.arm_phase_offset(pulse_idx * _drift_scale) \
+                - arm_offset_0
+        if theta_sigma > 0.0:
+            delta += random.gauss(0.0, theta_sigma)
+        e = complex(math.cos(delta), math.sin(delta))
+        P_c = g0_c + 2.0 * (S_c.real * e.real - S_c.imag * e.imag)
+        P_d = g0_d + 2.0 * (S_d.real * e.real - S_d.imag * e.imag)
 
         # --- Detection ---
-        click_c = spad_c.detect(P_c, float(pulse_idx) / repetition_rate)
-        click_d = spad_d.detect(P_d, float(pulse_idx) / repetition_rate)
+        click_c = spad_c.detect(P_c, t_pulse)
+        click_d = spad_d.detect(P_d, t_pulse)
 
         # --- Determine Bob's bit ---
         if click_c and not click_d:

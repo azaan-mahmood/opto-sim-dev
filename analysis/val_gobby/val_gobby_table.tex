@@ -10,7 +10,7 @@
 %         measured, and splitting them adds an unconstrained knob).
 %
 % Detector parameters NOT from Gobby (the only free inputs here):
-%   afterpulse_prob = 0.05   dead_time = 13 us   [ID230 datasheet]
+%   afterpulse_prob = 0.0   dead_time = 13 us   [ID230 datasheet]
 %   Afterpulsing is the candidate for the paper's acknowledged
 %   third error source (section 18.4 residual: 2.9-4.2 pp, roughly
 %   distance-independent; measured here in isolation at 2.26 %).
@@ -40,15 +40,15 @@
   Distance & Pulses & Sifted & QBER & Predicted & This work & Gobby et al. \\
   (km)     &        & bits   & (\%) & $V$ & analytic (\%) & (\%) \\
 \hline
-  0 & 3,219,173 & 3526 & $2.55 \pm 0.27$ & 0.9996 & 2.4 & 3.3\,(i) \\
-  4 & 3,824,085 & 3575 & $1.96 \pm 0.23$ & 0.9995 & 2.4 & 3.3\,(m@4.4) \\
-  10 & 5,233,590 & 3828 & $2.33 \pm 0.24$ & 0.9994 & 2.4 & 3.3\,(i) \\
-  20 & 8,000,373 & 3686 & $2.03 \pm 0.23$ & 0.9991 & 2.4 & 3.3\,(i) \\
-  40 & 18,997,456 & 3588 & $2.65 \pm 0.27$ & 0.9976 & 2.5 & 3.3\,(i) \\
-  65 & 75,314,513 & 4433 & $2.86 \pm 0.25$ & 0.9925 & 2.7 & 3.3\,(m) \\
-  80 & 173,138,699 & 5181 & $3.96 \pm 0.27$ & 0.9852 & 3.1 & 4.4\,(i) \\
-  100 & 275,000,000 & 3557 & $4.67 \pm 0.35$ & 0.9636 & 4.1 & 6.0\,(m@101) \\
-  122 & 1,000,000,000 & 5138 & $10.69 \pm 0.43$ & 0.9058 & 6.9 & 8.9\,(m) \\
+  0 & 2,000,000 & 3384 & $3.46 \pm 0.31$ & 0.9995 & 0.0 & 3.3\,(i) \\
+  4 & 2,597,167 & 3758 & $3.25 \pm 0.29$ & 0.9994 & 0.0 & 3.3\,(m@4.4) \\
+  10 & 3,515,736 & 3766 & $4.09 \pm 0.32$ & 0.9992 & 0.0 & 3.3\,(i) \\
+  20 & 5,507,717 & 3712 & $3.99 \pm 0.32$ & 0.9988 & 0.1 & 3.3\,(i) \\
+  40 & 13,628,620 & 3802 & $3.50 \pm 0.30$ & 0.9969 & 0.2 & 3.3\,(i) \\
+  65 & 50,643,683 & 4448 & $3.69 \pm 0.28$ & 0.9903 & 0.5 & 3.3\,(m) \\
+  80 & 91,011,639 & 4055 & $3.92 \pm 0.30$ & 0.9808 & 1.0 & 4.4\,(i) \\
+  100 & 236,856,774 & 4159 & $5.31 \pm 0.35$ & 0.9532 & 2.3 & 6.0\,(m@101) \\
+  122 & 662,684,780 & 4749 & $9.50 \pm 0.43$ & 0.8809 & 6.0 & 8.9\,(m) \\
 \end{tabular}
 %
 % (m)   = Gobby measured here; the value shown is the PUBLISHED one.

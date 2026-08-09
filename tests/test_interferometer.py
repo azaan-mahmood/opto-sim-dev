@@ -426,3 +426,92 @@ class TestAsymmetricMZILoss:
         )
         P_in = np.mean(np.sum(np.abs(E_in) ** 2, axis=1))
         assert np.isclose(P_out, P_in * 0.5, rtol=0.02)
+
+
+class TestArmLengthDrift:
+    """`phase_drift_rad_s` -- thermal/convective drift of the relative arm
+    length, which is a property of the interferometer.
+
+    Gobby et al. (2004) measure it directly:
+
+        "A drift in the phase of the interferometer, due to variations in
+         the relative lengths of the two arms, could contribute directly
+         to the QBER.  By casing both Alice's and Bob's setups in
+         enclosures to prevent air convection, we found the phase drift
+         rate to be less than 0.05 deg per second"
+
+    Distinct from modulator bias drift, which belongs on `PhaseModulator`
+    and is not modelled -- see its docstring.  The paper's prose groups
+    both under "errors in the phase modulation", but only one of them is
+    caused by the arms.
+    """
+
+    GOBBY_RATE = np.radians(0.05)      # 8.727e-4 rad/s
+
+    def test_accumulates_linearly(self):
+        d = AsymmetricMZI(delay=1e-9, mode='decoder',
+                          phase_drift_rad_s=self.GOBBY_RATE)
+        for t in (0.0, 1.5, 30.0, 120.0):
+            assert np.isclose(d.arm_phase_offset(t), self.GOBBY_RATE * t,
+                              rtol=1e-12)
+
+    def test_gobby_two_minute_transfer(self):
+        """Their stated 2-minute key transfer reaches 6.0 deg."""
+        d = AsymmetricMZI(delay=1e-9, mode='decoder',
+                          phase_drift_rad_s=self.GOBBY_RATE)
+        assert np.isclose(np.degrees(d.arm_phase_offset(120.0)), 6.0,
+                          rtol=1e-9)
+
+    def test_negligible_over_a_short_run(self):
+        """3e6 pulses at 2 MHz is 1.5 s -- under a tenth of a degree."""
+        d = AsymmetricMZI(delay=1e-9, mode='decoder',
+                          phase_drift_rad_s=self.GOBBY_RATE)
+        assert np.degrees(d.arm_phase_offset(3e6 / 2e6)) < 0.1
+
+    def test_adds_to_static_phase_error(self):
+        """Static mismatch and drift are the same arm, so they sum."""
+        d = AsymmetricMZI(delay=1e-9, mode='decoder', phase_error=0.2,
+                          phase_drift_rad_s=0.01)
+        assert np.isclose(d.arm_phase_offset(0.0), 0.2, rtol=1e-12)
+        assert np.isclose(d.arm_phase_offset(5.0), 0.25, rtol=1e-12)
+
+    def test_encoder_reports_no_offset(self):
+        """Decoder-only, matching `phase_error`: the observable is the
+        pair's *net* relative phase, so a chain carries it at one end
+        rather than double-counting at both."""
+        e = AsymmetricMZI(delay=1e-9, mode='encoder',
+                          phase_drift_rad_s=self.GOBBY_RATE)
+        assert e.arm_phase_offset(120.0) == 0.0
+
+    def test_default_is_inert(self, gaussian_pulse):
+        """No drift must leave the device bit-identical, at any t."""
+        E, dt = gaussian_pulse
+        d = AsymmetricMZI(delay=1e-9, mode='decoder')
+        assert d.phase_drift_rad_s == 0.0
+        assert d.arm_phase_offset(1e6) == 0.0
+        a_c, a_d = d.modulate(E, dt, phase=0.3)
+        b_c, b_d = d.modulate(E, dt, phase=0.3, t=1e6)
+        assert np.array_equal(a_c, b_c)
+        assert np.array_equal(a_d, b_d)
+
+    def test_drift_reaches_the_field(self, gaussian_pulse):
+        """A quarter-turn of drift must equal the same static offset."""
+        E, dt = gaussian_pulse
+        drifted = AsymmetricMZI(delay=1e-9, mode='decoder',
+                                phase_drift_rad_s=np.pi / 8)
+        static = AsymmetricMZI(delay=1e-9, mode='decoder',
+                               phase_error=np.pi / 4)
+        d_c, d_d = drifted.modulate(E, dt, phase=0.3, t=2.0)
+        s_c, s_d = static.modulate(E, dt, phase=0.3)
+        assert np.allclose(d_c, s_c, atol=1e-14)
+        assert np.allclose(d_d, s_d, atol=1e-14)
+
+    def test_drift_degrades_interference_contrast(self, gaussian_pulse):
+        """Half a turn of accumulated drift must invert the ports."""
+        E, dt = gaussian_pulse
+        d = AsymmetricMZI(delay=1e-9, mode='decoder',
+                          phase_drift_rad_s=np.pi)
+        c0, d0 = d.modulate(E, dt, phase=0.0, t=0.0)
+        c1, d1 = d.modulate(E, dt, phase=0.0, t=1.0)
+        assert np.allclose(np.abs(c1) ** 2, np.abs(d0) ** 2, atol=1e-14)
+        assert np.allclose(np.abs(d1) ** 2, np.abs(c0) ** 2, atol=1e-14)

@@ -24,13 +24,12 @@
 
 
 ## Summary
-- **Time-bin phase-encoding BB84 implemented**: pulsed laser, AsymmetricMZI, time-bin protocol, Gobby replication validation
-- **203 tests all pass**
-- **Gobby 2004 replication**: 0 km QBER = 3.19% (paper: ~3.3%) — excellent baseline match
-- **Manuscript updated**: 28 pages, 7 validated components, 38 references — new AsymmetricMZI, SPAD, time-bin BB84 validation sections
-- **New files**: `src/channel/interferometer.py`, `src/protocols/bb84_time_bin.py`, `tests/test_interferometer.py`, `analysis/val_gobby/validate_gobby.py`
-- **Performance**: ~2600 pulses/s on 3rd Gen i5 — 2.5M pulses in ~16 min, 25M pulses in ~2.7h (pre-PERF-2); after PERF-2 (7th pass): ~10 µs/pulse, a 10M-pulse point ≈ 1.7 min
-- **Next**: Long-distance statistics need more pulses; consider increasing mu or using batched simulation for speed
+- **222 tests all pass** (203 + 19 GOBBY-2 analytic-model tests)
+- **GOBBY-1 (10th pass, done)**: link budget corrected to paper values — α=0.2, η_Bob=0.045, gate 3.5 ns, 2 MHz/80 ps, P_e=8.5e-7/clock, visibility is an OUTPUT (V = S/(S+2·P_e)). Nine-point sweep (`--target-sifted 3000`, seed 42, 4 h 33 min): slope **+4.99 pp/100 km** vs Gobby's +4.39, mean |residual| **1.22 pp** over the four measured points, **zero fitted parameters**. Open within it: 122 km overshoots 1.79 pp (4.1σ, MC runs 1.56× above the closed form — detector state machine); 3.3 % floor undershot 0.4–1.3 pp
+- **GOBBY-2 (P0, top priority, in progress)**: QBER is additive — `QBER(L) = e_mod + e_counts(L)`; e_mod ≈ 3.3 % is a constant **input** (phase-modulation error, Fig. 3 arrow); e_counts = (1−V_fringe)/2 is the link-budget output. μ_eff = 0.0793 derived from Gobby's stated visibilities (NOT 0.1, NOT 0.0385); `afterpulse_prob = 0` (afterpulsing not in Gobby's budget); e_mod lives on `PhaseModulator` as `phase_error_rad = 0.3653 rad` (δ = arccos(1−2·0.033)), not on AMZI visibility. §19.3 closed form: mean |residual| 0.26 pp, zero fitted params
+- **GOBBY-2 Step 1 done**: `src/analytic/gobby_model.py` — analytic reference implementation (the *prediction*; MC must reproduce it, §19.13a). §19.9 steps 2–8 pending: ② afterpulse_prob=0 sweep ③ PhaseModulator phase_error_rad ④ μ_eff=0.0793 ⑤ full sweep with MC/analytic ratios ⑥ χ² ⑦ 165.8 km out-of-sample (predicted V=0.729 vs paper 0.86 — documented predicted disagreement, 1.4 ns gate hypothesis) ⑧ paperwork + CHANGELOG + status table
+- **Key files**: `analysis/val_gobby/validate_gobby.py` (GOBBY-1 parameterisation: ALPHA_dB=0.2, ETA_BOB=0.045, P_E=8.5e-7, VISIBILITY=1.0, AFTERPULSE_PROB=0.05, `--p-e`/`--afterpulse`/`--target-sifted`); `src/analytic/gobby_model.py` (GOBBY-2 analytic model); `src/protocols/bb84_time_bin.py` (PERF-2: 8-outcome gate-power table, ~40× faster)
+- **Performance**: PERF-2 memoisation — ~10 µs/pulse on the Gobby chain, a 10M-pulse point ≈ 1.7 min
 
 ## Goal
 Open-source, validated physical-layer fiber-optic simulator where the complex-envelope electric field is the single source of truth. QKD (BB84) is one application protocol; the platform is general-purpose: CW lasers, MZMs, CD, PMD, birefringence, attenuation, APDs — any classical or quantum optical link that can be modeled as a linear pipeline of physically parametrised impairments.
@@ -255,6 +254,10 @@ opto-sim-dev/
 ## Files Changed (recent sessions — most recent first)
 | File | Change |
 |---|---|
+| `src/analytic/gobby_model.py` | GOBBY-2 Step 1 (NEW): analytic reference implementation — `QBER(L) = e_mod + (1 − V_fringe)/2`, `V_fringe = S/(S + 2·P_e)`, `S = μ_eff·10^(−αL/10)·η_Bob`; all parameters from the paper, nothing fitted (μ_eff = 0.0793 via visibility inversion, §19.2); `p_e`/`mu_eff` overridable for §19.11 and sensitivity rows |
+| `src/analytic/__init__.py` | GOBBY-2 Step 1 (NEW): package exports |
+| `tests/test_analytic_gobby.py` | GOBBY-2 Step 1 (NEW, 19 tests): §19.3 four residuals within 0.05 pp, stated visibilities (0.9906/0.8840), sensitivity rows (0.26/0.52/2.01 pp), acceptance bar ≤0.30 pp, 165.8 km out-of-sample prediction (V = 0.729) |
+| `analysis/val_gobby/validate_gobby.py` | GOBBY-1 (10th pass): link budget re-parameterised to paper values — `ALPHA_dB` 0.182→0.2 (and now actually passed to the MC), `ETA`→`ETA_BOB` 0.10→0.045, `GATE_WIDTH` 1→3.5 ns, `REP_RATE` 2.5→2 MHz, `PULSE_WIDTH` 100→80 ps, `DCR`→`P_E` 8.5e-7/clock, `VISIBILITY` 0.934→1.0 (output), `--p-e`/`--afterpulse` flags, `PILOT_BITS` 2M, `CEILING` 1e9; provenance headers in artifacts; sweep: slope +4.99 pp/100 km, mean |res| 1.22 pp, 0 fitted params |
 | `src/protocols/bb84_time_bin.py` | PERF-2 (7th pass): 8-outcome gate-power table built once per point (12 `modulate` calls), per-pulse loop = lookup + SPAD MC; bitwise-equal to the old chain, ~40× faster (~10 µs/pulse) |
 | `analysis/val_gobby/validate_gobby.py` | OPEN-1 (7th pass): `VISIBILITY = 0.934` (cited to Gobby's 3.3 % floor) actually passed to `simulate_bb84_time_bin`; `--visibility` CLI flag; V=0.934+no-noise → 3.36 % at 0 km |
 | `analysis/val_system_scenarios.py` | BLOCK-2 (6th pass): NEW impairment-table generator — 8 explicit configs @ 100 km, recorded seed, CSV + `.tex` with script/seed/commit in caption; `simulate_point()` gained independent birefringence/attenuation/cd/pmd toggles |
