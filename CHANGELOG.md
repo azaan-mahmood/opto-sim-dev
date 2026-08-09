@@ -4,6 +4,41 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-09 — the Duplinskiy chain brought to standard; Gobby closed out
+
+### Session: DUPL-1 — a polarisation chain that can carry the impairment models
+
+| Change | Files | Rationale |
+|---|---|---|
+| **Five O(N) per-pulse lists removed** | `src/protocols/bb84_duplinskiy.py` | Same defect the Gobby chain carried until §17.5; several GB at sweep-scale pulse counts. Bit-identical. |
+| **8-outcome precompute (PERF-2 analogue)** | same | The response is deterministic given `(alice_basis, alice_bit, bob_basis)` because the fibre Jones matrix is sampled once per run (ROOT-1). **29,938 → 386,245 pulses/s, 12.9x**, bit-identical, negative control fires. |
+| **Detector parameterised** | same | QE / dead time / DCR / afterpulse were literals. All four defaults are stated verbatim in the paper. |
+| **`cd` / `pmd` exposed** | same | Were hardcoded `False`. Exposed — and found **inert**, see below. |
+| **Gobby closeout** | `analysis/val_gobby/validate_gobby.py` | χ²/dof relabelled; four stale "still open" claims corrected against the code. |
+
+**Key results:**
+
+- **The 8-outcome table is exact, and was verified to be legitimate first.** No stage in the field chain consumes randomness — `pm.modulate`, `fibre.apply`, `optics.voa`, `circular_analyser` all leave both RNG streams untouched, and `fibre.apply` is repeatable. Without that, precomputing would shift the stream and silently change every downstream detector draw. Bit-identity holds at 0/10/50 km × compensate on/off; the negative control (swapped analyser outputs) moves the 10 km QBER 0.0274 → 0.9833, so the gate can fail.
+- **`cd` and `pmd` are inert on this chain by construction.** It builds its field as `np.ones((1,2))` — a **single time sample**. Measured through the same fibre: `max|dE|/|E|` = **0.000e+00** at one sample, **5.945e-01** at 4096. They are not nulls, they are no-ops. A polarisation impairment table built today could honestly carry **birefringence only**.
+- **We reproduce Duplinskiy's 2 % — by the wrong mechanism.** The paper names **three** contributions: a ~1 % afterpulse floor, a finite instrumental extinction (calibration goal 3, ">98 %"), and drift/recalibration bringing the average to 2 % over an 80 % duty cycle. This model has **one**: with afterpulsing off the QBER is exactly **0.00 %**, and at the datasheet `p_ap = 0.05` it produces **2.07 ± 0.40 %**. **Occurrence #7** of the recurring pattern — one mechanism doing three mechanisms' work and landing on the right total. Caught before it was written up as a successful replication.
+- **The old "0.98 % vs 2 %" gap was underpowered noise.** At 400k pulses the 50 km point carries ~140 sifted bits (σ ≈ 0.71 pp); at 4e6 pulses it reads 2.07 ± 0.40 % on 1,258 sifted.
+- **Two open questions answered from the source.** Bob's detection is PC2 → PM2 → PC3 → **PBS**, with PC3 acting "similar to a half-wave plate… rotating polarization by 45°"; this model uses QWP+PBS via `circular_analyser`. Structurally different, composite evidently equivalent for these states — **reported, not changed**, since `circular_analyser` is live in four protocols. And `U_comp` is computed once and applied unchanged, where the paper is explicit that φ₁/φ₃ "are not guaranteed to remain stable"; the full cycle (floor ~1 %, ceiling ~5 %, 80 % duty) is citable but **not implemented**, pending the afterpulse question.
+
+**Corrections to earlier claims in this document, each named rather than replaced:**
+
+- **χ²/dof = 1.95 is an upper bound, not an estimate.** It divides our residuals by *our* error bars alone, granting Gobby's published values zero uncertainty. A σ of **0.329 pp** on their side brings it to 1.03 — comparable to our own mean σ of 0.3375 pp, against values quoted to one decimal with no error bars. The earlier reading ("~1.4× what sampling noise explains, so a small residual systematic") is a claim about our model that the number does not support, and is **withdrawn**.
+- **The afterpulse question does not touch Gobby.** An earlier statement said fixing it "would move the Gobby results committed at v0.3.1". It cannot: `AFTERPULSE_PROB = 0.0`, so the dead-time path is never reached. Impact is Duplinskiy-only, where it is 100 % of the error budget.
+- **The "2x" afterpulse figure is soft.** It compares our measurement to a one-sentence calculation whose word "mainly" is unquantified — ~2x at 1.0 %, ~3x at 0.7 %. Only one side is measured. Recorded as a discrepancy to characterise, not a defect; the counter-argument (that `p_ap = 0.05` is a datasheet figure already net of dead-time suppression) is strong.
+- **Two literature entries retracted after reading the articles**: the "aerial ~1 ms / underground tens of seconds" drift figures are not in the cited paper, and the DPS-QKD arXiv identifier was guessed and wrong. **Verified by reading**: Zelmon, Small & Jundt (1997) — at 1.55 µm n_o = 2.2111, n_e = 2.1376; our defaults are good to 0.5 % on the indices and 1.5 % on V_π, but Δn is off 18 % (a difference of rounded near-equal numbers) and is inert today.
+
+**Measured costs, recorded so the scope decision is not re-litigated from memory:** one full field-chain evaluation is 0.048 ms at one sample, 0.357 ms at 2048; the 8-outcome table pays it **8 times per run**, so a time-resolved field costs **0.004 %** of a 78 s sweep row. **Compute is not the constraint on any outstanding work** — an earlier draft costing the time-resolved field as "medium" was wrong.
+
+**Scope decided:** build extinction and the birefringence sweep (the latter would be the first QBER-level validation of any fibre impairment model in this simulator); skip diode chirp, modulator crystal PMD and the PC tuning algorithm — the first two are compensated in source, so a faithful model outputs zero. Recommended next protocol is **DPS-QKD**, which reuses `AsymmetricMZI` and is aligned with deployed schemes.
+
+332 tests pass.
+
+---
+
 ## 2026-08-09 — the mechanisms Gobby names, at the components that cause them
 
 ### Session: GOBBY-7e — the record corrected, and the last open items closed

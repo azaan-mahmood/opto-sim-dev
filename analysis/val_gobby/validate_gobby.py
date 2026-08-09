@@ -557,25 +557,34 @@ def print_paper_cross_checks(p_e=P_E, visibility=VISIBILITY, s_65=None):
             lo, hi = (mid, hi) if share < ERRONEOUS_BOUND_PCT else (lo, mid)
         print(f"           over by {v / ERRONEOUS_BOUND_PCT - 1.0:+.0%} at the "
               f"endpoint; holds to {lo:.1f} km.")
-        print(f"           The bound would allow P_E <= {implied:.2e}, against "
-              f"the {p_e:.2e} the paper")
-        print(f"           itself measures -- so their stated P_E and their "
-              f"stated bound are mildly")
-        print(f"           inconsistent *within this model*.  The signal side "
-              f"is verified to ~2%, so")
-        print(f"           the excess sits in the error budget, same direction "
-              f"and size as the")
-        print(f"           chi2/dof = 1.95 systematic in GOBBY-7c §25.5; "
-              f"plausibly the same thing.")
+        # Resolved in GOBBY-7f: propagate the paper's OWN 122 km visibility
+        # back to 65 km using only its own alpha and P_e -- no part of this
+        # model enters -- and see where it lands against its own bound.
+        v122 = 0.884
+        s122_req = v122 * 2.0 * p_e / (1.0 - v122)
+        s65_req = s122_req * 10.0 ** (ALPHA_dB * (122.0 - 65.0) / 10.0)
+        share_paper = 100.0 * p_e / (s65_req + 2.0 * p_e)
+        print(f"           CAUSE (GOBBY-7f): the paper's own V(122) = {v122} "
+              f"implies S(122) = {s122_req:.3e},")
+        print(f"           hence S(65) = {s65_req:.3e} and a share of "
+              f"{share_paper:.3f}% -- above its own bound.")
+        print(f"           We read {v:.3f}%, agreeing with that to "
+              f"{abs(v / share_paper - 1) * 100:.0f}%.  So we reproduce the "
+              f"paper's")
+        print(f"           VISIBILITY and inherit its tension with the paper's "
+              f"BOUND; the excess is")
+        print(f"           not a defect in this budget.  Note '<0.4%' is a "
+              f"BOUND, not a measurement --")
+        print(f"           the two simply cannot both be tight, and we match "
+              f"the measured one.")
         print(f"           NOT tuned -- moving P_E would re-fit what GOBBY-1 "
               f"unfitted.")
     if s_65 is None:
         print(f"           (first-order S agrees with the chain to ~2% "
               f"since the missing T_INT and")
         print(f"           the SPAD Poisson form were fixed (GOBBY-7b "
-              f"§24.5), so this verdict is")
-        print(f"           reliable -- the miss is in the budget, not in "
-              f"the comparison.)")
+              f"§24.5), so the number above")
+        print(f"           is trustworthy.)")
     dev_ok = visibility >= DEVICE_VISIBILITY_BOUND
     print(f"    [{'OK  ' if dev_ok else 'MISS'}] device visibility = "
           f"{visibility:.4f} vs stated >{DEVICE_VISIBILITY_BOUND}"

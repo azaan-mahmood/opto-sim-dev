@@ -67,6 +67,9 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               gate_width=20e-9, rep_rate=10e6,
                               compensate=True, model='auto',
                               bias_offset_v=0.0,
+                              spad_eta=0.10, dead_time=13e-6,
+                              dark_count_rate=15.0, afterpulse_prob=0.05,
+                              cd=False, pmd=False,
                               seed=None, verbose=False):
     """BB84 simulation matching the Duplinskiy et al. experimental setup.
 
@@ -82,6 +85,24 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     compensate : bool — apply Bob's polarization compensation (the
         inverse of the fibre's quasi-static Jones matrix) before
         decoding, mirroring the paper's calibration loop (default True).
+    spad_eta : float — SPAD quantum efficiency (default 0.10, ID230 [2]).
+    dead_time : float — SPAD dead time in seconds (default 13e-6, ID230).
+    dark_count_rate : float — SPAD dark count rate in Hz (default 15.0,
+        ID230).  Unlike the Gobby replication, ID230 is *contemporary*
+        with this 2017 experiment, so the datasheet figures are era-
+        appropriate rather than anachronistic (contrast §17.2b).
+    afterpulse_prob : float — afterpulse probability per click (default
+        0.05, ID230).  §19.5 showed this value was standing in for the
+        modulation error in the Gobby chain and belonged at 0 there; that
+        argument is specific to Gobby's stated error budget and does not
+        transfer.  Exposed here so the question can be asked rather than
+        assumed — see DUPL-1.
+    cd : bool — apply chromatic dispersion (default False).
+    pmd : bool — apply polarisation-mode dispersion (default False).
+        Both were hardcoded off before DUPL-1.  This chain is the one
+        worth sweeping them on: a polarisation-encoded observable responds
+        to them, where the time-bin chain is invariant by construction
+        (§26.6).
     bias_offset_v : float — static bias error on Alice's phase modulator,
         as a drive voltage (default 0 = perfectly biased).  Converted by
         `PhaseModulator` through its crystal-derived V_pi.  Setting a
@@ -116,24 +137,30 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     pm_bob = PhaseModulator(crystal_cut='X', modulation='DC')
     Vpi = pm_alice.Vpi
 
-    # SPAD detectors (ID230 specs: 10% QE, 13 us dead time, 15 Hz DCR, 5% afterpulse)
-    spd1 = spad(wavelength=wavelength, quantum_efficiency=0.10,
-                dead_time=13e-6, dark_count_rate=15.0,
-                afterpulse_prob=0.05, gate_width=gate_width)
-    spd2 = spad(wavelength=wavelength, quantum_efficiency=0.10,
-                dead_time=13e-6, dark_count_rate=15.0,
-                afterpulse_prob=0.05, gate_width=gate_width)
+    # SPAD detectors.  These were four hardcoded literals until DUPL-1;
+    # they are parameters now so the detector budget can be interrogated
+    # the way Gobby's was.  Defaults are the ID230 datasheet figures [2]
+    # and reproduce the previous behaviour exactly.
+    spd1 = spad(wavelength=wavelength, quantum_efficiency=spad_eta,
+                dead_time=dead_time, dark_count_rate=dark_count_rate,
+                afterpulse_prob=afterpulse_prob, gate_width=gate_width)
+    spd2 = spad(wavelength=wavelength, quantum_efficiency=spad_eta,
+                dead_time=dead_time, dark_count_rate=dark_count_rate,
+                afterpulse_prob=afterpulse_prob, gate_width=gate_width)
 
     dt_pulse = 1.0 / rep_rate
 
     # One physical fibre for the whole run: birefringence is quasi-static,
     # so every pulse must see the same Jones matrix (see ROOT-1 in
     # opto-sim-issues-and-fixes.md). Built once here, reused per pulse
-    # below. CD/PMD stay off, matching this script's original explicit
-    # propagate(cd=False, pmd=False) call.
+    # below.  `cd` and `pmd` default off, matching this script's original
+    # explicit propagate(cd=False, pmd=False) call; they are exposed as of
+    # DUPL-1 so this chain can carry an impairment sweep.  It is the right
+    # chain for one: polarisation encoding is *not* blind to birefringence
+    # the way the time-bin chain is (§26.6).
     fibre = FiberRealization(L_m=fiber_length * 1000, temperature=25,
                              bend_radius=None, attenuation_factor=alpha_dB,
-                             cd=False, pmd=False, model=model, seed=seed)
+                             cd=cd, pmd=pmd, model=model, seed=seed)
 
     # Bob's polarization compensation (default on): the channel's Jones
     # matrix is unitary, so the inverse is its conjugate transpose.
@@ -142,9 +169,67 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     J_channel = fibre.birefringence_matrix()
     U_comp = None if J_channel is None else J_channel.conj().T
 
-    alice_bits, alice_bases = [], []
-    bob_bits, bob_bases = [], []
-    has_click = []
+    # --- Precomputed response table (PERF-2 analogue, DUPL-1) -------------
+    #
+    # The field chain is DETERMINISTIC given (alice_basis, alice_bit,
+    # bob_basis) -- 8 combinations -- because the fibre Jones matrix is
+    # sampled once for the whole run (quasi-static, ROOT-1) and no stage
+    # between the source and the detectors consumes randomness.  Verified:
+    # `pm.modulate`, `fibre.apply`, `optics.voa` and `circular_analyser`
+    # all leave both RNG streams untouched, and `fibre.apply` is repeatable
+    # on identical input.
+    #
+    # So the whole per-pulse chain -- modulate, propagate, compensate, VOA,
+    # modulate, analyse -- collapses to a table lookup.  This is exactly
+    # PERF-2's argument (see `bb84_time_bin.py`), and it is what makes a
+    # target-sifted polarisation sweep affordable: the chain measured
+    # ~30,000 pulses/s walking the fields per pulse.
+    #
+    # The table is built by running the REAL chain, never by re-deriving
+    # the physics by hand, so there is no second expression of it to drift
+    # out of step.
+    #
+    # NOTE: this is exact only while the response stays deterministic.  A
+    # per-pulse random phase (`phase_noise_rad` on either modulator) would
+    # break it, exactly as it broke PERF-2's 8-outcome form in GOBBY-6.
+    # Neither modulator is given one here.
+    def _response(a_basis, a_bit, b_basis):
+        """Run the full field chain once; return the gated (P_x, P_y)."""
+        if a_basis == 'C':
+            v_a = Vpi / 2 if a_bit == 0 else 3 * Vpi / 2
+        else:
+            v_a = 0 if a_bit == 0 else Vpi
+
+        E = np.sqrt(power_per_pulse / 2.0) * np.ones((1, 2), dtype=complex)
+        E = pm_alice.modulate(E_field=E, V=v_a)
+        E = fibre.apply(E, dt=dt_pulse)
+        if compensate and U_comp is not None:
+            E = np.transpose(U_comp @ np.transpose(E))
+        E = optics.voa(E, bob_loss_dB)
+
+        v_b = 0 if b_basis == 'C' else Vpi / 2
+        E = pm_bob.modulate(E_field=E, V=v_b)
+        # circular_analyser, not pbs: detection depends on the relative
+        # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
+        Ex, Ey = optics.circular_analyser(E)
+        return (float(np.mean(np.abs(Ex) ** 2)),
+                float(np.mean(np.abs(Ey) ** 2)))
+
+    RESPONSE = {(ab, bit, bb): _response(ab, bit, bb)
+                for ab in ('C', 'X')
+                for bit in (0, 1)
+                for bb in ('C', 'X')}
+
+    # Sifting is accumulated inline rather than into per-pulse lists.  This
+    # previously kept FIVE of them -- alice_bits, alice_bases, bob_bits,
+    # bob_bases, has_click -- each O(num_bits), then sifted by list
+    # comprehension.  Fine at the 100k runs this was written for, several GB
+    # at the ~30e6 pulses per row a target-sifted polarisation sweep needs.
+    # Same defect the Gobby chain carried until §17.5.  Counting inline is
+    # O(1) and touches no RNG draw, so results are bit-identical.
+    n_sifted = 0
+    n_errors = 0
+    n_clicks = 0
 
     t_start = time.time()
 
@@ -153,46 +238,11 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         alice_basis = random.choice(['C', 'X'])
         alice_bit = random.randint(0, 1)
 
-        if alice_basis == 'C':
-            if alice_bit == 0:
-                phase_alice = Vpi / 2
-            else:
-                phase_alice = 3 * Vpi / 2
-        else:  # 'X'
-            if alice_bit == 0:
-                phase_alice = 0
-            else:
-                phase_alice = Vpi
-
-        # --- Field: 45° polarized pulse with correct power ---
-        E = np.sqrt(power_per_pulse / 2.0) * np.ones((1, 2), dtype=complex)
-        E = pm_alice.modulate(E_field=E, V=phase_alice)
-
-        # --- Channel: birefringence + attenuation ---
-        E = fibre.apply(E, dt=dt_pulse)
-
-        # --- Bob's polarization compensation (calibration inverse) ---
-        if compensate and U_comp is not None:
-            E = np.transpose(U_comp @ np.transpose(E))
-
-        # --- Bob's internal loss (optics, connectors, coupler) ---
-        E = optics.voa(E, bob_loss_dB)
-
-        # --- Bob's decoding ---
+        # --- Bob's decoding basis ---
         bob_basis = random.choice(['C', 'X'])
-        if bob_basis == 'C':
-            phase_bob = 0
-        else:
-            phase_bob = Vpi / 2
 
-        E = pm_bob.modulate(E_field=E, V=phase_bob)
-        # circular_analyser, not pbs: detection depends on the relative
-        # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
-        Ex, Ey = optics.circular_analyser(E)
-
-        # --- Detection ---
-        power_x = np.mean(np.abs(Ex) ** 2)
-        power_y = np.mean(np.abs(Ey) ** 2)
+        # --- Response from the precomputed table (see above) ---
+        power_x, power_y = RESPONSE[(alice_basis, alice_bit, bob_basis)]
 
         t_pulse = pulse_idx * dt_pulse
         click_x = spd1.detect(power_x, t_pulse)
@@ -207,25 +257,20 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         else:
             bob_bit = -1  # no click — discard this pulse
 
-        alice_bits.append(alice_bit)
-        alice_bases.append(alice_basis)
-        bob_bits.append(bob_bit)
-        bob_bases.append(bob_basis)
-        has_click.append(click_x or click_y)
+        if click_x or click_y:
+            n_clicks += 1
+            if alice_basis == bob_basis:
+                n_sifted += 1
+                if alice_bit != bob_bit:
+                    n_errors += 1
 
         if verbose and (pulse_idx + 1) % 10000 == 0:
             elapsed = time.time() - t_start
             rate = (pulse_idx + 1) / elapsed
             print(f"  Pulse {pulse_idx+1}/{num_bits} ({rate:.0f} pulses/s)", flush=True)
 
-    # --- Sifting: same basis AND at least one click ---
-    sifted_indices = [i for i in range(num_bits)
-                      if alice_bases[i] == bob_bases[i] and has_click[i]]
-    sifted_alice = [alice_bits[i] for i in sifted_indices]
-    sifted_bob = [bob_bits[i] for i in sifted_indices]
-
-    n_sifted = len(sifted_alice)
-    n_errors = sum(a != b for a, b in zip(sifted_alice, sifted_bob))
+    # Sifting (same basis AND at least one click) was accumulated in the
+    # loop above.
     qber = n_errors / n_sifted if n_sifted > 0 else 0.0
 
     fiber_loss_dB = alpha_dB * fiber_length
@@ -246,7 +291,6 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     }
 
     if verbose:
-        n_clicks = sum(has_click)
         print(f"\nDuplinskiy et al. BB84 — {fiber_length} km")
         print(f"  Polarization compensation: {'ON' if U_comp is not None else 'OFF'}")
         print(f"  Total loss: {total_loss_dB:.1f} dB (fiber {fiber_loss_dB:.1f} + Bob {bob_loss_dB:.1f})")
