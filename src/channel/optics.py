@@ -84,16 +84,42 @@ def coupler_split(power, E, ratio=0.5):
 
 
 def coupler_combine(power_port, port_E, power_tap, tap_E, out_ports=1):
-    """Ideal 3 dB coupler combine (2x2 scattering matrix with 1/sqrt(2)
-    normalization, so total power is conserved).
+    """Ideal 3 dB coupler combine, REAL convention.
+
+        E_out1 = (E1 + E2)/sqrt(2)
+        E_out2 = (E1 - E2)/sqrt(2)
+
+    Unitary, so total power is conserved, and the interference term goes as
+    cos(delta_phi).
+
+    CONVENTION (GOBBY-7d).  This previously returned the imaginary form,
+    `(E1 + 1j*E2)/sqrt(2)` and `(1j*E1 + E2)/sqrt(2)`.  Both forms are
+    legitimate and unitary -- see the COUPLER PHASE CONVENTION note in the
+    module header -- but this module and `AsymmetricMZI` use the real one,
+    and mixing them is not cosmetic: with the imaginary form the
+    interference goes as sin(delta_phi), so a protocol encoding in {0, pi}
+    lands on the zeros and the fringe vanishes.  That produced a flat ~50%
+    QBER once already (GOBBY-2 §19).
+
+    It was left inconsistent through GOBBY-3 to GOBBY-7b as a known,
+    recorded deferral (§21.3) on the grounds that a legitimate-but-
+    inconsistent convention is a different category from a prefactor with
+    no physical content.  It is aligned here because the module now claims
+    the real form in its own header, and a function contradicting its
+    module's stated convention is a trap for the next reader.
+
+    **No production call site exists** -- this function is reachable only
+    through `src.channel.__init__` and its own tests, which is why the
+    change is safe to make in one step.  `AsymmetricMZI` implements its own
+    combiner (`E_c = r*E_s + s*E_l`, `E_d = r*E_s - s*E_l`) and is
+    untouched by this; the two now agree.
 
     Parameters
     ----------
     power_port, power_tap : float — input powers (bookkeeping only; the
         returned powers are always derived from the output fields).
     port_E, tap_E : ndarray (N, 2) — input complex-envelope fields.
-    out_ports : int — 1 returns the coupled arm only, 2 returns both arms
-        (E_out1 = (E1 + j*E2)/sqrt(2), E_out2 = (j*E1 + E2)/sqrt(2)).
+    out_ports : int — 1 returns the constructive arm only, 2 returns both.
 
     Returns
     -------
@@ -101,12 +127,12 @@ def coupler_combine(power_port, port_E, power_tap, tap_E, out_ports=1):
     out_ports=2 : (pout1, E_out1, pout2, E_out2)
     """
     if out_ports == 1:
-        E_out = (port_E + 1j * tap_E) / np.sqrt(2.0)
+        E_out = (port_E + tap_E) / np.sqrt(2.0)
         pout = np.sum(np.abs(E_out) ** 2)
         return pout, E_out
     elif out_ports == 2:
-        E_out1 = (port_E + 1j * tap_E) / np.sqrt(2.0)
-        E_out2 = (1j * port_E + tap_E) / np.sqrt(2.0)
+        E_out1 = (port_E + tap_E) / np.sqrt(2.0)
+        E_out2 = (port_E - tap_E) / np.sqrt(2.0)
         pout1 = np.sum(np.abs(E_out1) ** 2)
         pout2 = np.sum(np.abs(E_out2) ** 2)
         return pout1, E_out1, pout2, E_out2

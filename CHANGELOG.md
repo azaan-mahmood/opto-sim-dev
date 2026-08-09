@@ -6,6 +6,30 @@ All timestamps are local time (UTC+5).
 
 ## 2026-08-09 — the mechanisms Gobby names, at the components that cause them
 
+### Session: GOBBY-7e — the record corrected, and the last open items closed
+
+| Change | Files | Rationale |
+|---|---|---|
+| **Pattern count corrected** | `opto-sim-issues-and-fixes.md` §25.4, `CHANGELOG.md` | The "fourth occurrence... now five" claim was wrong in both halves. |
+| **Sweep variance statistics** | §25.5, `CHANGELOG.md` | 0.414 pp compared against an interpolated value; χ²/dof was never stated. |
+| **65 km cross-check reading settled** | `analysis/val_gobby/validate_gobby.py` | The flattering interpretation was available and is rejected in writing. |
+| **`coupler_combine` → real convention** | `src/channel/optics.py`, `tests/test_optics.py` | Deferred since §21.3; the module now claims the real form in its own header. |
+| **OPEN-5 provenance** | `analysis/val_system_scenarios.py` | Header stamped a pulse count no run used. |
+| **OPEN-3 re-run at power** | same, + `val_system/*` | The blocker was a timing estimate stale by 4×. |
+
+**Key results:**
+
+- **Two of my own statements corrected, both named rather than replaced.** The pattern list claimed five occurrences with two added here; in fact §19.5's item 3 *is* the afterpulse case, so this work **closed** it rather than adding it, and §17.2(a) and §18.4 had been missed. Six total, one added and one closed. And the sweep residual was 0.4325 pp, not 0.414 — the earlier figure compared 100 km against the interpolated 5.9 % instead of Gobby's raw 101 km measurement of 6.0 %, which also moves that residual to −0.69 pp (2.0σ).
+- **χ²/dof = 1.95 now stated.** Mean signed residual +0.0625 pp (essentially unbiased), variance 0.3250 pp², RMS 0.4977 pp against a mean Monte-Carlo σ of 0.3375 pp. The scatter is ~1.4× what sampling noise alone explains, so a small residual systematic sits on top of it. The replication is good — unbiased, sub-half-pp, nothing beyond 2σ — but it is **not a pure-noise fit** and had been presented as though it were.
+- **The 65 km miss is real, and the escape route was refused.** Reading the stated <0.4 % as covering the *dark term alone* would pass comfortably (0.184 % at 65 km, crossing only at 82 km), but the paper's sentence names "dark counts **and** stray light", so the bound covers `P_E` in full. Taking the narrower reading would have been choosing the interpretation that flatters the model; it is recorded as considered and rejected. The miss stands at 0.485 %, over by 21 % at the endpoint and holding to 60.8 km. The bound would allow `P_E ≤ 7.00e-07` against the **8.50e-07 the paper itself measures** — their stated `P_E` and their stated bound are mildly inconsistent within this model. Same direction and size as the χ²/dof systematic; plausibly the same thing. `P_E` unchanged.
+- **`coupler_combine` was verified unreachable before being changed.** `interferometer.py` imports only `coupler_split`; `bb84_time_bin.py` only `pbs`, `pbc`, `voa`; nothing under `src/` names it outside its own definition. A convention flip is what inverted the Y basis in GOBBY-4, so this was established rather than assumed. Two tests added beyond the matrix assertions: real input → real output, and interference as **cos** not **sin**, the property whose absence produced a flat ~50 % QBER in GOBBY-2 §19.
+- **The second stale timing estimate found in this project, again off several-fold in the same direction.** `val_system_scenarios.py` warned "~35.8 us/pulse... budget ~5 h for eight rows"; re-measured at **118,000 pulses/s (8.5 us/pulse)** with a 4.8e-5 sifted fraction, i.e. **~1.2 h for eight rows**. The Gobby sweep was likewise believed to cost 4.5 h and measured 0.9 h. Both notes corrected in place with an instruction to re-measure rather than trust them.
+- **OPEN-3 closed, with a caveat that matters more than the closure.** Re-run at `--target-sifted 3000` (648e6 pulses, 100 km), rows now carry 3,589–3,915 sifted bits against the 86 that prompted the issue; σ ≈ 0.27 pp, so any effect above ~0.8 pp would show. The four middle rows are **still bit-identical**, which needed a different check than statistics: identity to the bit has two indistinguishable causes, real invariance or an impairment that never ran — the same trap as GOBBY-6's vacuous negative control. Resolved twice over: each impairment demonstrably perturbs the field while conserving power (birefringence `max|dE|/|E|` = **1.679**, CD **0.595**, PMD **0.010**), and the CD code-path check moves the sifted rate **+31.0 %, 11.7σ**. `Full chain` being bit-identical to `+ Visibility` is then *predicted*, not suspicious.
+- **What that table is not.** It demonstrates that time-bin/phase encoding is immune to CD, PMD and quasi-static birefringence — which is what the scheme exists to do, and what OPEN-3 said was asserted but undemonstrated. It is **not** a QBER-level validation of the impairment models: the observable is constitutionally blind to all three, so nothing here can show they are *correct*, only that they are live and that the scheme is immune. That requires polarisation encoding, where an uncompensated SU(2) rotation maps onto the bit. Recorded as the successor, not claimed as done.
+- 317 tests pass.
+
+---
+
 ### Session: GOBBY-7d — the nine-point sweep, and the two defects it exposed
 
 | Change | Files | Rationale |
@@ -20,17 +44,18 @@ All timestamps are local time (UTC+5).
 - **The sweep did its job by failing first.** Run at the corrected model it produced **13.52 % at 122 km against Gobby's 8.9 %**, and every point matched a drift-aware prediction to within statistics (122 km predicted 13.54 %). The 122 km point needs 1e9 pulses = **500 s at 2 MHz**, against the paper's stated *two-minute* transfer — accumulating 25° of drift where theirs accumulates 6, and inflating the effective modulation error from 3.31 % to 8.60 %. The whole 4.6 pp excess was that.
 - **The flaw was introduced in GOBBY-7**, where a run-duration knob was considered during planning and dropped as overreach. Recorded as such, not presented as a discovery. **More pulses must mean a better estimate of the same experiment, not a longer experiment.**
 - **A second defect surfaced once the duration was set to the paper's 120 s**: the 0 km floor read 4.30 % against 3.3 %. Gobby attribute the floor to bias inaccuracy "**as well as phase drift during the experiment**" — 3.3 % is the *aggregate of both*, so deriving the bias from the full 3.3 % and then adding drift double-counts. Solved jointly: **d0 = 17.864°**, drifting to 23.864°, time-averaging to exactly **3.300 %** — a ramp *centred on* the 20.93° the naive reading assigns.
-- **This is the fifth occurrence of one pattern.** §19.5 records three cases of "a number of roughly the right magnitude arriving through the wrong mechanism"; this session adds the afterpulse default standing in for the modulation error, and the bias absorbing drift's share. The recurrence is the point — it is the characteristic failure mode of replicating an aggregate whose components are *named but not individually quantified*.
+- **The recurring pattern, counted correctly.** An earlier draft of this entry said "fifth occurrence" and credited this session with two. Both were wrong: §19.5's item 3 *is* the afterpulse case, so this session **closed** it rather than adding it, and two earlier instances (§17.2(a), §18.4) were missed. The list runs to **six** — 3.3 % floor paid twice by V=0.934 and afterpulsing (§17.2a); 2.43 % as "optical misalignment", actually afterpulsing (BLOCK-3); 1,788 Hz as "dark count rate", actually a lumped term (§18.1); the 3.3 % floor read as interferometer visibility when visibility is an *output* (§18.4); `afterpulse_prob = 0.05` standing in for modulation error (§19.5, closed here); and the bias absorbing drift's share (§25.4, new here). `MU_EFF = 0.0793` is deliberately excluded — fitting to a target is a different failure mode. The recurrence is the point: it is the characteristic failure mode of replicating an aggregate whose components are *named but not individually quantified*.
 - **The sweep, measured**, against Gobby's four real measurements (§18.9 established the other five rows compare against nearest-matched values and are not evidence):
 
   | km | this work | Gobby | residual | sigma |
   |---|---|---|---|---|
   | 4.4 | 3.25 ± 0.29 % | 3.3 % | −0.05 | 0.2σ |
   | 65 | 3.69 ± 0.28 % | 3.3 % | +0.39 | 1.4σ |
-  | 101 | 5.31 ± 0.35 % | 6.0 % | −0.62 | 1.8σ |
+  | 101 | 5.31 ± 0.35 % | 6.0 % | −0.69 | 2.0σ |
   | **122** | **9.50 ± 0.43 %** | **8.9 %** | **+0.60** | **1.4σ** |
 
-  **Mean |residual| 0.414 pp, nothing beyond 1.8σ.**
+  **Mean |residual| 0.4325 pp**, mean signed residual +0.0625 pp (essentially unbiased), **variance 0.3250 pp²** (sd 0.5701), RMS 0.4977 pp, mean MC σ 0.3375 pp, **χ²/dof 1.95**. *Correction:* an earlier statement gave 0.414 pp and a −0.62 residual at 101 km; that compared against the interpolated 5.9 % rather than Gobby's raw 6.0 % measurement.
+- **χ²/dof = 1.95 is stated, not buried.** The scatter is ~1.4× what Monte-Carlo statistics alone explain, so a small residual systematic sits on top of the sampling noise. The replication is unbiased in sign and sub-half-pp in magnitude with nothing beyond 2σ — but it is not a pure-noise fit and should not be presented as one. The systematic is unidentified; documented candidates are the ~2 % first-order/MC signal disagreement and the ≤0.050 % device-visibility gap (§24.5).
 - **Statistical power holds.** Every row exceeds the 3,000-sifted target (minimum 3,384) and **nothing is clipped** — 122 km used 663e6 pulses against the 1e9 ceiling, where the pre-fix run hit the ceiling exactly. The committed artifact is no longer a 20,000-pulse smoke run with zero sifted bits at 122 km.
 - **Nothing is fitted anywhere in the chain.** `P_E` measured, `MU_EFF` derived from the 1.6:1 split, `e_mod` from Fig. 3, drift rate and transfer duration from the text, `afterpulse_prob = 0` from §19.5's three grounds.
 - 315 tests pass.

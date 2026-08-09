@@ -488,3 +488,76 @@ class TestBirefringenceMatrixAccessor:
             fibre.apply(E)
         J2 = fibre.birefringence_matrix()
         np.testing.assert_array_equal(J1, J2)
+
+
+class TestImpairmentsAreLiveNotNoOps:
+    """A null must be distinguishable from an impairment that never ran.
+
+    The scenario table (OPEN-3) shows CD, PMD and quasi-static
+    birefringence leaving the time-bin QBER *bit-identical* — same sifted
+    count, same error count, over 96e6 pulses.  That is the correct
+    physics: the interfering paths share a common polarisation rotation so
+    it cancels in |E_c|^2, CD commutes with the AMZI, and PMD's DGD sits
+    far below the 5.8 ns bin spacing.
+
+    But identity to the bit is *also* what a silently-ignored config key
+    produces, and the QBER table cannot tell the two apart — the same trap
+    as the vacuous negative control in GOBBY-6 §23.1.  These tests license
+    reading those rows as nulls by checking the impairment reaches the
+    field at all, which is the question the QBER cannot answer.
+    """
+
+    L_M = 100e3
+
+    @staticmethod
+    def _pulse():
+        dt = 2e-12
+        n = 4000
+        t = np.arange(n) * dt
+        sigma = 30e-12
+        env = np.exp(-0.5 * (t - 2e-9) ** 2 / sigma ** 2)
+        E = np.zeros((n, 2), dtype=complex)
+        E[:, 0] = env * np.sqrt(0.5)
+        E[:, 1] = env * np.sqrt(0.5)
+        return E, dt
+
+    def _after(self, **kw):
+        E, dt = self._pulse()
+        np.random.seed(42)
+        f = FiberRealization(L_m=self.L_M, seed=42, **kw)
+        return f.apply(E.copy(), dt=dt)
+
+    @pytest.mark.parametrize("name,flags,floor", [
+        ("birefringence", dict(birefringence=True, cd=False, pmd=False), 1.0),
+        ("cd", dict(birefringence=False, cd=True, pmd=False), 0.1),
+        ("pmd", dict(birefringence=False, cd=False, pmd=True), 1e-3),
+    ])
+    def test_impairment_perturbs_the_field(self, name, flags, floor):
+        """Each must visibly change the field, or its QBER null is vacuous.
+
+        Measured at 100 km: birefringence 1.679, CD 0.595, PMD 0.010.  The
+        floors are set well below those so ordinary model changes do not
+        trip the test, while a no-op (0.0) always does.
+        """
+        base = self._after(birefringence=False, cd=False, pmd=False,
+                           attenuation=True)
+        out = self._after(attenuation=True, **flags)
+        delta = np.max(np.abs(out - base)) / np.max(np.abs(base))
+        assert delta > floor, (
+            f"{name} left the field unchanged (max|dE|/|E| = {delta:.3e}); "
+            f"its null in the scenario table would be a no-op, not physics."
+        )
+
+    @pytest.mark.parametrize("flags", [
+        dict(birefringence=True, cd=False, pmd=False),
+        dict(birefringence=False, cd=True, pmd=False),
+        dict(birefringence=False, cd=False, pmd=True),
+    ])
+    def test_impairment_conserves_power(self, flags):
+        """Live, but lossless -- these are unitary/dispersive, not loss."""
+        base = self._after(birefringence=False, cd=False, pmd=False,
+                           attenuation=False)
+        out = self._after(attenuation=False, **flags)
+        p0 = np.sum(np.abs(base) ** 2)
+        p1 = np.sum(np.abs(out) ** 2)
+        assert abs(p1 - p0) / p0 < 1e-9

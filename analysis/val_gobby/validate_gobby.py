@@ -497,6 +497,14 @@ def gobby_is_measured(dist_km):
 # used to adjust a parameter: tuning P_E until the 65 km check passed would
 # make it fitted, which is exactly what GOBBY-1 removed.
 
+# "the contributions due to detector dark counts and stray light are less
+# than 0.4%" for fibre lengths up to 65 km.
+#
+# READING, settled in GOBBY-7d: the sentence names BOTH terms, so the bound
+# covers P_E in full (3.2e-7 dark + 5.3e-7 stray).  Reading it as the dark
+# term alone would let us pass comfortably -- 0.184% at 65 km, crossing only
+# at 82 km -- but the text does not support that, and taking it would be
+# choosing the interpretation that flatters the model.
 ERRONEOUS_BOUND_PCT = 0.4    # "less than 0.4%" up to 65 km
 ERRONEOUS_BOUND_KM = 65.0
 DEVICE_VISIBILITY_BOUND = 0.999   # "better than 99.9%", classical/bright-light
@@ -540,12 +548,27 @@ def print_paper_cross_checks(p_e=P_E, visibility=VISIBILITY, s_65=None):
           f"{ERRONEOUS_BOUND_KM:g} km = {v:.3f}% vs stated "
           f"<{ERRONEOUS_BOUND_PCT}%   [{src} S]")
     if not ok:
-        print(f"           over by {v / ERRONEOUS_BOUND_PCT - 1.0:+.0%}; the "
-              f"bound would allow P_E <= {implied:.2e} (carrying {p_e:.2e}).")
-        print(f"           Left as-is deliberately -- a discrepancy in our "
-              f"budget to report, not a knob")
-        print(f"           to turn. Tuning P_E here would re-fit what "
-              f"GOBBY-1 unfitted. See GOBBY-7.")
+        # Where the curve actually crosses, so the miss is legible as an
+        # endpoint effect rather than a failure across the whole range.
+        lo, hi = 0.0, ERRONEOUS_BOUND_KM
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            share = 100.0 * p_e / (signal_click_prob(mid) + 2.0 * p_e)
+            lo, hi = (mid, hi) if share < ERRONEOUS_BOUND_PCT else (lo, mid)
+        print(f"           over by {v / ERRONEOUS_BOUND_PCT - 1.0:+.0%} at the "
+              f"endpoint; holds to {lo:.1f} km.")
+        print(f"           The bound would allow P_E <= {implied:.2e}, against "
+              f"the {p_e:.2e} the paper")
+        print(f"           itself measures -- so their stated P_E and their "
+              f"stated bound are mildly")
+        print(f"           inconsistent *within this model*.  The signal side "
+              f"is verified to ~2%, so")
+        print(f"           the excess sits in the error budget, same direction "
+              f"and size as the")
+        print(f"           chi2/dof = 1.95 systematic in GOBBY-7c §25.5; "
+              f"plausibly the same thing.")
+        print(f"           NOT tuned -- moving P_E would re-fit what GOBBY-1 "
+              f"unfitted.")
     if s_65 is None:
         print(f"           (first-order S agrees with the chain to ~2% "
               f"since the missing T_INT and")

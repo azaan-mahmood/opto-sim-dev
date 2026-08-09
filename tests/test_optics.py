@@ -325,24 +325,53 @@ class TestCoupler:
             coupler_split(1.0, field, ratio=1.5)
 
     def test_combine_single_port_matrix(self, field):
-        """Single-port combine applies one arm of the ideal 3 dB coupler:
-        E_out = (E1 + j*E2)/sqrt(2), with power derived from the field."""
+        """Single-port combine applies one arm of the ideal 3 dB coupler in
+        the REAL convention: E_out = (E1 + E2)/sqrt(2)."""
         E1 = field / np.sqrt(2)
         E2 = field / np.sqrt(2)
         P1 = np.sum(power(E1))
         P2 = np.sum(power(E2))
         pout, E_out = coupler_combine(P1, E1, P2, E2, out_ports=1)
-        assert np.allclose(E_out, (E1 + 1j * E2) / np.sqrt(2), atol=1e-12)
+        assert np.allclose(E_out, (E1 + E2) / np.sqrt(2), atol=1e-12)
         assert np.isclose(pout, np.sum(np.abs(E_out) ** 2), rtol=1e-12)
 
     def test_combine_two_ports_matrix(self, field):
-        """Two-port combine applies the ideal 3 dB coupler scattering
-        matrix: E_out1 = (E1 + j*E2)/sqrt(2), E_out2 = (j*E1 + E2)/sqrt(2)."""
+        """Two-port combine, REAL convention (GOBBY-7d):
+        E_out1 = (E1 + E2)/sqrt(2), E_out2 = (E1 - E2)/sqrt(2)."""
         E1 = field / np.sqrt(2)
         E2 = field / np.sqrt(2)
         _, E_out1, _, E_out2 = coupler_combine(1.0, E1, 1.0, E2, out_ports=2)
-        assert np.allclose(E_out1, (E1 + 1j * E2) / np.sqrt(2), atol=1e-12)
-        assert np.allclose(E_out2, (1j * E1 + E2) / np.sqrt(2), atol=1e-12)
+        assert np.allclose(E_out1, (E1 + E2) / np.sqrt(2), atol=1e-12)
+        assert np.allclose(E_out2, (E1 - E2) / np.sqrt(2), atol=1e-12)
+
+    def test_combine_is_real_for_real_input(self, field):
+        """The point of the convention: a real input must give a real
+        output.  Under the old `1j` form this returned a complex field even
+        for a purely real input, which is the leak GOBBY-3 audited."""
+        E1 = np.real(field).astype(complex) / np.sqrt(2)
+        E2 = np.real(field).astype(complex) / np.sqrt(2)
+        _, E_out1, _, E_out2 = coupler_combine(1.0, E1, 1.0, E2, out_ports=2)
+        for E in (E_out1, E_out2):
+            scale = max(np.max(np.abs(E)), 1e-300)
+            assert np.max(np.abs(np.imag(E))) / scale < 1e-15
+
+    def test_combine_interferes_as_cosine_not_sine(self, field):
+        """Why the convention matters.  Encoding in {0, pi} -- as BB84
+        phase encoding does -- must give full contrast.  Under the
+        imaginary form the fringe goes as sin(delta) and lands exactly on
+        the zeros, which produced a flat ~50% QBER (GOBBY-2 §19)."""
+        E1 = field / np.sqrt(2)
+        out = []
+        for phi in (0.0, np.pi):
+            E2 = (field / np.sqrt(2)) * np.exp(1j * phi)
+            _, E_c, _, E_d = coupler_combine(1.0, E1, 1.0, E2, out_ports=2)
+            out.append((np.sum(np.abs(E_c) ** 2), np.sum(np.abs(E_d) ** 2)))
+        (c0, d0), (cpi, dpi) = out
+        total = c0 + d0
+        # phi = 0 -> all constructive; phi = pi -> all destructive.
+        assert d0 / total < 1e-15
+        assert cpi / total < 1e-15
+        assert np.isclose(c0, dpi, rtol=1e-12)
 
     def test_combine_two_ports_unitary(self, field):
         """Two-port combine must conserve power: the scattering matrix is
