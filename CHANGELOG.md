@@ -4,6 +4,33 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-11 — A4 settled by algebra: `circular_analyser` ≡ the paper's PC3+PBS readout
+
+### Session: VALID-1, register entry A4 closed — zero simulation runs
+
+| Change | Files | Rationale |
+|---|---|---|
+| **A4 register row → SETTLED (TRUE)** | `opto-sim-issues-and-fixes.md` §28.6 | QWP+PBS (ours) ≡ HWP(22.5°)+PBS (paper) on the four BB84 states, proven by Jones calculus, not asserted. |
+| **Derivation written** | §28.6a (new) | Paper quotes (eqs. 4–5, PM2/PC3), both composite matrices, the state-for-state port table, the operator identity. |
+| **Downstream consequences updated (G8)** | §27.5, §28.8 item 2, §29.2, §29.8 | "Evidently equivalent" → proven; "A4 unsettled" caveats → discharged with reasons revised. |
+| **Numeric spot-check** | deterministic matrix products (no simulation) | `J_circ = diag(1,−i)·H·diag(1,−i)` exactly; `P(port\|s,Δφ) = P(port\|s,Δφ−π/2)` for all eight (state, phase) pairs. |
+
+**Key result:** the equivalence is structural, not coincidental. The
+circular analyser is the paper's HWP(22.5°) sandwiched between two λ/4
+phase plates — exactly the phase the paper assigns to Bob's PM2. The chain
+folds the λ/4 into a fixed element (QWP+PBS); the paper folds it into
+`pm_bob`. Port statistics agree state-for-state: chain-X ≡ paper-"linear"
+exactly, chain-C ≡ paper-"circular" up to a free port exchange. Matched →
+deterministic port, mismatched → ½/½, in both implementations.
+
+**Nothing changed:** `circular_analyser` untouched (live in four
+protocols), no numerical result moved, no code edits. The "coincidental
+for the tested states" alternative reading is refuted.
+
+332 tests pass (unchanged).
+
+---
+
 ## 2026-08-09 — the Duplinskiy chain brought to standard; Gobby closed out
 
 ### Session: DUPL-1 — a polarisation chain that can carry the impairment models
