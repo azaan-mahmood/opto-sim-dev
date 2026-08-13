@@ -85,6 +85,8 @@ Deviations from the paper, and why
 
 from dataclasses import dataclass
 from typing import Callable
+import warnings
+
 import numpy as np
 
 
@@ -95,17 +97,28 @@ class SimResult:
     ``t`` is the time at the end of each recorded step; ``i`` the drive
     current applied during that step; ``P_right``/``P_left`` the total
     optical power leaving the right/left facet (sum over polarisations);
-    ``E_right``/``E_left`` the complex envelope at the right/left facet
-    (Fx+Fy and Rx+Ry), with ``mean(|E|**2)`` in Watts per the project
-    field convention.
+    ``E_right``/``E_left`` the complex envelope at the right/left facet as
+    ``[Ex, Ey]``, so ``sum(|E|**2, axis=1)`` reproduces the matching power
+    column exactly, in Watts per the project field convention.
+
+    The two polarisation components are kept separate rather than summed.
+    ``Fx`` and ``Fy`` are orthogonal, so ``Fx + Fy`` is not a field and its
+    squared magnitude is not a power: it carries the cross term
+    ``2*Re(conj(Fx)*Fy)``, which is real interference between components
+    that cannot interfere.  An earlier version recorded that sum, which
+    disagreed with ``P_right``/``P_left`` whenever both polarisations were
+    non-zero — and both are always driven, by independent spontaneous
+    emission.  The ``(n_rec, 2)`` shape also matches the convention every
+    other component in this project uses (CWLaser, MZM, fibre, AMZI), so
+    the output feeds them without a conversion step.
     """
 
     t: np.ndarray            # (n_rec,) seconds
     i: np.ndarray            # (n_rec,) amperes, >= 0
     P_right: np.ndarray      # (n_rec,) watts
     P_left: np.ndarray       # (n_rec,) watts
-    E_right: np.ndarray      # (n_rec,) complex
-    E_left: np.ndarray       # (n_rec,) complex
+    E_right: np.ndarray      # (n_rec, 2) complex [Ex, Ey]
+    E_left: np.ndarray       # (n_rec, 2) complex [Ex, Ey]
 
 
 class Laser:
@@ -114,10 +127,10 @@ class Laser:
     def __init__(self,
                  laser_order: int = 1,                 # m-th order laser
                  grating_length: float = 600e-6,       # Length of DFB laser grating
-                 n_sections: int = 15,                 # Number of sections DFB is divided into
+                 n_sections: int = 20,                 # Number of sections DFB is divided into
                  wavelength: float = 1.55e-6,          # Optical Lasing Wavelength
                  i_bias: float = 100e-3,               # Bias operating current of the Laser
-                 run_time: float = 5e-12,              # Laser observation time or running time
+                 run_time: float = 5e-9,               # Laser observation time or running time
                  seed: int | None = None,              # RNG seed for spontaneous emission
                  ):
         self.grating_length = grating_length
@@ -160,6 +173,27 @@ class Laser:
         self.bragg_condition = (self.m_order * self.wavelength) / (2 * self.n_eff_0)  # Lambda
 
         self.kappa = 50 * 100                           # Coupling Coefficient cm^-1 into m^-1
+
+        # Convergence criterion (paper Fig. 5): the split-step operator is
+        # only accurate while the per-section coupling stays small, kappa*dz
+        # < 0.2.  Warn rather than raise, because exceeding it degrades
+        # accuracy gradually instead of producing an obvious failure -- which
+        # is exactly why it needs saying out loud.  The default n_sections
+        # is 20 (kappa*dz = 0.15); at the previous default of 15 it sat on
+        # 0.200 exactly, on the limit rather than inside it.
+        self.kappa_dz = abs(self.kappa) * self.dz
+        if self.kappa_dz > 0.2:
+            warnings.warn(
+                f"kappa*dz = {self.kappa_dz:.3f} exceeds the 0.2 convergence "
+                f"limit (paper Fig. 5); results will lose accuracy. Raise "
+                f"n_sections above {int(np.ceil(abs(self.kappa) * self.grating_length / 0.2))} "
+                f"or shorten grating_length.",
+                RuntimeWarning, stacklevel=2,
+            )
+
+        # Coupling entries are constant in kappa and dz, so they are built
+        # once here rather than per step (see _coupling).
+        self._c00, self._c01 = self._coupling()
 
         # Field and carrier state (carriers at the CENTERS of the sections)
         self.Fx = np.zeros(self.n + 1, dtype=complex)
@@ -239,9 +273,27 @@ class Laser:
         i_rec = np.empty(n_rec)
         p_right = np.empty(n_rec)
         p_left = np.empty(n_rec)
-        e_right = np.empty(n_rec, dtype=complex)
-        e_left = np.empty(n_rec, dtype=complex)
+        e_right = np.empty((n_rec, 2), dtype=complex)
+        e_left = np.empty((n_rec, 2), dtype=complex)
         rec = 0
+
+        # The coupling entries depend only on kappa and dz, both fixed at
+        # construction, so they are read once here instead of being
+        # recomputed (sqrt, cosh, tanh) on every one of n_steps iterations.
+        c00, c01 = self._c00, self._c01
+
+        # Double buffers for the sweep.  Every element of all four arrays is
+        # written each step -- F[0] from the left facet and F[1..n] from the
+        # loop, R[0..n-1] from the loop and R[n] from the right facet -- so
+        # the buffers can be reused rather than reallocated, as long as they
+        # are SWAPPED with the state arrays at the end of the step rather
+        # than assigned to them.  Assigning would alias the state and the
+        # write target, and the next sweep would read values it had already
+        # overwritten.
+        Fx_next = np.empty(self.n + 1, dtype=complex)
+        Rx_next = np.empty(self.n + 1, dtype=complex)
+        Fy_next = np.empty(self.n + 1, dtype=complex)
+        Ry_next = np.empty(self.n + 1, dtype=complex)
 
         for k in range(n_steps):
             t_now = (k + 1) * self.dt
@@ -276,12 +328,6 @@ class Laser:
             xi_y = (self._rng.standard_normal((self.n, 2)) +
                     1j * self._rng.standard_normal((self.n, 2))) / np.sqrt(2)
 
-            Fx_next = np.zeros(self.n + 1, dtype=complex)
-            Rx_next = np.zeros(self.n + 1, dtype=complex)
-            Fy_next = np.zeros(self.n + 1, dtype=complex)
-            Ry_next = np.zeros(self.n + 1, dtype=complex)
-
-            c00, c01 = self._coupling()
             phase_x = np.exp((gx - 1j * delta) * self.dz)
             phase_y = np.exp((gy - 1j * delta) * self.dz)
 
@@ -295,15 +341,24 @@ class Laser:
             # its pre-sweep value.  A parallel (snapshot) application is
             # NOT equivalent and breaks energy conservation in the
             # stopband.
-            Fx_next[0] = self.ar * self.Rx[0]
+            # Both polarisations are swept in one pass.  They are entirely
+            # independent, so fusing them changes no arithmetic and no
+            # ordering; it only halves the interpreted loop overhead, which
+            # is what dominates this function.  Boundary values are read
+            # into locals once per section for the same reason.
+            # Pre-sweep backward fields; the swap below is what keeps these
+            # distinct from the arrays being written.
+            Rx_prev, Ry_prev = self.Rx, self.Ry
+            Fx_next[0] = self.ar * Rx_prev[0]
+            Fy_next[0] = self.ar * Ry_prev[0]
             for i in range(self.n):
-                Fx_next[i + 1] = phase_x[i] * (c00 * Fx_next[i] + c01 * self.Rx[i + 1])
-                Rx_next[i] = phase_x[i] * (c01 * Fx_next[i] + c00 * self.Rx[i + 1])
-
-            Fy_next[0] = self.ar * self.Ry[0]
-            for i in range(self.n):
-                Fy_next[i + 1] = phase_y[i] * (c00 * Fy_next[i] + c01 * self.Ry[i + 1])
-                Ry_next[i] = phase_y[i] * (c01 * Fy_next[i] + c00 * self.Ry[i + 1])
+                px, py = phase_x[i], phase_y[i]
+                fx, rx = Fx_next[i], Rx_prev[i + 1]
+                fy, ry = Fy_next[i], Ry_prev[i + 1]
+                Fx_next[i + 1] = px * (c00 * fx + c01 * rx)
+                Rx_next[i] = px * (c01 * fx + c00 * rx)
+                Fy_next[i + 1] = py * (c00 * fy + c01 * ry)
+                Ry_next[i] = py * (c01 * fy + c00 * ry)
 
             # Spontaneous emission driving sources (paper (2a)/(2b))
             Fx_next[1:] += noise_amp * xi_x[:, 0]
@@ -328,18 +383,22 @@ class Laser:
             dN_dt = inj - self.B * self.N ** 2 - self.C * self.N ** 3 - stim_x - stim_y
 
             self.N += dN_dt * self.dt
-            self.Fx = Fx_next
-            self.Rx = Rx_next
-            self.Fy = Fy_next
-            self.Ry = Ry_next
+            # Swap, do not assign: the arrays just written become the state
+            # and the previous state arrays become next step's scratch.
+            self.Fx, Fx_next = Fx_next, self.Fx
+            self.Rx, Rx_next = Rx_next, self.Rx
+            self.Fy, Fy_next = Fy_next, self.Fy
+            self.Ry, Ry_next = Ry_next, self.Ry
 
             if (k + 1) % record_every == 0:
                 t_rec[rec] = t_now
                 i_rec[rec] = i_k
                 p_right[rec] = np.abs(self.Fx[-1]) ** 2 + np.abs(self.Fy[-1]) ** 2
                 p_left[rec] = np.abs(self.Rx[0]) ** 2 + np.abs(self.Ry[0]) ** 2
-                e_right[rec] = self.Fx[-1] + self.Fy[-1]
-                e_left[rec] = self.Rx[0] + self.Ry[0]
+                e_right[rec, 0] = self.Fx[-1]
+                e_right[rec, 1] = self.Fy[-1]
+                e_left[rec, 0] = self.Rx[0]
+                e_left[rec, 1] = self.Ry[0]
                 rec += 1
 
         return SimResult(t=t_rec, i=i_rec, P_right=p_right, P_left=p_left,

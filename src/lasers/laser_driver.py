@@ -1,6 +1,6 @@
 """Laser driver: houses the SS-TDM DFB device and drives its injection current.
 
-The driver holds a :class:`~src.lasers.dfblaser_v2.Laser` instance and a
+The driver holds a :class:`~src.lasers.dfblaser.Laser` instance and a
 :class:`DriveParams` waveform specification.  The only difference between
 CW and gain-switched operation is the injection-current waveform applied
 to the same device.
@@ -19,9 +19,17 @@ Modes
 Waveforms (``pulsed`` mode)
 ---------------------------
 - ``gaussian``: current pulses ``i_peak * exp(-0.5*(tau/sigma)**2)`` with
-  ``sigma`` from the FWHM ``width``.
+  ``sigma`` from the FWHM ``width``, centred on each multiple of
+  ``period``.  ``tau`` is the distance to the *nearest* period boundary,
+  so the leading half of each pulse is carried by the tail end of the
+  preceding period and the pulse is symmetric.  Measuring ``tau`` as
+  ``t % period`` instead would put the peak at the start of the period
+  with nothing before it, giving only the falling half and therefore
+  half the requested FWHM.
 - ``trapezoidal``: pulses of length ``width`` with linear edges of
-  duration ``t_rise`` (square when ``t_rise = 0``).
+  duration ``t_rise`` (square when ``t_rise = 0``), starting at each
+  period boundary.  This branch is one-sided by construction, so it
+  takes ``tau`` unwrapped.
 
 The drive current is clamped to be non-negative everywhere.
 """
@@ -31,7 +39,7 @@ from typing import Callable
 
 import numpy as np
 
-from .dfblaser_v2 import Laser, SimResult
+from .dfblaser import Laser, SimResult
 
 _MODE_CHOICES = ("cw", "pulsed")
 _WAVEFORM_CHOICES = ("gaussian", "trapezoidal")
@@ -92,6 +100,13 @@ class DriveParams:
             return np.full_like(t, self.i_bias)
         tau = t % self.period
         if self.waveform == "gaussian":
+            # Distance to the nearest period boundary, not to the start of
+            # the period: the pulse is centred on the boundary and its
+            # leading half comes from the tail of the preceding period.
+            # Without the wrap the peak sits at tau = 0 with nothing before
+            # it, so only the falling half survives and the effective FWHM
+            # is half of `width`.
+            tau = np.minimum(tau, self.period - tau)
             current = self.i_bias + self.i_peak * np.exp(-0.5 * (tau / self._pulse_sigma) ** 2)
         else:  # trapezoidal
             if self.t_rise <= 0:

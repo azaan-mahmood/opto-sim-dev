@@ -1,10 +1,8 @@
-# DFB laser work in progress
+# DFB laser model and driver
 
 This branch holds the split step DFB laser model and the driver that
-supplies its injection current. Neither is finished, and neither is wired
-into the rest of the project yet. These notes record what state the code
-is in, so that picking it up later does not mean working it out from
-scratch.
+supplies its injection current. The code now imports and runs. It is still
+not wired into the rest of the project, and its test is still deferred.
 
 ## What is here
 
@@ -25,152 +23,128 @@ a validated dataclass covering CW and gain switched pulsed operation, with
 gaussian or trapezoidal pulse shapes. `LaserDriver` puts a device and a
 waveform together and runs them.
 
-`tests/test_dfblaser.py` is written against a different API than the one
-that exists. See the last section.
+## What was fixed
 
-## What was done
+### The rename was finished
 
-The file was renamed from `dfblaser_v2.py` to `dfblaser.py`. That is the
-only change made to the code so far.
+The file went from `dfblaser_v2.py` to `dfblaser.py`, but `laser_driver.py`
+was still importing the old name, so neither file imported at all. Both the
+import on line 34 and the docstring reference on line 3 now point at the
+new name. Nothing else in the repository referred to the old one.
 
-## What is broken right now
+### Recorded output fields no longer add two polarisations together
 
-`laser_driver.py` still imports the old module name. Line 34 reads
-`from .dfblaser_v2 import Laser, SimResult`, and line 3 of the docstring
-points at `src.lasers.dfblaser_v2.Laser`. Both need the `_v2` dropped.
-Until that happens neither file imports at all, so this is the first thing
-to fix. Nothing else in the repository refers to the old name.
+`simulate()` used to record `Fx[-1] + Fy[-1]` as the output envelope. Those
+are the x and y polarised components, which are orthogonal, so adding them
+into one complex number does not give a field and its squared magnitude is
+not a power. It carries a cross term that is interference between two
+components that cannot interfere. The recorded power on the line above used
+the sum of squared magnitudes, so the two disagreed. Measured on a short
+run, the worst disagreement was 99.5 per cent.
 
-## What needs fixing
+`E_right` and `E_left` are now `(n_rec, 2)` arrays holding the two
+components separately, so `sum(abs(E)**2, axis=1)` reproduces the matching
+power column exactly. That also matches the shape every other component in
+this project uses, so the output can feed CWLaser, the MZM, the fibre and
+the AMZIs without a conversion step.
 
-Listed roughly in the order I would do them.
+### The gaussian drive pulse is a whole pulse
 
-### 1. The recorded output fields add two polarisations together
+`tau` was measured as `t % period`, so the gaussian peaked at the start of
+each period with nothing before it and only the falling half survived. The
+effective width was half the requested FWHM, measured at 50 ps for a
+`width` of 100 ps.
 
-In `simulate()` the recorded envelope is built like this:
+`tau` is now the distance to the nearest period boundary, so the leading
+half comes from the tail of the preceding period. Measured FWHM is now
+100.00 ps for a `width` of 100 ps. The trapezoidal branch is one sided by
+construction and deliberately does not get the wrap.
 
-    e_right[rec] = self.Fx[-1] + self.Fy[-1]
+### The convergence criterion is checked
 
-`Fx` and `Fy` are the x and y polarised components. They are orthogonal,
-so adding them into a single complex number does not give you a field, and
-the square of that number is not the power. The line above it gets power
-right, using the sum of the two squared magnitudes, so the two recorded
-quantities disagree with each other. The `SimResult` docstring says that
-the mean of the squared magnitude is in watts, and that only holds when
-one polarisation is zero. Both are driven by independent spontaneous
-noise, so in practice neither is.
+`__init__` now warns when kappa times dz goes above 0.2, which is the limit
+from figure 5 of the paper. It warns rather than raises, because going over
+degrades accuracy gradually instead of failing visibly, which is exactly
+why it needs saying out loud. The message says how many sections would be
+needed to get back under.
 
-The fix is to keep them apart. Make `E_right` and `E_left` arrays of shape
-`(n_rec, 2)` holding the x and y components separately. That also matches
-how every other component in this project passes fields around. `CWLaser`,
-the MZM, the fibre and the AMZIs all use `(n, 2)` complex arrays, so the
-laser output would then feed straight into them with no conversion step.
-The `SimResult` docstring needs updating too, since it describes the
-scalar version.
+The default section count went from 15 to 20. At 15 the product was exactly
+0.200, sitting on the limit rather than inside it. At 20 it is 0.150.
 
-### 2. The gaussian drive pulse is only half a pulse
+### The default run time is long enough to show something
 
-In `DriveParams.i()`:
+`run_time` went from 5 ps to 5 ns. At 5 ps you got about ten steps, and
+with `record_every` at 10 that was a single recorded point. Turn on
+behaviour and relaxation oscillations need nanoseconds.
 
-    tau = t % self.period
-    current = self.i_bias + self.i_peak * np.exp(-0.5 * (tau / self._pulse_sigma) ** 2)
+### The stepping loop does less repeated work
 
-`tau` runs from zero up to `period`, and the gaussian peaks at zero. So
-every period starts at full amplitude and decays away, and you only ever
-get the falling half. The parameter is documented as a full width at half
-maximum, which implies a symmetric pulse, so what you actually get is half
-the width you asked for.
+`_coupling()` was being called on every step even though it only depends on
+kappa and dz, both fixed at construction. It is now computed once in
+`__init__` and read once per `simulate()` call.
 
-The one line fix is to measure distance to the nearest period boundary
-instead:
+The four arrays holding the next step were allocated fresh every step. They
+are now allocated once and swapped with the state arrays at the end of each
+step. Swapping matters. Assigning would make the state and the write target
+the same array, and the next sweep would read values it had already
+overwritten.
 
-    tau = t % self.period
-    tau = np.minimum(tau, self.period - tau)
+The x and y sweeps were separate loops doing identical work on different
+arrays. They are now one loop, with the boundary values read into locals.
 
-Then the leading tail comes from the end of the previous period and the
-pulse is symmetric. If the pulse needs to sit somewhere other than on the
-period boundary, the alternative is an explicit offset parameter, but that
-adds API for no obvious gain.
+Be aware this is a smaller win than expected. It measures between 1.07 and
+1.60 times faster depending on section count, best at low section counts
+where the hoisted coupling call is the larger share. An earlier version of
+these notes estimated two to three times, which was too optimistic. Fusing
+the loops removes iteration bookkeeping but not arithmetic, so it does
+little once the section count is large. A real speedup still needs numba or
+moving the recurrence into C.
 
-The trapezoidal branch does not have this problem. It already produces a
-complete pulse. So at the moment the two waveform options do not behave
-the same way as each other.
+## Two changes that move existing results
 
-### 3. The default section count sits exactly on the convergence limit
+The default section count and the default run time both changed. Section
+count sets dz, and dt follows from dz over the group velocity, so anything
+that relied on the old defaults will now produce different numbers. Nothing
+in the repository calls this model yet, so nothing broke, but it is worth
+knowing before comparing against an older run.
 
-With the defaults, kappa is 5000 per metre and dz is 600 microns divided
-by 15 sections, which is 40 microns. That puts kappa times dz at exactly
-0.2, which is the convergence criterion rather than safely inside it.
+## What is still open
 
-Two things are worth doing. Warn from `__init__` when kappa times dz goes
-above 0.2, so that anyone who lowers the section count or lengthens the
-grating finds out immediately instead of getting quietly wrong numbers.
-Then raise the default section count from 15 to 20, which puts the product
-at 0.15.
+`src/lasers/__init__.py` still exports only `CWLaser`. Both new modules are
+reachable only by full path, for example
+`from src.lasers.dfblaser import Laser`. Worth sorting out at the same time
+as deciding whether the class should be called `Laser` or `DFBLaser`, so
+the public surface only changes once.
 
-Note that changing the section count changes dz, and dt follows from dz
-divided by the group velocity, so the default step size and every default
-configuration result will move. That is a change in behaviour, not just a
-guard, so it should be called out rather than slipped in quietly.
-
-### 4. The default run time is about ten steps
-
-dt works out at roughly 0.49 ps and `run_time` defaults to 5 ps, so you
-get about ten steps. With `record_every` at 10 that leaves a single
-recorded point. It is fine for checking that the code executes, but far
-too short to show anything physical. Turn on behaviour and relaxation
-oscillations need nanoseconds.
-
-Raising it to 5 ns gives around ten thousand steps. Worth doing after item
-5, because at the moment that is slow enough to be irritating as a
-default.
-
-### 5. Speed up the stepping loop
-
-The sweep over sections has to stay a loop. The comment in the code
-explains why and it is correct. `F` is advanced using the value that was
-just computed, so doing the sections in parallel would break energy
-conservation in the stopband. But there is repeated work that does not
-need to be repeated.
-
-`_coupling()` is called every step even though it only depends on kappa
-and dz, both fixed at construction. Compute it once in `__init__`.
-
-The four arrays holding the next step are allocated fresh every step.
-Allocate them once and reuse them.
-
-The x and y loops are separate but do identical work on different arrays.
-Fusing them into a single loop over sections, working on a stacked pair,
-roughly halves the Python level loop overhead.
-
-That is maybe two to three times faster, with no new dependencies. Going
-much beyond that means numba, or moving the recurrence into C, which is a
-bigger decision and should not be bundled in with this.
-
-## What was deliberately left alone
-
-`src/lasers/__init__.py` still exports only `CWLaser`. Neither new module
-is exported, so both are reachable only by full path, for example
-`from src.lasers.dfblaser import Laser`. Worth sorting out, but better
-done at the same time as deciding whether the class should be called
-`Laser` or `DFBLaser`, so that the public surface only changes once.
-
-`tests/test_dfblaser.py` is staying deferred. It was written against an
-API that does not exist yet. It imports `DFBLaser`, `LaserParams` and
+`tests/test_dfblaser.py` is still deferred. It was written against an API
+that does not exist. It imports `DFBLaser`, `LaserParams` and
 `_iir_lowpass` from `src.lasers.dfblaser`, and a module called
-`src.lasers.drive`. What actually exists is `Laser` and `SimResult` in
+`src.lasers.drive`. What exists is `Laser` and `SimResult` in
 `src.lasers.dfblaser`, and `src.lasers.laser_driver`. It also reads
 `res.power_right`, where the result object has `P_right`.
 
-Because of that the file fails at import. Pytest stops the whole run when
-a collection fails, so a bare `pytest` at the repository root currently
-collects nothing and exits with an error. Running
-`pytest --ignore=tests/test_dfblaser.py` gets the rest of the suite back.
-The other way to park it is a module level skip at the top of the file,
-which leaves every test body untouched and lets a bare `pytest` work
+The file fails at import, and pytest abandons the whole run when a
+collection fails, so a bare `pytest` at the repository root still collects
+nothing. Use `pytest --ignore=tests/test_dfblaser.py`, which passes 332
+tests. The other way to park it is a module level skip at the top of the
+file, which leaves the test bodies untouched and lets a bare `pytest` work
 again.
 
-The finite gain bandwidth filter from section III of the paper is still
-not implemented. The module docstring explains the reasoning, that at this
-gain bandwidth the filter is wider than the simulation band, and that
-argument still holds.
+The finite gain bandwidth filter from section III of the paper is still not
+implemented. The module docstring explains that at this gain bandwidth the
+filter is wider than the simulation band, and that argument still holds.
+
+## How the fixes were checked
+
+The loop changes touch no arithmetic and no random draw, so they must not
+move any number. This was checked by pulling the pre-fix module straight
+out of commit 69e6c68 and running it beside the current one at matched
+settings. Power and field come out bit for bit identical at 15, 20 and 24
+sections, which is the check that nothing got reordered.
+
+The rest was checked directly. Power and field agree exactly now and did
+not before. The warning fires at 10 sections and is silent at the default.
+The gaussian pulse is symmetric and its measured FWHM matches the `width`
+argument, where the old one measured half. The trapezoidal pulse still
+starts on the period boundary. `LaserDriver.run` returns a `SimResult` with
+finite non-negative power.
