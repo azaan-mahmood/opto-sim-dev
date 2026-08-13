@@ -127,7 +127,7 @@ class Laser:
     def __init__(self,
                  laser_order: int = 1,                 # m-th order laser
                  grating_length: float = 600e-6,       # Length of DFB laser grating
-                 n_sections: int = 20,                 # Number of sections DFB is divided into
+                 n_sections: int = 15,                 # Number of sections DFB is divided into
                  wavelength: float = 1.55e-6,          # Optical Lasing Wavelength
                  i_bias: float = 100e-3,               # Bias operating current of the Laser
                  run_time: float = 5e-9,               # Laser observation time or running time
@@ -174,15 +174,28 @@ class Laser:
 
         self.kappa = 50 * 100                           # Coupling Coefficient cm^-1 into m^-1
 
-        # Convergence criterion (paper Fig. 5): the split-step operator is
-        # only accurate while the per-section coupling stays small, kappa*dz
-        # < 0.2.  Warn rather than raise, because exceeding it degrades
-        # accuracy gradually instead of producing an obvious failure -- which
-        # is exactly why it needs saying out loud.  The default n_sections
-        # is 20 (kappa*dz = 0.15); at the previous default of 15 it sat on
-        # 0.200 exactly, on the limit rather than inside it.
+        # Convergence criterion (paper Sec. II, Fig. 5): the zero-reflection
+        # wavelength loci converge once the per-subsection coupling strength
+        # kappa*dz falls below 0.2.  The paper works this through for its own
+        # device and states the conclusion directly: with kappa = 50 cm^-1,
+        # dz must be under about 40 um, "therefore 15 subsections or more are
+        # enough when the length of the device considered is 600 um".
+        #
+        # So 15 is the paper's own recommendation and is the default here.
+        # It puts kappa*dz at exactly 0.2, i.e. on the boundary the paper
+        # accepts rather than inside it.  An earlier version of this file
+        # raised the default to 20 to sit clear of the limit; that was a
+        # departure from the source with no support in it, and it moved every
+        # default result, because dz sets dt.  Reverted.
+        #
+        # Warn rather than raise, because going over degrades accuracy
+        # gradually instead of failing visibly, which is exactly why it needs
+        # saying out loud.  The tolerance keeps the paper's own configuration
+        # from tripping its own criterion: 5000 * (600e-6/15) evaluates to
+        # 0.19999999999999998 here, which happens to fall under, but that is
+        # luck in the last bit and not something to rely on.
         self.kappa_dz = abs(self.kappa) * self.dz
-        if self.kappa_dz > 0.2:
+        if self.kappa_dz > 0.2 * (1.0 + 1e-9):
             warnings.warn(
                 f"kappa*dz = {self.kappa_dz:.3f} exceeds the 0.2 convergence "
                 f"limit (paper Fig. 5); results will lose accuracy. Raise "
