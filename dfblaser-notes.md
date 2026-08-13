@@ -169,6 +169,140 @@ polarisation only, because the other has far lower confinement and never
 reaches threshold. This does not explain the power gap, since gain clamping
 fixes the total no matter how many modes share it, but it is not physical.
 
+## The grating reflection spectrum, and how it is derived
+
+This is the strongest check done so far, because it lands on a number that
+has a closed form. It reproduces the paper's figure 4: reflectivity and
+phase against wavelength from 1548 to 1552 nm.
+
+It matters that this test is built out of the model's own section
+operator, the same `sech` and `j tanh` pair the time stepping uses, rather
+than out of a textbook grating formula. If it had been built the second
+way it would only have tested the formula.
+
+### From the section operator to a transfer matrix
+
+The model advances one section by mapping what enters the section to what
+leaves it. Writing `p = exp((G - j delta) dz)`, `c00 = sech(gamma dz)` and
+`c01 = j tanh(gamma dz)` with `gamma = |kappa|`:
+
+    F(i+1) = p * ( c00 * F(i) + c01 * R(i+1) )        (1)
+    R(i)   = p * ( c01 * F(i) + c00 * R(i+1) )        (2)
+
+That is a scattering form. It takes the wave coming in from the left,
+`F(i)`, and the wave coming in from the right, `R(i+1)`, and returns the
+two waves leaving. It cannot be cascaded directly, because the inputs and
+outputs sit at different planes. What cascades is a transfer matrix, which
+relates both fields at one plane to both fields at the next.
+
+Rearrange (2) for `R(i+1)`:
+
+    p * c00 * R(i+1) = R(i) - p * c01 * F(i)
+
+    R(i+1) = R(i) / (p * c00) - (c01 / c00) * F(i)    (3)
+
+Put (3) into (1):
+
+    F(i+1) = p * c00 * F(i) + p * c01 * [ R(i)/(p c00) - (c01/c00) F(i) ]
+           = p * c00 * F(i) + (c01/c00) * R(i) - (p c01^2 / c00) * F(i)
+           = p * (c00^2 - c01^2)/c00 * F(i) + (c01/c00) * R(i)
+
+The bracket collapses, and this is the step that makes the whole thing
+work:
+
+    c00^2 - c01^2 = sech^2(x) - (j tanh(x))^2
+                  = sech^2(x) + tanh^2(x)
+                  = 1
+
+because `sech^2 = 1 - tanh^2`. So
+
+    F(i+1) = (p / c00) * F(i) + (c01 / c00) * R(i)    (4)
+
+and (3) with (4) give the transfer matrix
+
+            [  p/c00      c01/c00   ]
+    T   =   [                       ]
+            [ -c01/c00    1/(p c00) ]
+
+Its determinant is exactly 1:
+
+    det T = (p/c00)(1/(p c00)) - (c01/c00)(-c01/c00)
+          = (1 + c01^2) / c00^2
+          = (1 - tanh^2) / sech^2
+          = 1
+
+Note that `p` cancels, so the determinant stays 1 whatever the gain or
+loss is. That is a useful invariant to assert if this ever gets a test.
+
+### Getting the reflection coefficient
+
+The grating is uniform, so every section has the same `T` and the whole
+device is `T` raised to the power `N`. Shine light in from the left with
+nothing coming back from the right, which means `R(N) = 0`:
+
+    [ F(N) ]          [ 1 ]
+    [      ]  =  T^N  [   ]
+    [  0   ]          [ r ]
+
+The second row gives the answer directly:
+
+    0 = T21 + T22 * r        so        r = -T21 / T22
+
+and the transmission, if wanted, is `t = T11 + T12 * r`. Power
+reflectivity is `|r|^2` and the phase is the argument of `r`.
+
+The detuning comes from the model's own expression, evaluated at
+transparency so the carrier induced index change is zero:
+
+    delta(lambda) = (2 pi / lambda) * n_eff_0 - pi / Lambda
+
+`Lambda` is fixed by the design wavelength, so `delta` is zero at 1550 nm
+and the stopband sits there.
+
+### What came out
+
+    peak power reflectivity   N = 15    0.99013
+                              N = 200   0.99013
+    tanh^2(kappa L)                     0.99013
+
+`tanh^2(kappa L)` is the closed form peak reflectivity of a uniform
+grating. The section operator reproduces it to five decimals. That is the
+result worth having, because it says the coupling matrix is correct rather
+than merely reasonable.
+
+The stopband is centred on 1550 nm and runs roughly 1549.3 to 1550.7 nm,
+which is the `|delta| < kappa` condition, since `delta = kappa` is 0.58 nm
+off Bragg. Side lobes fall away either side at 0.31, then 0.14, then 0.02.
+
+The zeros between the side lobes were computed independently, from
+`sqrt(delta^2 - kappa^2) L = m pi`, and the model sits between 4e-4 and
+1.6e-3 at those wavelengths against a peak of 0.99. They are not exactly
+zero only because the sweep samples on a 1 pm grid and the nulls are
+sharp, so the true minima fall between grid points.
+
+The unwrapped phase runs from -pi/2 to 3 pi/2. It ramps smoothly across
+the stopband and jumps by pi at every zero, which is what it should do,
+since the reflection changes sign passing through a null.
+
+### Two things the spectrum says beyond the check
+
+Fifteen sections really is enough. The N = 200 curve lies underneath the
+N = 15 curve almost everywhere, including side lobe heights and null
+positions. That is the paper's figure 5 conclusion seen directly, and it
+supports putting the default back to 15.
+
+The waveguide loss is doing a lot of damage. The same grating with alpha
+at 40 per cm drops from a peak of 0.99 to 0.45, and the nulls fill in
+completely, because alpha times L is 2.4. Worth holding onto, because the
+efficiency gap in the section above points at the same parameter. Our
+slope is 0.192 mW per mA against the paper's 0.263. That is now the second
+independent place alpha looks high. It should still not be tuned to close
+the gap, because the paper's device is complex coupled and this model is
+index coupled only, so gain coupling is a live alternative explanation.
+
+The script is `analysis/validation/validate_dfb_reflection.py` and it
+writes to `analysis/val_dfb/`.
+
 ## What is still open
 
 `src/lasers/__init__.py` still exports only `CWLaser`. Both new modules are
