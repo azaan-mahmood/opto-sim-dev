@@ -48,7 +48,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.lasers.dfblaser import Laser
+from src.lasers.dfblaser import DFBLaser
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_dfb')
 
@@ -63,7 +63,7 @@ def reflection(lam_m, n_sections, lossy=False):
     i.e. a passive grating, which is what makes the nulls true zeros; with
     the waveguide loss on they fill in.
     """
-    las = Laser(n_sections=n_sections)
+    las = DFBLaser(n_sections=n_sections)
     c00, c01 = las._coupling()          # constant in wavelength
     dz, n = las.dz, las.n
     g = -las.alpha / 2.0 if lossy else 0.0

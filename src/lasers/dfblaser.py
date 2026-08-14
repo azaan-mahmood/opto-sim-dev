@@ -6,10 +6,41 @@ Modeling of DFB/DBR Laser Diodes", IEEE J. Quantum Electron. 36(7), 787-794
 
 Units are SI converted. The paper's Table I uses CGS system.
 
+One transverse mode, not two
+----------------------------
+The paper models a single transverse mode.  Its (1) is
+
+    E(x, y, z, t) = phi(x,y) * [F(z,t) e^{-i beta_0 z}
+                                + R(z,t) e^{+i beta_0 z}] * e^{i omega_0 t}
+
+with one modal function ``phi(x,y)`` and one forward/backward amplitude
+pair, and (7)'s carrier equation has one photon density.  That mode is TE:
+in a 0.2 um active layer the TM confinement factor is far lower, so TM does
+not reach threshold, and the paper states a single ``Gamma`` accordingly.
+
+An earlier version of this file carried a second pair, ``Fy``/``Ry``, with
+the *same* ``Gamma``, ``g_N``, ``kappa``, ``alpha``, ``eps`` and ``N_0``,
+sharing the one carrier reservoir and differing only in which noise draw
+seeded it.  That is not TM.  It is a second independent realisation of the
+same mode, so both reached threshold together and split the output evenly
+(measured 3.622e-3 W against 3.614e-3 W at 120 mA, a polarisation
+extinction ratio of 0.01 dB), and because the two seeds are independent
+their relative phase is random -- the output was unpolarised light rather
+than a pure state on a diagonal.  Modelling a real TM mode instead would
+need a TM confinement factor, gain and coupling coefficient, none of which
+the paper gives.  The pair was removed.
+
+``SimResult`` still reports ``(n_rec, 2)`` fields for the project's
+``[Ex, Ey]`` convention, with the TE amplitude in column 0 and column 1
+identically zero.  Orienting that axis against lab x and y is a separate
+question -- mounting and pigtail alignment, not device physics -- and lives
+in ``LaserDriver.sample_field`` as a Jones vector, the same way
+``CWLaser`` handles it.
+
 Physics summary
 ---------------
-- Two counter-propagating field envelopes per polarisation (Fx/Rx, Fy/Ry),
-  advanced section-by-section through the split-step operator (paper
+- Counter-propagating field envelopes F/R for the TE mode, advanced
+  section-by-section through the split-step operator (paper
   (10), (14), (16)): the constant coupling matrix
   ``K = [[sech(gamma*dz), j*tanh(gamma*dz)], [j*tanh(gamma*dz),
   sech(gamma*dz)]]`` with ``gamma = sqrt(kappa*conj(kappa)) = |kappa|``
@@ -45,7 +76,7 @@ Physics summary
 - Carrier rate equation, paper (7), solved per section: current-density
   injection ``J/(q*d_act)`` with ``J = i_k/(w*L)`` (uniform along the
   cavity) minus bimolecular and Auger recombination minus the
-  stimulated recombination of both polarisations.  The stimulated term
+  stimulated recombination of the lasing mode.  The stimulated term
   uses the modal gain ``Gamma*g_N*(N-N_0)/(1+eps*S)`` -- the same gain
   that appears in the field equation (3) -- so energy is conserved
   between the fields and the carriers.  There is no linear (A N / tau)
@@ -95,22 +126,22 @@ class SimResult:
     """Recorded output of :meth:`Laser.simulate`.
 
     ``t`` is the time at the end of each recorded step; ``i`` the drive
-    current applied during that step; ``P_right``/``P_left`` the total
-    optical power leaving the right/left facet (sum over polarisations);
-    ``E_right``/``E_left`` the complex envelope at the right/left facet as
-    ``[Ex, Ey]``, so ``sum(|E|**2, axis=1)`` reproduces the matching power
-    column exactly, in Watts per the project field convention.
+    current applied during that step; ``P_right``/``P_left`` the optical
+    power leaving the right/left facet; ``E_right``/``E_left`` the complex
+    envelope there as ``[Ex, Ey]``, so ``sum(|E|**2, axis=1)`` reproduces
+    the matching power column exactly, in Watts per the project field
+    convention.
 
-    The two polarisation components are kept separate rather than summed.
-    ``Fx`` and ``Fy`` are orthogonal, so ``Fx + Fy`` is not a field and its
-    squared magnitude is not a power: it carries the cross term
-    ``2*Re(conj(Fx)*Fy)``, which is real interference between components
-    that cannot interfere.  An earlier version recorded that sum, which
-    disagreed with ``P_right``/``P_left`` whenever both polarisations were
-    non-zero — and both are always driven, by independent spontaneous
-    emission.  The ``(n_rec, 2)`` shape also matches the convention every
-    other component in this project uses (CWLaser, MZM, fibre, AMZI), so
-    the output feeds them without a conversion step.
+    The device lases one TE mode, so column 0 carries it and column 1 is
+    identically zero.  The ``(n_rec, 2)`` shape is kept because it is the
+    convention every other component here uses (CWLaser, MZM, fibre,
+    AMZI), so the output feeds them without a conversion step.  Column 1
+    is zero because TM does not reach threshold, not because a second mode
+    was left unmodelled.
+
+    Putting the TE amplitude on lab x and y axes is an orientation
+    question rather than a device one; ``LaserDriver.sample_field`` does
+    it with a Jones vector.
     """
 
     t: np.ndarray            # (n_rec,) seconds
@@ -121,7 +152,7 @@ class SimResult:
     E_left: np.ndarray       # (n_rec, 2) complex [Ex, Ey]
 
 
-class Laser:
+class DFBLaser:
     """SS-TDM DFB laser diode (Kim, Chung & Lee 2000)."""
 
     def __init__(self,
@@ -141,7 +172,7 @@ class Laser:
         self.seed = seed
         # Parameter List:
         self.w_waveguide = 2e-6
-        self.confinement = 0.3
+        self.confinement = 0.3                          # TE confinement factor; TM is far lower and does not lase
         self.B = 1e-10 * 1e-6                          # Spontaneous Recombination, cm^3/s into m^3/s
         self.C = 0.75e-28 * 1e-12                       # Auger Carrier cm^6/s into m^6/s
         self.g_N = 2.5e-16 * 1e-4                       # Differential Gain, cm^2 into m^2 (2.5e-20 m^2)
@@ -194,6 +225,12 @@ class Laser:
         # from tripping its own criterion: 5000 * (600e-6/15) evaluates to
         # 0.19999999999999998 here, which happens to fall under, but that is
         # luck in the last bit and not something to rely on.
+        #
+        # UserWarning rather than RuntimeWarning: this is a configuration
+        # choice made at construction, which is what UserWarning is for.
+        # RuntimeWarning is the category numpy raises for overflow and
+        # invalid values, so anyone filtering that to catch real numerical
+        # trouble would trip this instead.
         self.kappa_dz = abs(self.kappa) * self.dz
         if self.kappa_dz > 0.2 * (1.0 + 1e-9):
             warnings.warn(
@@ -201,24 +238,23 @@ class Laser:
                 f"limit (paper Fig. 5); results will lose accuracy. Raise "
                 f"n_sections above {int(np.ceil(abs(self.kappa) * self.grating_length / 0.2))} "
                 f"or shorten grating_length.",
-                RuntimeWarning, stacklevel=2,
+                UserWarning, stacklevel=2,
             )
 
         # Coupling entries are constant in kappa and dz, so they are built
         # once here rather than per step (see _coupling).
         self._c00, self._c01 = self._coupling()
 
-        # Field and carrier state (carriers at the CENTERS of the sections)
-        self.Fx = np.zeros(self.n + 1, dtype=complex)
-        self.Rx = np.zeros(self.n + 1, dtype=complex)
-        self.Fy = np.zeros(self.n + 1, dtype=complex)
-        self.Ry = np.zeros(self.n + 1, dtype=complex)
+        # Field and carrier state (carriers at the CENTERS of the sections).
+        # F/R are the forward/backward amplitudes of the one TE mode.
+        self.F = np.zeros(self.n + 1, dtype=complex)
+        self.R = np.zeros(self.n + 1, dtype=complex)
         self.N = np.ones(self.n) * 1e24                 # Carrier density, m^-3
         self.reset()
 
     def __repr__(self) -> str:
         return (
-            f"Laser(L={self.grating_length * 1e6:.0f} um, n={self.n}, "
+            f"DFBLaser(L={self.grating_length * 1e6:.0f} um, n={self.n}, "
             f"lambda={self.wavelength * 1e9:.1f} nm, i_bias={self.i_bias * 1e3:.0f} mA, "
             f"run_time={self.run_time * 1e9:.1f} ns)"
         )
@@ -233,10 +269,8 @@ class Laser:
         if seed is not None:
             self.seed = seed
         self._rng = np.random.default_rng(self.seed)
-        self.Fx[:] = 0.0
-        self.Rx[:] = 0.0
-        self.Fy[:] = 0.0
-        self.Ry[:] = 0.0
+        self.F[:] = 0.0
+        self.R[:] = 0.0
         self.N[:] = 1e24
 
     def _coupling(self) -> tuple[float, complex]:
@@ -272,6 +306,11 @@ class Laser:
         Records every ``record_every``-th step (default 10; pass 1 for a
         dense record of every step): time, applied current, right/left
         facet power and complex envelope.
+
+        The device takes roughly 30 ns to settle from its zero-field
+        initial state, so a run shorter than that is measuring turn-on
+        rather than steady operation.  ``LaserDriver.sample_field``
+        discards a settle window for this reason.
         """
         if current is None:
             current = self.i_bias
@@ -286,8 +325,10 @@ class Laser:
         i_rec = np.empty(n_rec)
         p_right = np.empty(n_rec)
         p_left = np.empty(n_rec)
-        e_right = np.empty((n_rec, 2), dtype=complex)
-        e_left = np.empty((n_rec, 2), dtype=complex)
+        # Column 1 stays zero: the device lases TE only, and zeros() rather
+        # than empty() is what makes that true without writing it each step.
+        e_right = np.zeros((n_rec, 2), dtype=complex)
+        e_left = np.zeros((n_rec, 2), dtype=complex)
         rec = 0
 
         # The coupling entries depend only on kappa and dz, both fixed at
@@ -295,7 +336,7 @@ class Laser:
         # recomputed (sqrt, cosh, tanh) on every one of n_steps iterations.
         c00, c01 = self._c00, self._c01
 
-        # Double buffers for the sweep.  Every element of all four arrays is
+        # Double buffers for the sweep.  Every element of both arrays is
         # written each step -- F[0] from the left facet and F[1..n] from the
         # loop, R[0..n-1] from the loop and R[n] from the right facet -- so
         # the buffers can be reused rather than reallocated, as long as they
@@ -303,10 +344,8 @@ class Laser:
         # than assigned to them.  Assigning would alias the state and the
         # write target, and the next sweep would read values it had already
         # overwritten.
-        Fx_next = np.empty(self.n + 1, dtype=complex)
-        Rx_next = np.empty(self.n + 1, dtype=complex)
-        Fy_next = np.empty(self.n + 1, dtype=complex)
-        Ry_next = np.empty(self.n + 1, dtype=complex)
+        F_next = np.empty(self.n + 1, dtype=complex)
+        R_next = np.empty(self.n + 1, dtype=complex)
 
         for k in range(n_steps):
             t_now = (k + 1) * self.dt
@@ -314,18 +353,14 @@ class Laser:
             i_k = max(i_k, 0.0)
 
             # Center power by averaging at the section boundaries
-            Px_center = 0.5 * ((np.abs(self.Fx[:-1]) ** 2 + np.abs(self.Fx[1:]) ** 2) +
-                               (np.abs(self.Rx[:-1]) ** 2 + np.abs(self.Rx[1:]) ** 2))
-            Py_center = 0.5 * ((np.abs(self.Fy[:-1]) ** 2 + np.abs(self.Fy[1:]) ** 2) +
-                               (np.abs(self.Ry[:-1]) ** 2 + np.abs(self.Ry[1:]) ** 2))
+            P_center = 0.5 * ((np.abs(self.F[:-1]) ** 2 + np.abs(self.F[1:]) ** 2) +
+                              (np.abs(self.R[:-1]) ** 2 + np.abs(self.R[1:]) ** 2))
 
-            # Optical photon densities from optical power
-            Sx = Px_center / (self.v_g * self.A_act * self.E_photon)
-            Sy = Py_center / (self.v_g * self.A_act * self.E_photon)
+            # Optical photon density from optical power
+            S = P_center / (self.v_g * self.A_act * self.E_photon)
 
-            # Field gains (paper (3)); waveguide loss outside the fraction
-            gx = (self.confinement * self.g_N * (self.N - self.N_0)) / (2 * (1 + self.epsilon * Sx)) - self.alpha / 2
-            gy = (self.confinement * self.g_N * (self.N - self.N_0)) / (2 * (1 + self.epsilon * Sy)) - self.alpha / 2
+            # Field gain (paper (3)); waveguide loss outside the fraction
+            g = (self.confinement * self.g_N * (self.N - self.N_0)) / (2 * (1 + self.epsilon * S)) - self.alpha / 2
 
             # Carrier-induced index change (paper (5)) and detuning (paper (4))
             del_n = -(self.wavelength / (4 * np.pi)) * self.confinement * self.alpha_m * self.g_N * (self.N - self.N_0)
@@ -336,13 +371,10 @@ class Laser:
             # (m^-3/s) to the field-power normalisation (|F|^2 in W).
             noise_amp = np.sqrt(0.5 * self.beta * self.B * self.N ** 2 * self.dt *
                                 self.v_g * self.A_act * self.E_photon)
-            xi_x = (self._rng.standard_normal((self.n, 2)) +
-                    1j * self._rng.standard_normal((self.n, 2))) / np.sqrt(2)
-            xi_y = (self._rng.standard_normal((self.n, 2)) +
-                    1j * self._rng.standard_normal((self.n, 2))) / np.sqrt(2)
+            xi = (self._rng.standard_normal((self.n, 2)) +
+                  1j * self._rng.standard_normal((self.n, 2))) / np.sqrt(2)
 
-            phase_x = np.exp((gx - 1j * delta) * self.dz)
-            phase_y = np.exp((gy - 1j * delta) * self.dz)
+            phase = np.exp((g - 1j * delta) * self.dz)
 
             # Split-step operator (paper (10), (14), (16)): the constant
             # coupling matrix K = [[sech, j*tanh], [j*tanh, sech]] times
@@ -353,65 +385,50 @@ class Laser:
             # the left), while R enters each section from the right with
             # its pre-sweep value.  A parallel (snapshot) application is
             # NOT equivalent and breaks energy conservation in the
-            # stopband.
-            # Both polarisations are swept in one pass.  They are entirely
-            # independent, so fusing them changes no arithmetic and no
-            # ordering; it only halves the interpreted loop overhead, which
-            # is what dominates this function.  Boundary values are read
-            # into locals once per section for the same reason.
-            # Pre-sweep backward fields; the swap below is what keeps these
-            # distinct from the arrays being written.
-            Rx_prev, Ry_prev = self.Rx, self.Ry
-            Fx_next[0] = self.ar * Rx_prev[0]
-            Fy_next[0] = self.ar * Ry_prev[0]
+            # stopband.  Boundary values are read into locals once per
+            # section, which is worth doing because interpreted loop
+            # overhead dominates this function.
+            # Pre-sweep backward field; the swap below is what keeps this
+            # distinct from the array being written.
+            R_prev = self.R
+            F_next[0] = self.ar * R_prev[0]
             for i in range(self.n):
-                px, py = phase_x[i], phase_y[i]
-                fx, rx = Fx_next[i], Rx_prev[i + 1]
-                fy, ry = Fy_next[i], Ry_prev[i + 1]
-                Fx_next[i + 1] = px * (c00 * fx + c01 * rx)
-                Rx_next[i] = px * (c01 * fx + c00 * rx)
-                Fy_next[i + 1] = py * (c00 * fy + c01 * ry)
-                Ry_next[i] = py * (c01 * fy + c00 * ry)
+                p = phase[i]
+                f, r = F_next[i], R_prev[i + 1]
+                F_next[i + 1] = p * (c00 * f + c01 * r)
+                R_next[i] = p * (c01 * f + c00 * r)
 
             # Spontaneous emission driving sources (paper (2a)/(2b))
-            Fx_next[1:] += noise_amp * xi_x[:, 0]
-            Rx_next[:-1] += noise_amp * xi_x[:, 1]
-            Fy_next[1:] += noise_amp * xi_y[:, 0]
-            Ry_next[:-1] += noise_amp * xi_y[:, 1]
+            F_next[1:] += noise_amp * xi[:, 0]
+            R_next[:-1] += noise_amp * xi[:, 1]
 
             # Facet boundary conditions (AR coated).  Left: already applied
-            # at the start of the sweep (Fx_next[0] = ar*Rx[0]).  Right:
+            # at the start of the sweep (F_next[0] = ar*R[0]).  Right:
             # the backward wave re-enters from the right facet.
-            Rx_next[self.n] = self.ar * Fx_next[self.n]
-            Ry_next[self.n] = self.ar * Fy_next[self.n]
+            R_next[self.n] = self.ar * F_next[self.n]
 
             # Carrier rate equation (paper (7)): current-density injection
             # J/(q*d_act) with J = i_k/(w*L) (uniform along the cavity),
-            # recombination terms, and stimulated recombination of both
-            # modes with the same modal gain as the field equation (3).
+            # recombination terms, and stimulated recombination of the
+            # lasing mode with the same modal gain as the field equation (3).
             J = i_k / (self.w_waveguide * self.grating_length)
             inj = J / (self.q * self.d_act)
-            stim_x = (self.v_g * self.confinement * self.g_N * (self.N - self.N_0) * Sx) / (1 + self.epsilon * Sx)
-            stim_y = (self.v_g * self.confinement * self.g_N * (self.N - self.N_0) * Sy) / (1 + self.epsilon * Sy)
-            dN_dt = inj - self.B * self.N ** 2 - self.C * self.N ** 3 - stim_x - stim_y
+            stim = (self.v_g * self.confinement * self.g_N * (self.N - self.N_0) * S) / (1 + self.epsilon * S)
+            dN_dt = inj - self.B * self.N ** 2 - self.C * self.N ** 3 - stim
 
             self.N += dN_dt * self.dt
             # Swap, do not assign: the arrays just written become the state
             # and the previous state arrays become next step's scratch.
-            self.Fx, Fx_next = Fx_next, self.Fx
-            self.Rx, Rx_next = Rx_next, self.Rx
-            self.Fy, Fy_next = Fy_next, self.Fy
-            self.Ry, Ry_next = Ry_next, self.Ry
+            self.F, F_next = F_next, self.F
+            self.R, R_next = R_next, self.R
 
             if (k + 1) % record_every == 0:
                 t_rec[rec] = t_now
                 i_rec[rec] = i_k
-                p_right[rec] = np.abs(self.Fx[-1]) ** 2 + np.abs(self.Fy[-1]) ** 2
-                p_left[rec] = np.abs(self.Rx[0]) ** 2 + np.abs(self.Ry[0]) ** 2
-                e_right[rec, 0] = self.Fx[-1]
-                e_right[rec, 1] = self.Fy[-1]
-                e_left[rec, 0] = self.Rx[0]
-                e_left[rec, 1] = self.Ry[0]
+                p_right[rec] = np.abs(self.F[-1]) ** 2
+                p_left[rec] = np.abs(self.R[0]) ** 2
+                e_right[rec, 0] = self.F[-1]
+                e_left[rec, 0] = self.R[0]
                 rec += 1
 
         return SimResult(t=t_rec, i=i_rec, P_right=p_right, P_left=p_left,
