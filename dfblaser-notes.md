@@ -353,6 +353,36 @@ The common thread is that none of the three would move the reflection
 peak, the section convergence, the threshold ratio, the RIN scaling or the
 chirp signature, which are the results that validate this model.
 
+## The device now drives a protocol
+
+`bb84_duplinskiy.py` took a flat analytic field until now. It accepts a
+real source, and the DFB drives it through the paper's own wiring: the
+laser emits one TE mode, which is linearly polarised, and PC1 rotates it
+to 45 degrees so the amplitudes on the modulator's two crystal axes are
+equal. That is `polarization_azimuth = pi/4` on the driver.
+
+The four BB84 states come out exact, with the degree of polarisation at
+1.000000 everywhere:
+
+| stage | S1 | S2 | S3 | |
+|---|---|---|---|---|
+| source, after PC1 | 0 | +1 | 0 | D |
+| X0 after PM1 | 0 | +1 | 0 | D |
+| X1 after PM1 | 0 | −1 | 0 | A |
+| C0 after PM1 | 0 | 0 | +1 | R |
+| C1 after PM1 | 0 | 0 | −1 | L |
+
+That holds at every drive width tried, in CW mode, and for CWLaser, to
+nine decimals — because `sample_field` returns one amplitude times a fixed
+Jones vector, so both components carry the same amplitude and the
+normalised Stokes parameters, which depend only on the ratio, cannot see
+the source's noise at all. A polarisation chain is blind to everything
+this device adds except pulse energy.
+
+QBER moves by less than 0.40 pp at 2 sigma, which was the prediction. The
+value is not better numbers, it is that the chain stopped being fed a
+constant. Full account in §30.11 of the issues log.
+
 ## What is still open
 
 `tests/test_dfblaser.py`, and that is the only item left. It carries a

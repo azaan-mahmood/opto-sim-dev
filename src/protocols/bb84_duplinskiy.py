@@ -70,6 +70,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               spad_eta=0.10, dead_time=13e-6,
                               dark_count_rate=15.0, afterpulse_prob=0.05,
                               cd=False, pmd=False,
+                              source_field=None, pulse_energy_factors=None,
                               seed=None, verbose=False):
     """BB84 simulation matching the Duplinskiy et al. experimental setup.
 
@@ -108,6 +109,44 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         `PhaseModulator` through its crystal-derived V_pi.  Setting a
         modulator's bias imperfectly is universal to phase-modulated QKD,
         not specific to any one experiment.
+    source_field : ndarray (n, 2) complex, or None — the optical field
+        entering Alice's phase modulator.  Default None keeps the flat
+        analytic field this chain has always used,
+        `sqrt(power_per_pulse/2) * ones((1, 2))`, which is a single time
+        sample of diagonal (D) polarisation.  Pass a real source — e.g.
+        `LaserDriver.sample_field(...)` from the DFB device model — to
+        drive the chain from a laser instead.  It is renormalised to
+        `power_per_pulse` on the way in, so mu is calibrated once at the
+        source, matching the project convention.
+
+        The field must arrive already polarised at 45 degrees to the
+        modulator axes.  That is the paper's PC1: "the polarization
+        controller (PC 1) is configured in such a way that the amplitudes
+        of the field along the ordinary and extraordinary axes of the
+        crystal inside the modulator (PM 1) are equal" (§2).  For the DFB
+        that is `polarization_azimuth=pi/4` on the driver.
+
+        Measured: swapping the flat field for the DFB changes the
+        8-outcome response table by at most 2.6e-15 relative, and leaves
+        the Stokes vectors of all four BB84 states exact with DOP = 1.
+        That is structural rather than lucky -- `sample_field` returns one
+        complex amplitude times a fixed Jones vector, so both components
+        carry the *same* amplitude and the normalised Stokes parameters,
+        which depend only on the ratio Ey/Ex, cannot see the source's RIN,
+        phase noise or chirp at all.  A polarisation-encoding chain is
+        therefore blind to everything a real source adds except pulse
+        energy.  Same cancellation as §23.2's linewidth argument in the
+        time-bin chain.
+    pulse_energy_factors : sequence of float, or None — per-pulse energy
+        multipliers with mean 1, the one thing a real source does change
+        here.  Applied to the response power before detection, which is
+        exact because the whole chain is linear in the field.
+
+        Consumed cyclically in index order, never sampled randomly.  Two
+        reasons: a draw would consume RNG and break bit-identity with the
+        frozen baseline even when every factor is 1.0, and the measured
+        pulses may be correlated through carrier recovery, which cycling
+        preserves and sampling would destroy.
     seed : int or None — RNG seed.
     model : str — birefringence model for the fibre: 'auto' (default) or
         'sectional'. 'phenomenological' was removed in the fifth pass
@@ -169,6 +208,34 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     J_channel = fibre.birefringence_matrix()
     U_comp = None if J_channel is None else J_channel.conj().T
 
+    # --- The source field -------------------------------------------------
+    #
+    # Default: the flat analytic field this chain has always used -- one
+    # time sample, equal amplitude on x and y, i.e. diagonal (D)
+    # polarisation, which is what the paper's PC1 delivers to PM1.
+    #
+    # With `source_field` given, a real laser drives the chain instead.  It
+    # is renormalised to the same power_per_pulse, so mu stays calibrated
+    # once at the source (val_system.py:181's convention) and the swap
+    # changes the *statistics* of the light, not its mean level.  Anything
+    # passed here must already be polarised at 45 degrees to the modulator
+    # axes; see the parameter docstring.
+    if source_field is None:
+        E_source = np.sqrt(power_per_pulse / 2.0) * np.ones((1, 2), dtype=complex)
+    else:
+        E_source = np.asarray(source_field, dtype=complex)
+        if E_source.ndim != 2 or E_source.shape[1] != 2:
+            raise ValueError(f"source_field must have shape (n, 2), got {E_source.shape}")
+        p_mean = float(np.mean(np.sum(np.abs(E_source) ** 2, axis=1)))
+        if p_mean <= 0:
+            raise ValueError("source_field carries no power")
+        E_source = E_source * np.sqrt(power_per_pulse / p_mean)
+
+    factors = None if pulse_energy_factors is None else np.asarray(
+        pulse_energy_factors, dtype=float)
+    if factors is not None and factors.size == 0:
+        raise ValueError("pulse_energy_factors is empty")
+
     # --- Precomputed response table (PERF-2 analogue, DUPL-1) -------------
     #
     # The field chain is DETERMINISTIC given (alice_basis, alice_bit,
@@ -200,7 +267,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         else:
             v_a = 0 if a_bit == 0 else Vpi
 
-        E = np.sqrt(power_per_pulse / 2.0) * np.ones((1, 2), dtype=complex)
+        E = E_source
         E = pm_alice.modulate(E_field=E, V=v_a)
         E = fibre.apply(E, dt=dt_pulse)
         if compensate and U_comp is not None:
@@ -243,6 +310,16 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
 
         # --- Response from the precomputed table (see above) ---
         power_x, power_y = RESPONSE[(alice_basis, alice_bit, bob_basis)]
+
+        # Per-pulse energy from a real source.  Exact rather than an
+        # approximation: every stage between the source and the analyser
+        # is linear in the field, so an energy factor scales straight
+        # through the table.  Cycled, not sampled -- drawing would consume
+        # RNG and move every result even at factor 1.0.
+        if factors is not None:
+            g = factors[pulse_idx % factors.size]
+            power_x *= g
+            power_y *= g
 
         t_pulse = pulse_idx * dt_pulse
         click_x = spd1.detect(power_x, t_pulse)
