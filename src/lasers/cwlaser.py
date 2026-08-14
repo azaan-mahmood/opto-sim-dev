@@ -19,6 +19,27 @@ from numpy.typing import NDArray
 #     2021, §3.4: Gain-switched semiconductor lasers and pulse generation.
 
 
+def jones_vector(azimuth: float, ellipticity: float) -> NDArray[np.complex128]:
+    """
+    Jones vector for a polarization state, from azimuth and ellipticity.
+
+        E_pol = [cos(chi)*cos(psi) - j*sin(chi)*sin(psi),
+                 cos(chi)*sin(psi) + j*sin(chi)*cos(psi)]
+
+    psi is the azimuth, chi the ellipticity: chi=0 gives linear,
+    |chi|=pi/4 circular.  (0, 0) gives [1, 0], i.e. all power on x.
+
+    See Yariv [3] Ch. 6.  Module-level so that both CWLaser and the DFB
+    laser driver share one definition of the convention -- they have to
+    agree for the two sources to be interchangeable.
+    """
+    chi = ellipticity
+    psi = azimuth
+    Ex = (np.cos(chi) * np.cos(psi) - 1j * np.sin(chi) * np.sin(psi))
+    Ey = (np.cos(chi) * np.sin(psi) + 1j * np.sin(chi) * np.cos(psi))
+    return np.array([Ex, Ey])
+
+
 class CWLaser:
     """
     Physics-informed continuous-wave (CW) laser model for QKD simulation.
@@ -150,20 +171,9 @@ class CWLaser:
         return self._power_w * 1e3
 
     def _polarization_vector(self) -> NDArray[np.complex128]:
-        """
-        Jones vector for the polarization state.
-
-        From chi (ellipticity) and psi (azimuth):
-            E_pol = [cos(chi)*cos(psi) - j*sin(chi)*sin(psi),
-                     cos(chi)*sin(psi) + j*sin(chi)*cos(psi)]
-
-        See Yariv [3] Ch. 6.
-        """
-        chi = self.polarization_ellipticity
-        psi = self.polarization_azimuth
-        Ex = (np.cos(chi) * np.cos(psi) - 1j * np.sin(chi) * np.sin(psi))
-        Ey = (np.cos(chi) * np.sin(psi) + 1j * np.sin(chi) * np.cos(psi))
-        return np.array([Ex, Ey])
+        """Jones vector for this laser's polarization state (Yariv [3] Ch. 6)."""
+        return jones_vector(self.polarization_azimuth,
+                            self.polarization_ellipticity)
 
     def _sample_phase_noise(self, dt: float, n_samples: int) -> NDArray[np.float64]:
         """
