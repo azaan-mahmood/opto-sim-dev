@@ -133,7 +133,14 @@ sections gives 2.716 mW at the right facet and 100 sections gives 2.693 mW,
 which is under one percent apart, and the ripple falls from 2.1 to 0.7 per
 cent. One section gives 1.2 nanowatts with a 64 per cent ripple, which is
 the right kind of nonsense for a run at fifteen times the coupling limit.
-The 1000 section point is still running.
+The 1000 section point finished at 2.692 mW, 0.03 per cent from the 100
+section value.
+
+Later note: 3 ns is inside the turn-on. The device takes about 30 ns to
+settle, so this sweep compares four configurations partway up rather than
+at steady state. It is still like for like, and the reflection spectrum
+below reaches the same conclusion with no time dimension at all, but it
+should be re-run on settled windows before being quoted alone.
 
 The second is a light against current curve at 40 sections. Threshold comes
 out at 72.8 mA and the slope at 0.192 mW per mA counting both facets. The
@@ -168,6 +175,21 @@ the output evenly once above threshold. A real DFB lases in one
 polarisation only, because the other has far lower confinement and never
 reaches threshold. This does not explain the power gap, since gain clamping
 fixes the total no matter how many modes share it, but it is not physical.
+
+**Resolved since.** The second pair was not TM. It shared every
+coefficient with the first and one carrier reservoir, differing only in
+which noise draw seeded it, so it was the same mode duplicated — and with
+independent seeds the relative phase was random, making the output
+unpolarised rather than a pure state at 45 degrees. Kim's Eq. (1) has one
+modal function and one forward/backward pair. The pair was deleted and the
+device now lases the one TE mode. Total power moved 5.375 to 5.225 mW at
+100 mA, i.e. barely, exactly as the gain-clamping argument above predicts.
+Full account in §30.6 of the issues log.
+
+The two facets also stop agreeing above about 110 mA, and which one wins
+depends on the seed — mirror states of a symmetric device, same total. So
+the "facets agree to within 0.07 per cent" figure below holds at 100 mA
+and under, not generally.
 
 ## The grating reflection spectrum, and how it is derived
 
@@ -303,31 +325,107 @@ index coupled only, so gain coupling is a live alternative explanation.
 The script is `analysis/validation/validate_dfb_reflection.py` and it
 writes to `analysis/val_dfb/`.
 
+## Three things now settled rather than open
+
+**The facet bifurcation is spatial hole burning.** Above about 110 mA the
+carrier density stops being symmetric along the cavity — measured 0.0000
+asymmetry at 100 mA and 0.0925 at 120 — and once it does, the symmetric
+solution is unstable and spontaneous emission decides which of the two
+mirror branches the device falls into. The magnitudes are the same either
+way (6.89 and 1.90 mW), only the direction changes, and two seeds in six
+flip it. That is a symmetric structure with two mirror solutions, which is
+what a uniform grating with AR on both facets is. Real devices avoid it by
+breaking the degeneracy on purpose, with a quarter wave shift or
+asymmetric facet coatings. So the model is right and the device design is
+the degenerate one.
+
+**The efficiency gap is closed by decision.** It is a parameter difference
+rather than a physics one, there is no citable target to chase it to, and
+the only lever is alpha, which must not be tuned. Chasing it costs work
+and moves none of the shape results.
+
+**The gain bandwidth filter will not be implemented.** At the paper's gain
+bandwidth it is wider than the simulation band, so it is a near null on
+single mode operation, and the module docstring already makes that
+argument.
+
+The common thread is that none of the three would move the reflection
+peak, the section convergence, the threshold ratio, the RIN scaling or the
+chirp signature, which are the results that validate this model.
+
 ## What is still open
 
-`src/lasers/__init__.py` still exports only `CWLaser`. Both new modules are
-reachable only by full path, for example
-`from src.lasers.dfblaser import Laser`. Worth sorting out at the same time
-as deciding whether the class should be called `Laser` or `DFBLaser`, so
-the public surface only changes once.
+`tests/test_dfblaser.py`, and that is the only item left. It carries a
+module level skip so a bare `pytest` works again (332 passed, 1 skipped),
+and the rewrite is still deferred. Its bodies were written against an API
+that never existed here — `LaserParams`, `_iir_lowpass`, a
+`src.lasers.drive` module — and five of the eleven tested the gain
+bandwidth filter, which the section above closes as deliberately absent.
+So most of it cannot be ported and will be replaced rather than repaired.
 
-`tests/test_dfblaser.py` is still deferred. It was written against an API
-that does not exist. It imports `DFBLaser`, `LaserParams` and
-`_iir_lowpass` from `src.lasers.dfblaser`, and a module called
-`src.lasers.drive`. What exists is `Laser` and `SimResult` in
-`src.lasers.dfblaser`, and `src.lasers.laser_driver`. It also reads
-`res.power_right`, where the result object has `P_right`.
+## Closed since
 
-The file fails at import, and pytest abandons the whole run when a
-collection fails, so a bare `pytest` at the repository root still collects
-nothing. Use `pytest --ignore=tests/test_dfblaser.py`, which passes 332
-tests. The other way to park it is a module level skip at the top of the
-file, which leaves the test bodies untouched and lets a bare `pytest` work
-again.
+`src/lasers/__init__.py` exports `CWLaser`, `DFBLaser`, `SimResult`,
+`DriveParams` and `LaserDriver`. The class is `DFBLaser`, matching
+`CWLaser` in the same package.
 
-The finite gain bandwidth filter from section III of the paper is still not
-implemented. The module docstring explains that at this gain bandwidth the
-filter is wider than the simulation band, and that argument still holds.
+`DriveParams.mode` is `cw` or `gain_switched` rather than `cw` or
+`pulsed`, which describes what is being done to the device rather than
+what comes out. The trapezoidal and gaussian waveforms are both gain
+switching; they differ in how square the current pulse is.
+
+The convergence guard raises `UserWarning` rather than `RuntimeWarning`.
+It is a configuration choice made at construction, and `RuntimeWarning` is
+the category numpy uses for overflow and invalid values, so filtering that
+to catch real numerical trouble would have tripped this instead.
+
+`LaserDriver.sample_field(dt, n_samples)` returns the field as
+`(n_samples, 2)` complex `[Ex, Ey]`, matching `CWLaser.sample_field`. It
+discards the settle, removes the lasing mode's offset from the Bragg
+reference before resampling, decimates by averaging, and places the TE
+axis with a Jones vector shared with `CWLaser`.
+
+`analysis/validation/validate_dfb_drive.py` measures what the source does
+under both drives and exits non-zero if the noise disappears, the pulses
+stop forming, the pulse-to-pulse phase stops being random, or the chirp
+stops running blue then red.
+
+## The chirp was measured wrong the first time
+
+Worth writing down because the mistake is easy to repeat. The first
+version differentiated the unwrapped phase with `np.gradient` at the
+0.4933 ps device step and reported 297 GHz. At that step size the
+derivative is dominated by the differentiator, not the field: the result
+alternated sign every sample and ranged over 1123 GHz, which is above the
+device Nyquist of 1013 GHz. A frequency outside Nyquist is proof on its
+own that the estimator is being measured rather than the physics.
+
+The fix is the amplitude-weighted single-lag autocorrelation that already
+strips the carrier offset, run over a sliding boxcar. Weighting by field
+magnitude is what makes it survive a pulse train, since the near-zero gaps
+between pulses carry almost no weight. The chirp is 70 GHz and barely
+moves with the window, where the old figure moved with everything.
+
+The shape is the part worth checking anyway: frequency rises on the
+leading edge, crosses zero just after the peak and falls down the
+trailing edge, in 93 per cent of pulses under the gaussian drive.
+
+## Square drive, and the minimum period
+
+The trapezoidal drive works. It gives a lower, broader pulse than the
+gaussian (15.8 mW and 50.8 ps against 27.2 mW and 42.4 ps) and its chirp
+does not follow the same blue-then-red ordering, for a traceable reason:
+its turn-on delay is 143 ps against a 100 ps drive, so the light forms
+after the current has already returned to bias.
+
+Under both drives the optical pulse comes out narrower than the current
+pulse, which is the point of gain switching.
+
+That delay sets a floor on the repetition rate. Extinction between pulses
+holds 21.7 dB at 220 ps and falls to 17.7 dB at 200 ps, so the device
+stops producing separated pulses below about 210 ps, or 4.8 GHz. It is
+the expected ceiling for a 0.2 um bulk active region rather than a
+quantum well.
 
 ## How the fixes were checked
 
