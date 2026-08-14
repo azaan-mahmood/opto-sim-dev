@@ -4,6 +4,53 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-14 — DFB device model: validated, merged to `main`, driving Duplinskiy
+
+### Session: the `dfblaser_work` branch, 11 commits, fast-forwarded to `main`
+
+| Change | Files | Rationale |
+|---|---|---|
+| **One TE mode, not two** | `src/lasers/dfblaser.py` | The device tracked two field pairs sharing every coefficient and one carrier reservoir, differing only in the noise seed — one mode duplicated, not TE and TM. Both lased and split the output evenly (PER **0.01 dB**), and with independent seeds the relative phase was random, so the source emitted *unpolarised* light. Kim's Eq. (1) has a single modal function. Pair deleted; total power moved 5.375 → 5.225 mW at 100 mA, because gain clamping fixes the total however many modes share it. |
+| `Laser` → `DFBLaser`, exports wired | `src/lasers/__init__.py`, `laser_driver.py`, `analysis/validation/validate_dfb_reflection.py` | Matches `CWLaser` in the same package; `__init__` exported only `CWLaser` before. |
+| **`LaserDriver.sample_field(dt, n)`** | `src/lasers/laser_driver.py` | `(n, 2)` complex `[Ex, Ey]`, mirroring `CWLaser.sample_field`. Discards a 40 ns settle, removes the lasing mode's **549–591 GHz** offset from the Bragg reference before resampling (a 2 ps grid would alias it), decimates by averaging, and places the TE axis with a Jones vector now shared with `CWLaser`. |
+| `cw` / `gain_switched` drive modes | `src/lasers/laser_driver.py` | "pulsed" described the output rather than what is done to the device. RIN, chirp and phase statistics are documented as device *outputs*, not driver inputs. |
+| Convergence guard → `UserWarning` | `src/lasers/dfblaser.py` | It is a construction-time configuration choice; `RuntimeWarning` is what numpy raises for overflow, so filtering that would have trapped this instead. |
+| **Chirp measurement corrected** | `analysis/validation/validate_dfb_drive.py` | `np.gradient` of the unwrapped phase at the 0.4933 ps step reported **297 GHz** — noise. It alternated sign every sample and spanned 1123 GHz, above the device Nyquist of 1013 GHz. Replaced with the amplitude-weighted single-lag autocorrelation: **70 GHz**, stable across analysis windows. |
+| Rayleigh test for pulse-phase randomness | `analysis/validation/validate_dfb_drive.py` | A fixed cut on \|⟨e^{iφ}⟩\| is wrong: it falls as ~0.886/√N, so a 12 ns run tripped 0.5 at 0.516 on 22 pulses where 30 ns gives 0.086 on 58. `Z = N R²` is Exp(1) under uniformity at any N. |
+| **Resonance-scaling claim withdrawn** | `validate_dfb_drive.py`, §30.4 | The script reported the intensity-noise resonance failing sqrt(I−I_th). At most currents there is no resolvable line to scale — five peaks within a factor of 1.5 at 100 mA — so `argmax` hopped between near-equals; a centroid does not scale either (r = +0.11). Withdrawn as **unmeasurable**, not as a model failure. |
+| Replaced by RIN vs power | `validate_dfb_drive.py --rin-scaling` | `RIN ~ P^-1.20`, r = −0.89 against the textbook 1/P, over an order of magnitude in power, nothing fitted. Absolute level **−141 to −156 dB/Hz**, inside the −140 to −160 range `CWLaser` has to be *told*. |
+| **`source_field` / `pulse_energy_factors`** | `src/protocols/bb84_duplinskiy.py` | The chain injected a flat analytic field, no laser at all. Both default to the old behaviour and are **bit-identical** to the frozen §27.1 baseline; factors are cycled in index order, never sampled, so no RNG is consumed. |
+| Stokes + Poincaré validation | `analysis/validation/validate_dfb_duplinskiy.py` (new) | Four BB84 states through every stage, the 8-outcome control, and QBER across three sources. |
+| Two dead files preserved then removed | `src/lasers/dfblaser_v2.py`, `drive.py` | Neither was in git history *anywhere* — always untracked — so deletion would have been permanent. Committed first (`0ce7c46`) so removal is reversible. |
+| Three questions closed by decision | §30.4 | Efficiency gap (parameter-level, only lever is `alpha`, which G9 forbids adjusting), gain-bandwidth filter (wider than the simulation band), facet bifurcation (**spatial hole burning** — carriers symmetric at 100 mA, 9.2 % asymmetric at 120; correct behaviour for a uniform grating with AR facets). |
+
+**Key result — a polarisation-encoding chain is blind to everything a
+source adds except pulse energy.** `sample_field` returns one complex
+amplitude times a *fixed* Jones vector, so both components carry the same
+amplitude, and normalised Stokes parameters — which depend only on Ey/Ex —
+cannot see RIN, phase noise or chirp. Measured to nine decimals at 80, 100
+and 200 ps drive, in CW mode, and identically for `CWLaser`. The four BB84
+states come out exact with **DOP = 1.000000**: D [0,+1,0], A [0,−1,0],
+R [0,0,+1], L [0,0,−1], matching the paper's Eqs. (4)–(5). Same
+cancellation as §23.2 (linewidth) and §26.6 (CD/PMD/birefringence),
+reached from a third direction.
+
+QBER, ≥3122 sifted per cell, combined across 0/10/50 km: **+0.082 ± 0.202 pp**
+(200 ps drive) and **+0.006 ± 0.200 pp** (100 ps). A null, predicted before
+the run, bounded below **0.40 pp at 2σ**. Duplinskiy states no optical
+pulse width — registered as **A9** — but the device bounds it to 100–250 ps
+and both ends agree to 0.38σ, so the unstated parameter is not load-bearing
+for the result.
+
+**Still open on the DFB:** `tests/test_dfblaser.py` is parked behind a
+module skip. It targeted an API that never existed and five of its eleven
+tests exercised the gain-bandwidth filter, which is deliberately absent.
+The three validation scripts cover the model end to end meanwhile.
+
+332 tests pass, 1 skipped.
+
+---
+
 ## 2026-08-11 — A4 settled by algebra: `circular_analyser` ≡ the paper's PC3+PBS readout
 
 ### Session: VALID-1, register entry A4 closed — zero simulation runs
