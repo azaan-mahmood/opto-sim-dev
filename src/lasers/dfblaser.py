@@ -18,18 +18,6 @@ pair, and (7)'s carrier equation has one photon density.  That mode is TE:
 in a 0.2 um active layer the TM confinement factor is far lower, so TM does
 not reach threshold, and the paper states a single ``Gamma`` accordingly.
 
-An earlier version of this file carried a second pair, ``Fy``/``Ry``, with
-the *same* ``Gamma``, ``g_N``, ``kappa``, ``alpha``, ``eps`` and ``N_0``,
-sharing the one carrier reservoir and differing only in which noise draw
-seeded it.  That is not TM.  It is a second independent realisation of the
-same mode, so both reached threshold together and split the output evenly
-(measured 3.622e-3 W against 3.614e-3 W at 120 mA, a polarisation
-extinction ratio of 0.01 dB), and because the two seeds are independent
-their relative phase is random -- the output was unpolarised light rather
-than a pure state on a diagonal.  Modelling a real TM mode instead would
-need a TM confinement factor, gain and coupling coefficient, none of which
-the paper gives.  The pair was removed.
-
 ``SimResult`` still reports ``(n_rec, 2)`` fields for the project's
 ``[Ex, Ey]`` convention, with the TE amplitude in column 0 and column 1
 identically zero.  Orienting that axis against lab x and y is a separate
@@ -123,7 +111,7 @@ import numpy as np
 
 @dataclass
 class SimResult:
-    """Recorded output of :meth:`Laser.simulate`.
+    """Recorded output of `Laser.simulate`.
 
     ``t`` is the time at the end of each recorded step; ``i`` the drive
     current applied during that step; ``P_right``/``P_left`` the optical
@@ -205,32 +193,6 @@ class DFBLaser:
 
         self.kappa = 50 * 100                           # Coupling Coefficient cm^-1 into m^-1
 
-        # Convergence criterion (paper Sec. II, Fig. 5): the zero-reflection
-        # wavelength loci converge once the per-subsection coupling strength
-        # kappa*dz falls below 0.2.  The paper works this through for its own
-        # device and states the conclusion directly: with kappa = 50 cm^-1,
-        # dz must be under about 40 um, "therefore 15 subsections or more are
-        # enough when the length of the device considered is 600 um".
-        #
-        # So 15 is the paper's own recommendation and is the default here.
-        # It puts kappa*dz at exactly 0.2, i.e. on the boundary the paper
-        # accepts rather than inside it.  An earlier version of this file
-        # raised the default to 20 to sit clear of the limit; that was a
-        # departure from the source with no support in it, and it moved every
-        # default result, because dz sets dt.  Reverted.
-        #
-        # Warn rather than raise, because going over degrades accuracy
-        # gradually instead of failing visibly, which is exactly why it needs
-        # saying out loud.  The tolerance keeps the paper's own configuration
-        # from tripping its own criterion: 5000 * (600e-6/15) evaluates to
-        # 0.19999999999999998 here, which happens to fall under, but that is
-        # luck in the last bit and not something to rely on.
-        #
-        # UserWarning rather than RuntimeWarning: this is a configuration
-        # choice made at construction, which is what UserWarning is for.
-        # RuntimeWarning is the category numpy raises for overflow and
-        # invalid values, so anyone filtering that to catch real numerical
-        # trouble would trip this instead.
         self.kappa_dz = abs(self.kappa) * self.dz
         if self.kappa_dz > 0.2 * (1.0 + 1e-9):
             warnings.warn(
@@ -417,8 +379,6 @@ class DFBLaser:
             dN_dt = inj - self.B * self.N ** 2 - self.C * self.N ** 3 - stim
 
             self.N += dN_dt * self.dt
-            # Swap, do not assign: the arrays just written become the state
-            # and the previous state arrays become next step's scratch.
             self.F, F_next = F_next, self.F
             self.R, R_next = R_next, self.R
 

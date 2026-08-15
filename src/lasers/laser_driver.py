@@ -22,15 +22,13 @@ What is NOT set here
 --------------------
 Relative intensity noise, chirp and phase statistics are not parameters of
 this class, or of the device.  They come out of the spontaneous-emission
-seeding and the carrier rate equation in ``dfblaser`` and are *measured*,
-not configured -- which is the difference between this source and
-``CWLaser``, where linewidth and RIN are inputs.
+seeding and the carrier rate equation in ``dfblaser`` and are *measured*
 
 The drive mode decides which of them is worth looking at:
 
 - under ``cw`` the device settles and shows relative intensity noise with
   a relaxation-oscillation resonance, plus a slowly wandering optical
-  phase;
+  phase
 - under ``gain_switched`` each pulse grows from spontaneous emission, so
   it carries a fresh random phase and a large chirp across its envelope.
 
@@ -51,7 +49,7 @@ Waveforms (``gain_switched`` mode)
   period boundary.  This branch is one-sided by construction, so it
   takes ``tau`` unwrapped.
 
-The drive current is clamped to be non-negative everywhere.
+The drive current is clamped at zero, not rectified.
 
 What gain switching does to the pulse, measured
 -----------------------------------------------
