@@ -179,6 +179,20 @@ def matrix(quick, failures):
     return cells
 
 
+def _print_matrix(cells):
+    """Print an already-measured matrix, for the redraw path."""
+    print(f"\n  the discriminating run: {DISTANCE} km, compensate=True, "
+          f"seed {SEED}")
+    print("    p_ap \\ eps " + "".join(f"{lab:>22}" for lab, _ in EPSILONS))
+    for p_ap in P_APS:
+        row = f"    {p_ap:<11.3f}"
+        for _, eps in EPSILONS:
+            q, sig, _ = cells[(p_ap, eps)]
+            row += f"{100 * q:12.2f} +/-{100 * sig:5.2f}"
+        print(row)
+    print("    (QBER %, +/- 1 sigma; rows are afterpulse probability)")
+
+
 def verdict(cells):
     """Apply sec. 29.5's four decision rules, committed before the run."""
     print("\n  sec. 29.5's decision rules, as written")
@@ -219,12 +233,24 @@ def verdict(cells):
     print("      from it is measured.")
 
 
-def run(quick=False):
+def run(quick=False, figure_only=False):
     os.makedirs(OUT_DIR, exist_ok=True)
     failures = []
     print("=" * 74)
     print("DUPL-2: finite analyser extinction, and the A1 discriminating test")
     print("=" * 74)
+
+    if figure_only:
+        cells = _read_csv()
+        if cells is None:
+            print("  no previous run to draw; run without --figure-only first")
+            return 1
+        print("  redrawing from the last run's CSV, no simulation")
+        _print_matrix(cells)
+        verdict(cells)
+        _figure(cells)
+        return 0
+
     print("  predicted before the run (sec. 29.5): neither clean reading of A1")
     print("  lands on the paper's implied p_eff = 0.020 -- A1-true overshoots")
     print("  2x, A1-false undershoots 3x. Expect neither branch cleanly.")
@@ -233,6 +259,7 @@ def run(quick=False):
     cells = matrix(quick, failures)
     verdict(cells)
     _write_csv(cells)
+    _figure(cells)
 
     print()
     if failures:
@@ -243,6 +270,118 @@ def run(quick=False):
     print("[PASS] extinction conserves power, reaches the observable, and "
           "leaves\n       the frozen baseline untouched at epsilon = 0")
     return 0
+
+
+def _read_csv():
+    """Reload a previous run's cells, so the figure can be redrawn cheaply.
+
+    The matrix costs ~50 minutes at quotable statistics.  Nothing about
+    drawing it should require paying that again.
+    """
+    path = os.path.join(OUT_DIR, 'val_duplinskiy_extinction.csv')
+    if not os.path.exists(path):
+        return None
+    cells = {}
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith('#') or line.startswith('afterpulse'):
+                continue
+            p_ap, eps, q, sig, s = line.strip().split(',')
+            cells[(float(p_ap), float(eps))] = (float(q), float(sig), int(s))
+    return cells or None
+
+
+def _figure(cells):
+    """The 3x3 grid, drawn because the argument in it is geometric.
+
+    The result is not "these nine cells have these values".  It is that
+    TWO cells reach the paper's 2 % and only one of them also reproduces
+    the paper's own decomposition of that 2 % into ~1 % afterpulse plus
+    ~1 % extinction.  A table makes a reader hunt for that; a grid shows
+    it.
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        import numpy as np
+    except ImportError:
+        print("  matplotlib missing, skipping the figure")
+        return
+
+    eps_vals = [e for _, e in EPSILONS]
+    grid = np.array([[cells[(p, e)][0] * 100 for e in eps_vals]
+                     for p in P_APS])
+    sig = np.array([[cells[(p, e)][1] * 100 for e in eps_vals]
+                    for p in P_APS])
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.6))
+    im = ax.imshow(grid, cmap='RdYlGn_r', origin='lower', aspect='auto',
+                   vmin=0, vmax=max(4.5, grid.max()))
+    cb = fig.colorbar(im, ax=ax)
+    cb.set_label('QBER (%)')
+
+    # The paper's 2 % as a contour, so which cells reach it is visual
+    # rather than something the reader computes from the numbers.
+    xs = np.arange(len(eps_vals))
+    ys = np.arange(len(P_APS))
+    cs = ax.contour(xs, ys, grid, levels=[2.0], colors='k',
+                    linewidths=2.0, linestyles='--')
+    ax.clabel(cs, fmt={2.0: "the paper's 2 %"}, fontsize=9)
+
+    for i, p in enumerate(P_APS):
+        for j, e in enumerate(eps_vals):
+            ax.text(j, i + 0.16, f"{grid[i, j]:.2f}", ha='center',
+                    va='center', fontsize=12, fontweight='bold')
+            ax.text(j, i - 0.12, f"$\\pm${sig[i, j]:.2f}", ha='center',
+                    va='center', fontsize=8)
+
+    # The two cells that land on 2 %, and the distinction between them.
+    # Boxed and explained in a legend rather than with arrows: a 3x3 grid
+    # leaves no room for callouts that do not collide with the cell values,
+    # and the first attempt put one outside the axes entirely.
+    boxes = [
+        ((-0.5, 1.5), 'tab:blue',
+         "$p_{ap}$=0.05, $\\epsilon$=0  ->  total ONLY\n"
+         "(all of it as afterpulsing, ignoring an\n"
+         "extinction the paper states exists)"),
+        ((0.5, 0.5), 'tab:purple',
+         "$p_{ap}$=0.025, $\\epsilon$=0.0101  ->  total AND split\n"
+         "(~1 % afterpulse + ~1 % extinction,\n"
+         "matching the paper's own decomposition)"),
+    ]
+    handles = []
+    for (xy, colour, label) in boxes:
+        ax.add_patch(plt.Rectangle(xy, 1, 1, fill=False, edgecolor=colour,
+                                   lw=2.5))
+        handles.append(plt.Line2D([], [], color=colour, lw=2.5, label=label))
+    ax.legend(handles=handles, loc='upper center',
+              bbox_to_anchor=(0.5, -0.16), fontsize=8, frameon=False,
+              handlelength=1.4, labelspacing=0.9)
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels([lab for lab, _ in EPSILONS])
+    ax.set_yticks(ys)
+    ax.set_yticklabels([f"{p:g}" for p in P_APS])
+    ax.set_xlabel('analyser extinction  $\\epsilon$   '
+                  '(two readings of the paper\'s "higher than 98 %")')
+    ax.set_ylabel('afterpulse probability  $p_{ap}$\n(ID230 datasheet = 0.05)')
+    ax.set_title('DUPL-2: two parameter sets reach the paper\'s 2 %,\n'
+                 'only one reproduces its decomposition too', fontsize=11)
+
+    # Bottom row is extinction acting alone, against sec. 29.1's prediction.
+    # Placed in figure coordinates so it cannot collide with the cells.
+    e_only = ", ".join(f"{grid[0, j]:.2f}" for j in range(1, len(eps_vals)))
+    fig.text(0.5, -0.02,
+             f"bottom row is extinction acting alone: {e_only} pp, "
+             "against 1.00 and 2.00 predicted in sec. 29.1",
+             ha='center', fontsize=8, style='italic', color='0.25')
+
+    fig.tight_layout()
+    png = os.path.join(OUT_DIR, 'val_duplinskiy_extinction.png')
+    fig.savefig(png, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  figure: {png}")
 
 
 def _write_csv(cells):
@@ -261,5 +400,8 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('--quick', action='store_true',
                     help='fewer pulses per cell, for a smoke run')
+    ap.add_argument('--figure-only', action='store_true',
+                    help="redraw from the last run's CSV without simulating "
+                         '(the matrix costs ~50 minutes at full statistics)')
     a = ap.parse_args()
-    sys.exit(run(quick=a.quick))
+    sys.exit(run(quick=a.quick, figure_only=a.figure_only))
