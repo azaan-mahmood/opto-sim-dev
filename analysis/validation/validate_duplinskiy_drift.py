@@ -72,7 +72,10 @@ T0 = 25.0
 # Sized for >= 3000 sifted bits per cell (sec. 25's standard).  Measured
 # yields: ~1.7e-3 sifted per pulse at 10 km, ~4e-4 at 50 km.
 N_PULSES = {0: 1_400_000, 10: 2_000_000, 50: 10_000_000}
-N_QUICK = {0: 200_000, 10: 300_000, 50: 400_000}
+# Quick mode is sized so every distance clears the 250 threshold below.
+# 50 km was at 400_000, which yields ~140 sifted -- so `--quick` could
+# never pass, and a smoke mode that always fails is not a smoke mode.
+N_QUICK = {0: 200_000, 10: 300_000, 50: 1_500_000}
 
 # The paper's operating band: 2 % average, ~1 % floor.  "Recalibration is
 # needed" is taken as QBER leaving the band, i.e. exceeding 2x the

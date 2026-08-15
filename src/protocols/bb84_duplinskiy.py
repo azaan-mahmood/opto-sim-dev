@@ -93,6 +93,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               calibration_temperature=SAME_AS_OPERATING,
                               calibration_bend_radius=SAME_AS_OPERATING,
                               source_field=None, pulse_energy_factors=None,
+                              block_size=None,
                               seed=None, verbose=False):
     """BB84 simulation matching the Duplinskiy et al. experimental setup.
 
@@ -225,6 +226,19 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         frozen baseline even when every factor is 1.0, and the measured
         pulses may be correlated through carrier recovery, which cycling
         preserves and sampling would destroy.
+    block_size : int or None — if set, also accumulate (n_sifted, n_errors)
+        per block of this many pulses and return them under `blocks`.
+        Default None keeps the single aggregate this chain has always
+        returned, and consumes no RNG either way, so the frozen §27.1
+        baseline is bit-identical with the parameter present.
+
+        This exists for the paper's Fig. 7, a QBER-versus-time trace.  One
+        call with blocking is ONE CONTINUOUS LINK: SPAD dead time and
+        pending afterpulses carry across block boundaries, which is what a
+        block-to-block variance measurement is actually about.  Running N
+        separate calls instead would reset detector state at every
+        boundary, and -- because `seed` also seeds `FiberRealization` --
+        silently draw a different fibre per block.
     seed : int or None — RNG seed.
     model : str — birefringence model for the fibre: 'auto' (default) or
         'sectional'. 'phenomenological' was removed in the fifth pass
@@ -418,6 +432,15 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     n_errors = 0
     n_clicks = 0
 
+    # Block boundaries are recorded as CUMULATIVE snapshots and differenced
+    # at the end, so the hot loop carries one comparison rather than a pair
+    # of extra counters.  Nothing here touches either RNG stream, so a
+    # blocked run is bit-identical to an unblocked one.
+    blocked = block_size is not None
+    if blocked and block_size < 1:
+        raise ValueError(f"block_size must be >= 1, got {block_size}")
+    snapshots = []
+
     t_start = time.time()
 
     for pulse_idx in range(num_bits):
@@ -461,6 +484,9 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                 if alice_bit != bob_bit:
                     n_errors += 1
 
+        if blocked and (pulse_idx + 1) % block_size == 0:
+            snapshots.append((n_sifted, n_errors))
+
         if verbose and (pulse_idx + 1) % 10000 == 0:
             elapsed = time.time() - t_start
             rate = (pulse_idx + 1) / elapsed
@@ -480,12 +506,33 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         'n_total': num_bits,
         'n_sifted': n_sifted,
         'n_errors': n_errors,
+        # n_clicks was computed for the verbose print and thrown away.  It
+        # is the RAW key rate once divided by the run duration, and the
+        # paper quotes one (265 bit/s), so there is a comparison here that
+        # was unreachable purely because the number never left the function.
+        'n_clicks': n_clicks,
+        'raw_key_rate': n_clicks / (num_bits * dt_pulse) if num_bits > 0 else 0.0,
         'sifted_key_rate': sifted_key_rate,
         'fiber_length_km': fiber_length,
         'total_loss_dB': total_loss_dB,
         'mu': mu,
         'elapsed_s': elapsed,
     }
+
+    if blocked:
+        # Differences of the cumulative snapshots, so the blocks partition
+        # the run exactly: sum(blocks) equals (n_sifted, n_errors) whenever
+        # num_bits is a whole number of blocks.  A trailing partial block is
+        # dropped rather than emitted short, because a block with fewer
+        # pulses has a different variance and would contaminate any spread
+        # measured across them.
+        prev_s = prev_e = 0
+        blocks = []
+        for (cum_s, cum_e) in snapshots:
+            blocks.append((cum_s - prev_s, cum_e - prev_e))
+            prev_s, prev_e = cum_s, cum_e
+        results['blocks'] = blocks
+        results['block_size'] = block_size
 
     if verbose:
         print(f"\nDuplinskiy et al. BB84 — {fiber_length} km")

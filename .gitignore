@@ -303,3 +303,9 @@ cython_debug/
 analysis/*.png
 analysis/*.pdf
 *.log
+
+# Smoke-run artifacts. Validators write these under a --quick stem so a
+# smoke run cannot replace a quotable figure with an under-powered one;
+# they are never worth committing.
+*--quick.png
+*--quick.csv
