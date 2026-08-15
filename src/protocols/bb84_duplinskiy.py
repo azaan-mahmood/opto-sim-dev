@@ -88,6 +88,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               spad_eta=0.10, dead_time=13e-6,
                               dark_count_rate=15.0, afterpulse_prob=0.05,
                               cd=False, pmd=False,
+                              extinction_epsilon=0.0,
                               temperature=25.0, bend_radius=None,
                               calibration_temperature=SAME_AS_OPERATING,
                               calibration_bend_radius=SAME_AS_OPERATING,
@@ -130,6 +131,28 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         `PhaseModulator` through its crystal-derived V_pi.  Setting a
         modulator's bias imperfectly is universal to phase-modulated QKD,
         not specific to any one experiment.
+    extinction_epsilon : float — finite analyser extinction, as the
+        fraction of each port's power appearing at the other (default 0 =
+        a perfect analyser, which is what this chain assumed before
+        DUPL-2).  Applied at the analyser output *before* detection, so it
+        cannot mix dark counts and afterpulses into each other; those are
+        generated inside the SPAD and are already uncorrelated with
+        Alice's bit.
+
+        The paper's calibration goal 3 is "Bob's measurements
+        differentiate BB84 orthogonal states with extinction higher than
+        98 %" (§5).  Two readings of that differ by exactly a factor of
+        two — power-fraction gives 0.0200, visibility-like gives 0.0101 —
+        and the ambiguity lands on the quantity the afterpulse test turns
+        on, so both are run rather than one chosen (register A7).
+
+        Note 98 % is a *threshold the tuning algorithm targets*, not an
+        achieved operating value, so anything derived from it is an upper
+        bound on the term (register A3).
+
+        See `optics.apply_extinction` for why this is a lumped term
+        standing for three mechanisms, and why calling it "the PBS
+        extinction" would be wrong.
     temperature : float — ambient fibre temperature in C (default 25,
         the value hardcoded here before DUPL-3).  Shifts the sectional
         birefringence by -3e-9 per degree.
@@ -370,8 +393,14 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         # circular_analyser, not pbs: detection depends on the relative
         # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
         Ex, Ey = optics.circular_analyser(E)
-        return (float(np.mean(np.abs(Ex) ** 2)),
-                float(np.mean(np.abs(Ey) ** 2)))
+        P_x = float(np.mean(np.abs(Ex) ** 2))
+        P_y = float(np.mean(np.abs(Ey) ** 2))
+        # Finite analyser extinction, applied to the PORT POWERS and
+        # before detection -- see the parameter docstring.  Power
+        # conserving, so the sifted rate is untouched and only the error
+        # rate moves; a shifted sifted count would mean it had been
+        # applied in the wrong place.
+        return optics.apply_extinction(P_x, P_y, extinction_epsilon)
 
     RESPONSE = {(ab, bit, bb): _response(ab, bit, bb)
                 for ab in ('C', 'X')

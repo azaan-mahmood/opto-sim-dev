@@ -337,6 +337,69 @@ def circular_analyser(E):
     return E_x, E_y
 
 
+def apply_extinction(P_a, P_b, epsilon):
+    """Finite analyser extinction, as symmetric power cross-talk.
+
+    A real polarisation analyser does not send every photon to the right
+    port.  Duplinskiy et al. (Opt. Express 25(23), 28886, 2017) state
+    calibration goal 3 as "Bob's measurements differentiate BB84
+    orthogonal states with extinction higher than 98 %", and this is that
+    imperfection.
+
+    Parameters
+    ----------
+    P_a, P_b : float or ndarray — the two analyser port powers.
+    epsilon : float — fraction of each port's power appearing at the
+        other.  ``0`` is a perfect analyser.
+
+    Returns
+    -------
+    (P_a', P_b') — power-conserving: ``P_a' + P_b' == P_a + P_b``.
+
+    For a perfectly discriminated state (``P_b = 0``) this leaks exactly
+    ``epsilon`` of the power to the wrong port, so the parameter maps
+    directly onto the stated quantity with no intermediate calibration.
+
+    Reading the paper's 98 %
+    ------------------------
+    Two defensible readings differ by exactly a factor of two, and the
+    ambiguity falls on the quantity a test of the afterpulse budget turns
+    on, so both are carried rather than one chosen (register entry A7):
+
+    - power-fraction: 98 % of the power reaches the correct port, so
+      ``epsilon = 1 - 0.98 = 0.0200``;
+    - visibility-like: ``(I_max - I_min)/(I_max + I_min) = 0.98``, so
+      ``epsilon = I_min/I_max = (1-V)/(1+V) = 0.0101``.
+
+    This is a LUMPED term, and must be described as one
+    ------------------------------------------------------
+    The paper states extinction end-to-end for Bob's whole measurement
+    (PC2 -> PM2 -> PC3 -> PBS), not as a component spec, so one parameter
+    stands for at least three mechanisms: PC3 tuning residual, PM2 voltage
+    error and PBS leakage.  That is faithful to what is published -- the
+    same choice `P_E` represents for Gobby -- but it is not "the PBS
+    extinction" and calling it that would be wrong.
+
+    If it is ever decomposed, the components are *not* equivalent: PBS
+    leakage is basis-symmetric while a polarisation-controller tuning
+    residual is an angular misalignment and therefore basis-dependent, so
+    the two are distinguishable by comparing QBER across the X and C
+    bases.  That is the route; it is not taken here, because the source
+    gives one number.
+
+    Where to apply it
+    -----------------
+    At the analyser output, **before** detection.  Dark counts and
+    afterpulses are generated inside the SPAD and are already
+    uncorrelated with Alice's bit; mixing them into each other would be
+    meaningless and would inflate the term.
+    """
+    if epsilon == 0.0:
+        return P_a, P_b
+    return ((1.0 - epsilon) * P_a + epsilon * P_b,
+            (1.0 - epsilon) * P_b + epsilon * P_a)
+
+
 def pbs(E):
     """Polarising beam splitter: projects onto H and V.
 
