@@ -310,72 +310,51 @@ def _figure(cells):
         return
 
     eps_vals = [e for _, e in EPSILONS]
-    grid = np.array([[cells[(p, e)][0] * 100 for e in eps_vals]
-                     for p in P_APS])
-    sig = np.array([[cells[(p, e)][1] * 100 for e in eps_vals]
-                    for p in P_APS])
+    q = np.array([[cells[(p, e)][0] * 100 for e in eps_vals] for p in P_APS])
+    sg = np.array([[cells[(p, e)][1] * 100 for e in eps_vals] for p in P_APS])
 
-    fig, ax = plt.subplots(figsize=(8.2, 5.6))
-    im = ax.imshow(grid, cmap='RdYlGn_r', origin='lower', aspect='auto',
-                   vmin=0, vmax=max(4.5, grid.max()))
-    cb = fig.colorbar(im, ax=ax)
-    cb.set_label('QBER (%)')
+    # Grouped bars, not a heatmap.  Nine numbers with error bars are a bar
+    # chart; a heatmap hides the uncertainty and needs a contour label to
+    # show where 2 % falls, which reads badly over coloured cells.
+    fig, ax = plt.subplots(figsize=(9.2, 5.4))
+    width = 0.26
+    xs = np.arange(len(P_APS))
+    colours = ['0.72', 'tab:blue', 'tab:orange']
 
-    # The paper's 2 % as a contour, so which cells reach it is visual
-    # rather than something the reader computes from the numbers.
-    xs = np.arange(len(eps_vals))
-    ys = np.arange(len(P_APS))
-    cs = ax.contour(xs, ys, grid, levels=[2.0], colors='k',
-                    linewidths=2.0, linestyles='--')
-    ax.clabel(cs, fmt={2.0: "the paper's 2 %"}, fontsize=9)
+    for j, (lab, _) in enumerate(EPSILONS):
+        off = (j - 1) * width
+        ax.bar(xs + off, q[:, j], width, yerr=sg[:, j], capsize=4,
+               color=colours[j], edgecolor='0.25', linewidth=0.7,
+               label=f'extinction  $\\epsilon$ = {lab}')
+        for i in xs:
+            ax.text(i + off, q[i, j] + sg[i, j] + 0.13, f'{q[i, j]:.2f}',
+                    ha='center', fontsize=8)
 
-    for i, p in enumerate(P_APS):
-        for j, e in enumerate(eps_vals):
-            ax.text(j, i + 0.16, f"{grid[i, j]:.2f}", ha='center',
-                    va='center', fontsize=12, fontweight='bold')
-            ax.text(j, i - 0.12, f"$\\pm${sig[i, j]:.2f}", ha='center',
-                    va='center', fontsize=8)
+    ax.axhline(2.0, color='crimson', ls='--', lw=1.6, zorder=0,
+               label='paper: 2 %')
 
-    # The two cells that land on 2 %, and the distinction between them.
-    # Boxed and explained in a legend rather than with arrows: a 3x3 grid
-    # leaves no room for callouts that do not collide with the cell values,
-    # and the first attempt put one outside the axes entirely.
-    boxes = [
-        ((-0.5, 1.5), 'tab:blue',
-         "$p_{ap}$=0.05, $\\epsilon$=0  ->  total ONLY\n"
-         "(all of it as afterpulsing, ignoring an\n"
-         "extinction the paper states exists)"),
-        ((0.5, 0.5), 'tab:purple',
-         "$p_{ap}$=0.025, $\\epsilon$=0.0101  ->  total AND split\n"
-         "(~1 % afterpulse + ~1 % extinction,\n"
-         "matching the paper's own decomposition)"),
-    ]
-    handles = []
-    for (xy, colour, label) in boxes:
-        ax.add_patch(plt.Rectangle(xy, 1, 1, fill=False, edgecolor=colour,
-                                   lw=2.5))
-        handles.append(plt.Line2D([], [], color=colour, lw=2.5, label=label))
-    ax.legend(handles=handles, loc='upper center',
-              bbox_to_anchor=(0.5, -0.16), fontsize=8, frameon=False,
-              handlelength=1.4, labelspacing=0.9)
+    # Ring the two bars that reach the paper's rate, labelled with what
+    # each attributes the error to.  Two or three words; the reasoning
+    # belongs in sec. 32.4, not on the axes.
+    for (i, j, colour, tag) in ((2, 0, 'crimson', 'afterpulsing only'),
+                                (1, 1, 'darkgreen', 'both terms')):
+        x = xs[i] + (j - 1) * width
+        ax.bar(x, q[i, j], width, fill=False, edgecolor=colour,
+               linewidth=2.4, zorder=5)
+        ax.text(x, q[i, j] + sg[i, j] + 0.42, tag, ha='center', fontsize=8,
+                color=colour, fontweight='bold')
 
     ax.set_xticks(xs)
-    ax.set_xticklabels([lab for lab, _ in EPSILONS])
-    ax.set_yticks(ys)
-    ax.set_yticklabels([f"{p:g}" for p in P_APS])
-    ax.set_xlabel('analyser extinction  $\\epsilon$   '
-                  '(two readings of the paper\'s "higher than 98 %")')
-    ax.set_ylabel('afterpulse probability  $p_{ap}$\n(ID230 datasheet = 0.05)')
-    ax.set_title('DUPL-2: two parameter sets reach the paper\'s 2 %,\n'
-                 'only one reproduces its decomposition too', fontsize=11)
-
-    # Bottom row is extinction acting alone, against sec. 29.1's prediction.
-    # Placed in figure coordinates so it cannot collide with the cells.
-    e_only = ", ".join(f"{grid[0, j]:.2f}" for j in range(1, len(eps_vals)))
-    fig.text(0.5, -0.02,
-             f"bottom row is extinction acting alone: {e_only} pp, "
-             "against 1.00 and 2.00 predicted in sec. 29.1",
-             ha='center', fontsize=8, style='italic', color='0.25')
+    ax.set_xticklabels([f'{p:g}' + ('\n(datasheet)' if p == 0.05 else '')
+                        for p in P_APS])
+    ax.set_xlabel('detector afterpulse probability')
+    ax.set_ylabel('QBER (%)')
+    ax.set_ylim(0, max(5.2, (q + sg).max() + 1.1))
+    ax.set_title('QBER against afterpulse probability and analyser '
+                 'extinction\nDuplinskiy chain, 50 km, 10M pulses per bar',
+                 fontsize=11)
+    ax.grid(True, axis='y', alpha=0.3)
+    ax.legend(fontsize=9, loc='upper left')
 
     fig.tight_layout()
     png = os.path.join(OUT_DIR, 'val_duplinskiy_extinction.png')

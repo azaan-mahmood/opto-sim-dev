@@ -340,10 +340,10 @@ def _figure(temp_rows, bend_rows):
     ax[0].axhspan(0, 2.0, color='tab:green', alpha=0.12,
                   label="paper's ~2 % QBER")
     ax[0].set_xscale('log')
-    ax[0].set_xlabel('temperature CHANGE since Bob calibrated,  '
+    ax[0].set_xlabel('temperature change since calibration,  '
                      r'$\Delta T$ (C)')
     ax[0].set_ylabel('QBER (%)')
-    ax[0].set_title('how much warming the link can absorb\n'
+    ax[0].set_title('QBER against temperature drift\n'
                     '(dotted = undrifted floor)', fontsize=10)
     ax[0].grid(True, alpha=0.3)
     ax[0].legend(fontsize=8)
@@ -362,10 +362,10 @@ def _figure(temp_rows, bend_rows):
     ax[1].axhspan(0, 2.0, color='tab:green', alpha=0.12)
     ax[1].set_xscale('log')
     ax[1].invert_xaxis()
-    ax[1].set_xlabel('bend radius R (m)   ->  tighter bend to the right')
+    ax[1].set_xlabel('bend radius R (m),  tighter to the right')
     ax[1].set_ylabel('QBER (%)')
-    ax[1].set_title(f'a bend applied after calibrating straight\n{km0} km',
-                    fontsize=10)
+    ax[1].set_title(f'QBER against bend radius\n'
+                    f'{km0} km, calibrated straight', fontsize=10)
     ax[1].grid(True, alpha=0.3)
 
     # --- panel 3: both mechanisms against how far compensation missed ----
@@ -379,16 +379,15 @@ def _figure(temp_rows, bend_rows):
     ax[2].axhspan(0, 2.0, color='tab:green', alpha=0.12)
     ax[2].set_xlabel('compensation residual  '
                      r'$\|U_{cal}J_{op}-I\|_F$'
-                     '\n0 = Bob inverts the channel exactly,  '
-                     '~2.2 = fully scrambled')
+                     '\n0 = exact inverse,  ~2.2 = fully scrambled')
     ax[2].set_ylabel('QBER (%)')
-    ax[2].set_title('does only the SIZE of the miss matter,\n'
-                    'or what caused it?', fontsize=10)
+    ax[2].set_title('QBER against compensation residual\n'
+                    'both mechanisms', fontsize=10)
     ax[2].grid(True, alpha=0.3)
     ax[2].legend(fontsize=8)
 
-    fig.suptitle('Duplinskiy: polarisation compensation is exact until the '
-                 'channel moves under it', fontsize=11)
+    fig.suptitle('Duplinskiy chain: QBER against post-calibration drift',
+                 fontsize=11)
     fig.tight_layout()
     png = os.path.join(OUT_DIR, 'val_duplinskiy_drift.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
