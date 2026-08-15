@@ -241,14 +241,14 @@ def run(quick=False, figure_only=False):
     print("=" * 74)
 
     if figure_only:
-        cells = _read_csv()
+        cells = _read_csv(quick)
         if cells is None:
             print("  no previous run to draw; run without --figure-only first")
             return 1
         print("  redrawing from the last run's CSV, no simulation")
         _print_matrix(cells)
         verdict(cells)
-        _figure(cells)
+        _figure(cells, quick)
         return 0
 
     print("  predicted before the run (sec. 29.5): neither clean reading of A1")
@@ -258,8 +258,8 @@ def run(quick=False, figure_only=False):
     controls(quick, failures)
     cells = matrix(quick, failures)
     verdict(cells)
-    _write_csv(cells)
-    _figure(cells)
+    _write_csv(cells, quick)
+    _figure(cells, quick)
 
     print()
     if failures:
@@ -272,13 +272,24 @@ def run(quick=False, figure_only=False):
     return 0
 
 
-def _read_csv():
+def _stem(quick):
+    """Smoke runs write to their own files.
+
+    Sharing paths with the full run meant `--quick` silently replaced a
+    quotable figure with an under-powered one, and `--figure-only` then
+    redrew from the smoke data.  See sec. 35.6.
+    """
+    return ('val_duplinskiy_extinction--quick' if quick
+            else 'val_duplinskiy_extinction')
+
+
+def _read_csv(quick=False):
     """Reload a previous run's cells, so the figure can be redrawn cheaply.
 
     The matrix costs ~50 minutes at quotable statistics.  Nothing about
     drawing it should require paying that again.
     """
-    path = os.path.join(OUT_DIR, 'val_duplinskiy_extinction.csv')
+    path = os.path.join(OUT_DIR, _stem(quick) + '.csv')
     if not os.path.exists(path):
         return None
     cells = {}
@@ -291,7 +302,7 @@ def _read_csv():
     return cells or None
 
 
-def _figure(cells):
+def _figure(cells, quick=False):
     """The 3x3 grid, drawn because the argument in it is geometric.
 
     The result is not "these nine cells have these values".  It is that
@@ -357,14 +368,14 @@ def _figure(cells):
     ax.legend(fontsize=9, loc='upper left')
 
     fig.tight_layout()
-    png = os.path.join(OUT_DIR, 'val_duplinskiy_extinction.png')
+    png = os.path.join(OUT_DIR, _stem(quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"  figure: {png}")
 
 
-def _write_csv(cells):
-    path = os.path.join(OUT_DIR, 'val_duplinskiy_extinction.csv')
+def _write_csv(cells, quick=False):
+    path = os.path.join(OUT_DIR, _stem(quick) + '.csv')
     with open(path, 'w') as fh:
         fh.write("# DUPL-2 extinction discriminating run, "
                  "validate_duplinskiy_extinction.py\n")

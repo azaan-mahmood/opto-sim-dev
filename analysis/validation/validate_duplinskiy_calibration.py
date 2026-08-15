@@ -57,6 +57,16 @@ from src.detectors.spad import spad
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_duplinskiy')
 
+# This script has no --quick flag; it takes --pulses, and 20000 is the
+# full run.  Anything smaller is a reduced run and writes to its own file
+# rather than replacing the committed figure (sec. 35.6).
+FULL_PULSES = 20000
+
+
+def _stem(reduced):
+    return ('val_duplinskiy_calibration--quick' if reduced
+            else 'val_duplinskiy_calibration')
+
 SEED = 42
 DISTANCE = 50
 
@@ -233,7 +243,7 @@ def run(n_pulses=20000):
                                 "information")
 
     by_paper = check_pairs(chain, failures)
-    _figure(counts, by_paper)
+    _figure(counts, by_paper, n_pulses < FULL_PULSES)
 
     print()
     if failures:
@@ -246,7 +256,7 @@ def run(n_pulses=20000):
     return 0
 
 
-def _figure(counts, by_paper):
+def _figure(counts, by_paper, reduced=False):
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -285,7 +295,7 @@ def _figure(counts, by_paper):
                  f'{DISTANCE} km, reproducing the paper\'s Fig. 6 and Table 1',
                  fontsize=11)
     fig.tight_layout()
-    png = os.path.join(OUT_DIR, 'val_duplinskiy_calibration.png')
+    png = os.path.join(OUT_DIR, _stem(reduced) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"\n  figure: {png}")
@@ -293,7 +303,7 @@ def _figure(counts, by_paper):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('--pulses', type=int, default=20000,
+    ap.add_argument('--pulses', type=int, default=FULL_PULSES,
                     help='pulses per column (default 20000)')
     a = ap.parse_args()
     sys.exit(run(n_pulses=a.pulses))

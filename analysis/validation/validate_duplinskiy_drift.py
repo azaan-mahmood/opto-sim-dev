@@ -285,8 +285,8 @@ def run(quick=False, distances=(10, 50)):
     bend_rows = bend_curve(distances[0], quick, failures)
     collapse_test(temp_rows[distances[0]], bend_rows, failures)
 
-    _write_csv(temp_rows, bend_rows)
-    _figure(temp_rows, bend_rows)
+    _write_csv(temp_rows, bend_rows, quick)
+    _figure(temp_rows, bend_rows, quick)
 
     print()
     if failures:
@@ -299,8 +299,18 @@ def run(quick=False, distances=(10, 50)):
     return 0
 
 
-def _write_csv(temp_rows, bend_rows):
-    path = os.path.join(OUT_DIR, 'val_duplinskiy_drift.csv')
+def _stem(quick):
+    """Smoke runs write to their own files.
+
+    Sharing paths with the full run meant `--quick` silently replaced a
+    quotable figure with an under-powered one, and nothing warned.  See
+    sec. 35.6.
+    """
+    return 'val_duplinskiy_drift--quick' if quick else 'val_duplinskiy_drift'
+
+
+def _write_csv(temp_rows, bend_rows, quick=False):
+    path = os.path.join(OUT_DIR, _stem(quick) + '.csv')
     with open(path, 'w') as fh:
         fh.write("# Duplinskiy calibration-drift tolerance, "
                  "validate_duplinskiy_drift.py\n")
@@ -319,7 +329,7 @@ def _write_csv(temp_rows, bend_rows):
     print(f"\n  CSV: {path}")
 
 
-def _figure(temp_rows, bend_rows):
+def _figure(temp_rows, bend_rows, quick=False):
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -392,7 +402,7 @@ def _figure(temp_rows, bend_rows):
     fig.suptitle('Duplinskiy chain: QBER against post-calibration drift',
                  fontsize=11)
     fig.tight_layout()
-    png = os.path.join(OUT_DIR, 'val_duplinskiy_drift.png')
+    png = os.path.join(OUT_DIR, _stem(quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"  figure: {png}")

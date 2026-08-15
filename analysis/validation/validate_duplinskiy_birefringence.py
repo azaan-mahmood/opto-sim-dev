@@ -145,8 +145,8 @@ def run(quick=False):
     print("       this chain turns into the swing above. Same model, same")
     print("       magnitude, opposite required outcomes.")
 
-    _figure(rows)
-    _write_csv(rows)
+    _figure(rows, quick)
+    _write_csv(rows, quick)
 
     print()
     if failures:
@@ -159,8 +159,19 @@ def run(quick=False):
     return 0
 
 
-def _write_csv(rows):
-    path = os.path.join(OUT_DIR, 'val_duplinskiy_birefringence.csv')
+def _stem(quick):
+    """Smoke runs write to their own files.
+
+    Sharing paths with the full run meant `--quick` silently replaced a
+    quotable figure with an under-powered one, and nothing warned.  See
+    sec. 35.6.
+    """
+    return ('val_duplinskiy_birefringence--quick' if quick
+            else 'val_duplinskiy_birefringence')
+
+
+def _write_csv(rows, quick=False):
+    path = os.path.join(OUT_DIR, _stem(quick) + '.csv')
     with open(path, 'w') as fh:
         fh.write("# Duplinskiy birefringence swing, "
                  "validate_duplinskiy_birefringence.py\n")
@@ -174,7 +185,7 @@ def _write_csv(rows):
     print(f"\n  CSV: {path}")
 
 
-def _figure(rows):
+def _figure(rows, quick=False):
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -215,7 +226,7 @@ def _figure(rows):
     ax.legend(fontsize=9, loc='upper left')
 
     fig.tight_layout()
-    png = os.path.join(OUT_DIR, 'val_duplinskiy_birefringence.png')
+    png = os.path.join(OUT_DIR, _stem(quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"  figure: {png}")
