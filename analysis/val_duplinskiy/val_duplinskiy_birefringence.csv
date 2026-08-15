@@ -1,0 +1,6 @@
+# Duplinskiy birefringence swing, validate_duplinskiy_birefringence.py
+# seed=42 target_sifted=3000
+distance_km,pulses,qber_compensated,sigma_compensated,sifted_compensated,qber_uncompensated,sigma_uncompensated,sifted_uncompensated
+10,1918604,0.020567,0.002505,3209,0.535985,0.008860,3168
+50,9763313,0.021661,0.002637,3047,0.449886,0.008989,3063
+100,101538461,0.024047,0.002623,3410,0.733313,0.007668,3326
