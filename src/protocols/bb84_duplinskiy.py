@@ -62,6 +62,24 @@ from src.channel.phase_modulator import PhaseModulator
 from src.detectors.spad import spad
 
 
+class _Same:
+    """Sentinel: 'this calibration setting matches the operating one'.
+
+    `None` cannot carry that meaning for `calibration_bend_radius`,
+    because `None` is itself a valid operating bend radius -- it means
+    "unbent", which is a perfectly reasonable state to have calibrated in
+    before the fibre was disturbed.  Overloading the two made
+    `bend_radius=0.1, calibration_bend_radius=None` silently mean "no
+    mismatch" when it reads like "calibrated straight, now bent".
+    """
+
+    def __repr__(self):
+        return 'SAME_AS_OPERATING'
+
+
+SAME_AS_OPERATING = _Same()
+
+
 def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               mu=0.1, bob_loss_dB=2.0,
                               gate_width=20e-9, rep_rate=10e6,
@@ -70,6 +88,9 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               spad_eta=0.10, dead_time=13e-6,
                               dark_count_rate=15.0, afterpulse_prob=0.05,
                               cd=False, pmd=False,
+                              temperature=25.0, bend_radius=None,
+                              calibration_temperature=SAME_AS_OPERATING,
+                              calibration_bend_radius=SAME_AS_OPERATING,
                               source_field=None, pulse_energy_factors=None,
                               seed=None, verbose=False):
     """BB84 simulation matching the Duplinskiy et al. experimental setup.
@@ -109,6 +130,40 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         `PhaseModulator` through its crystal-derived V_pi.  Setting a
         modulator's bias imperfectly is universal to phase-modulated QKD,
         not specific to any one experiment.
+    temperature : float — ambient fibre temperature in C (default 25,
+        the value hardcoded here before DUPL-3).  Shifts the sectional
+        birefringence by -3e-9 per degree.
+    bend_radius : float or None — fibre bend radius in metres (default
+        None = unbent).  Adds the Ulrich bend birefringence
+        `0.135*(r_fiber/R)^2`.
+
+        **Both are exactly inert while Bob compensates the same fibre**,
+        which is the default.  `U_comp` is the conjugate transpose of the
+        channel's own Jones matrix, so `U_comp @ J = I` for any unitary
+        `J`, and these two parameters only change `J`.  That is
+        arithmetic, not a physical null, and must not be reported as one.
+        They matter through `calibration_*` below, or with
+        `compensate=False`.
+    calibration_temperature : float — the temperature Bob's compensator
+        was calibrated at.  Defaults to `SAME_AS_OPERATING`, i.e. perfect
+        calibration and the behaviour this chain had before DUPL-3.
+    calibration_bend_radius : float or None — likewise for bend radius.
+        **`None` here means "calibrated unbent", not "same as
+        operating"** — use the `SAME_AS_OPERATING` sentinel for that,
+        which is the default.  The two are different physical statements
+        and `None` cannot carry both: an unbent calibration followed by a
+        disturbed fibre is exactly the case worth simulating.
+
+        Setting either makes Bob invert the fibre as it *was* while light
+        travels through it as it *is*.  This is the paper's stated reason
+        for spending 20 % of its duty cycle recalibrating: the channel is
+        "not isolated from external influences, including mechanical and
+        temperature ones" (§6).  Measured residual
+        `||U_comp(25 C) @ J(25+dT) - I||_F` at 50 km: 0.0017 at dT = 1e-4,
+        0.173 at 0.01, 1.771 at 0.1, saturating near 2.19 by 1 C.  The
+        calibration fibre shares the operating fibre's seed, so the two
+        differ only in the environmental term rather than being unrelated
+        draws.
     source_field : ndarray (n, 2) complex, or None — the optical field
         entering Alice's phase modulator.  Default None keeps the flat
         analytic field this chain has always used,
@@ -197,15 +252,51 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     # DUPL-1 so this chain can carry an impairment sweep.  It is the right
     # chain for one: polarisation encoding is *not* blind to birefringence
     # the way the time-bin chain is (§26.6).
-    fibre = FiberRealization(L_m=fiber_length * 1000, temperature=25,
-                             bend_radius=None, attenuation_factor=alpha_dB,
+    # `temperature` and `bend_radius` were hardcoded at 25 C and None until
+    # DUPL-3.  They reach the sectional birefringence model, which shifts
+    # delta_n by -3e-9 per degree and adds the Ulrich bend term
+    # 0.135*(r/R)^2 (see `src/channel/fiber.py`).
+    fibre = FiberRealization(L_m=fiber_length * 1000, temperature=temperature,
+                             bend_radius=bend_radius, attenuation_factor=alpha_dB,
                              cd=cd, pmd=pmd, model=model, seed=seed)
 
     # Bob's polarization compensation (default on): the channel's Jones
     # matrix is unitary, so the inverse is its conjugate transpose.
-    # Applied per pulse before decoding, mirroring the paper's
-    # calibration loop (see module docstring).
-    J_channel = fibre.birefringence_matrix()
+    # Applied per pulse before decoding, mirroring the paper's calibration
+    # loop (see module docstring).
+    #
+    # By default Bob compensates the fibre light actually travels through,
+    # which makes `temperature` and `bend_radius` EXACTLY inert here --
+    # provably, not approximately: U_comp = J^dagger gives U_comp @ J = I
+    # for any unitary J, and those two parameters only change J.  A null
+    # measured on this path is therefore arithmetic, not physics, and must
+    # not be reported as a finding.
+    #
+    # They become live under a calibration mismatch: Bob's compensator is
+    # built from the fibre in one state while light propagates through it
+    # in another.  That is the paper's own failure mode -- "the other 20%
+    # has been required for recalibrations as the quantum channel has not
+    # been isolated from external influences, including mechanical and
+    # temperature ones" (§6) -- and it is what `calibration_temperature`
+    # and `calibration_bend_radius` express.
+    #
+    # The calibration fibre uses the SAME seed, so the two realizations
+    # share their random section axes and differ only in the environmental
+    # term.  Drawing a fresh seed instead would compare two unrelated
+    # fibres, which is a different and much less interesting experiment.
+    cal_T = (temperature if calibration_temperature is SAME_AS_OPERATING
+             else calibration_temperature)
+    cal_R = (bend_radius if calibration_bend_radius is SAME_AS_OPERATING
+             else calibration_bend_radius)
+
+    if cal_T == temperature and cal_R == bend_radius:
+        cal_fibre = fibre
+    else:
+        cal_fibre = FiberRealization(
+            L_m=fiber_length * 1000, temperature=cal_T, bend_radius=cal_R,
+            attenuation_factor=alpha_dB, cd=cd, pmd=pmd, model=model, seed=seed)
+
+    J_channel = cal_fibre.birefringence_matrix()
     U_comp = None if J_channel is None else J_channel.conj().T
 
     # --- The source field -------------------------------------------------
