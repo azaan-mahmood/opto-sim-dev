@@ -87,6 +87,32 @@ def gaussian_pulse(t, sigma, A=1.0):
     return A * np.exp(-t ** 2 / (2 * sigma ** 2))
 
 
+def field_grid(pulse_width=100e-12, delay=5.8e-9):
+    """The time grid this chain builds internally, for a caller supplying
+    its own source field.
+
+    Returns ``(dt, n_samples, pulse_center)``.
+
+    A source field must arrive already on this grid.  The chain does not
+    resample one, deliberately: the DFB device step is 0.49 ps and this
+    grid is typically 10 ps, so resampling here would alias unless it
+    band-limited first -- and `LaserDriver.sample_field` already
+    band-limits correctly by averaging.  Asking the driver for `dt`
+    directly is both simpler and right, where a resample buried in the
+    protocol would be neither.
+
+    Note what that costs: at a 10 ps grid the Nyquist is 50 GHz and the
+    gain-switched chirp is hundreds, so most of the chirp is averaged
+    away.  For this chain that is not a loss -- see §37 -- because a
+    path-matched interferometer compares the pulse with a copy of itself
+    at the same chirp phase.  It matters enormously in the polarisation
+    chain (§36.5), which is the contrast worth having.
+    """
+    dt = min(pulse_width / 10.0, delay / 20.0)
+    n_samples = int(np.ceil((2.0 * delay + 5.0 * pulse_width) / dt))
+    return dt, n_samples, delay / 2.0
+
+
 def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                             mu=0.1, wavelength=1550e-9,
                             pulse_width=100e-12, repetition_rate=2.5e6,
@@ -98,7 +124,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                             linewidth=0.0, path_mismatch=0.0,
                             phase_error_rad=0.0, phase_noise_rad=0.0,
                             bias_offset_v=0.0, phase_drift_rad_s=0.0,
-                            run_duration=None,
+                            run_duration=None, source_field=None,
                             seed=None, verbose=False):
     """BB84 time-bin phase-encoding simulation.
 
@@ -207,6 +233,27 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         sent in that time — that is the point, and what makes it a
         lower-variance estimate of the same expectation rather than a
         longer run.
+    source_field : ndarray (n_samples, 2) complex, or None — the optical
+        field entering the encoder, in place of the analytic Gaussian.
+        Default None keeps the Gaussian this chain has always built.
+
+        The array must already be on this chain's grid; call
+        `field_grid(pulse_width, delay)` for `(dt, n_samples,
+        pulse_center)`.  Nothing is resampled here on purpose -- see that
+        function.  It is renormalised to the same `energy_per_pulse`, so mu
+        stays calibrated once at the source and the swap changes the
+        statistics of the light rather than its level.
+
+        Measured (§37): replacing the Gaussian with a gain-switched DFB
+        leaves QBER alone across 0-122 km.  A path-matched AMZI interferes
+        the pulse with a copy of itself at the same chirp phase, so a
+        common chirp cancels -- §23.2's linewidth argument reached from
+        another direction.  Contrast §36, where the same source's chirp
+        turns PMD from nothing into +9.6 pp in the polarisation chain.
+
+        Per-pulse ENERGY spread is not covered.  `bb84_duplinskiy` takes
+        `pulse_energy_factors` because §30.11 found energy was the one
+        thing that mattered there; there is no equivalent here yet.
     seed : int or None — RNG seed.
     verbose : bool — print progress.
 
@@ -241,6 +288,28 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     pulse_amplitude = np.sqrt(energy_per_pulse / (sigma * np.sqrt(np.pi)))
     pulse = gaussian_pulse(t - pulse_center, sigma, A=pulse_amplitude)
     E_pulse = pulse[:, np.newaxis] * np.array([1.0, 0.0], dtype=complex)  # X-polarised
+
+    # A real source, in place of the analytic Gaussian.  The field must
+    # already be on this chain's grid -- `field_grid(pulse_width, delay)`
+    # returns it -- because resampling here would alias: the DFB device
+    # step is 0.49 ps against a 10 ps grid, and `LaserDriver.sample_field`
+    # already band-limits by averaging when asked for the coarser dt.
+    #
+    # Renormalised to the same energy_per_pulse, so mu stays calibrated
+    # once at the source and the swap changes the STATISTICS of the light
+    # rather than its level.  Same convention as `bb84_duplinskiy`.
+    if source_field is not None:
+        E_src = np.asarray(source_field, dtype=complex)
+        if E_src.shape != (n_samples, 2):
+            raise ValueError(
+                f"source_field must have shape ({n_samples}, 2) to match "
+                f"this chain's grid, got {E_src.shape}. Build it with "
+                f"field_grid(pulse_width={pulse_width!r}, delay={delay!r}), "
+                f"which returns (dt, n_samples, pulse_center).")
+        energy = float(np.sum(np.abs(E_src) ** 2)) * dt
+        if energy <= 0:
+            raise ValueError("source_field carries no energy")
+        E_pulse = E_src * np.sqrt(energy_per_pulse / energy)
 
     # Build AMZI components.
     #

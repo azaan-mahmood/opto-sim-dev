@@ -1,0 +1,7 @@
+# DFB source through the time-bin chain, validate_dfb_gobby.py
+# seed=42 laser_seed=11 pulse_width=1e-10 sections=15
+distance_km,qber_analytic,sigma_analytic,sifted_analytic,qber_dfb,sigma_dfb,sifted_dfb,pulses_analytic,pulses_dfb
+0,0.025806,0.002656,3565,0.025210,0.002624,3570,1474516,1480548
+25,0.021277,0.002270,4042,0.021482,0.002252,4143,4624796,4624796
+65,0.020186,0.001978,5053,0.020545,0.001994,5062,29681489,29681489
+122,0.022548,0.002197,4568,0.020794,0.002079,4713,300000000,300000000
