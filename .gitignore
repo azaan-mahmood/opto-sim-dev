@@ -309,3 +309,4 @@ analysis/*.pdf
 # they are never worth committing.
 *--quick.png
 *--quick.csv
+*--quick.md
