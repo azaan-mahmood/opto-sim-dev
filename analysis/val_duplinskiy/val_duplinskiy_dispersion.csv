@@ -1,0 +1,34 @@
+# CD and PMD in the Duplinskiy chain, validate_duplinskiy_dispersion.py
+# DFB source, 150 ps gain-switched, device grid, seed=42 laser_seed=11
+section,distance_km,case,value,extra
+field,10,CD_perturbation,1.117238e+00,
+field,10,CD_port_move,1.869637e-16,
+field,10,CD_dop,1.000000,0.000000e+00
+field,10,PMD_perturbation,1.765673e-01,
+field,10,PMD_port_move,2.011540e-03,
+field,10,PMD_dop,0.945444,3.191363e-13
+field,50,CD_perturbation,1.000603e+00,
+field,50,CD_port_move,3.739273e-16,
+field,50,CD_dop,1.000000,0.000000e+00
+field,50,PMD_perturbation,3.945185e-01,
+field,50,PMD_port_move,8.041332e-03,
+field,50,PMD_dop,0.739592,7.136105e-13
+field,100,CD_perturbation,1.000783e+00,
+field,100,CD_port_move,1.869637e-16,
+field,100,CD_dop,1.000000,0.000000e+00
+field,100,PMD_perturbation,5.500692e-01,
+field,100,PMD_port_move,3.116746e-02,
+field,100,PMD_dop,0.508870,1.009198e-12
+qber,10,no dispersion,0.020554,0.002449
+qber,10,CD only,0.020554,0.002449
+qber,10,PMD only,0.048849,0.003802
+qber,50,no dispersion,0.021049,0.002544
+qber,50,CD only,0.021049,0.002544
+qber,50,PMD only,0.116970,0.005595
+qber,100,no dispersion,0.025433,0.002632
+qber,100,CD only,0.025433,0.002632
+qber,100,PMD only,0.049143,0.003654
+grid,100,dop,0.508870,4.933333e-13
+grid,100,dop,0.516132,9.866667e-13
+grid,100,dop,0.549064,1.973333e-12
+grid,100,dop,0.842435,3.946667e-12

@@ -50,6 +50,8 @@ References
 [2] ID Quantique, ID230 InGaAs SPAD datasheet.
 """
 import argparse
+import warnings
+
 import numpy as np
 import random
 import os
@@ -92,7 +94,8 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               temperature=25.0, bend_radius=None,
                               calibration_temperature=SAME_AS_OPERATING,
                               calibration_bend_radius=SAME_AS_OPERATING,
-                              source_field=None, pulse_energy_factors=None,
+                              source_field=None, source_dt=None,
+                              pulse_energy_factors=None,
                               block_size=None,
                               seed=None, verbose=False):
     """BB84 simulation matching the Duplinskiy et al. experimental setup.
@@ -216,6 +219,23 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         therefore blind to everything a real source adds except pulse
         energy.  Same cancellation as §23.2's linewidth argument in the
         time-bin chain.
+    source_dt : float or None — the sampling interval of `source_field`, in
+        seconds.  Only CD and PMD need it: both are frequency-domain
+        operators, and `FiberRealization.apply` builds its frequency grid
+        from `np.fft.fftfreq(N, d=dt)`.
+
+        Without this the chain passed the PULSE PERIOD (1/rep_rate, 100 ns
+        at 10 MHz) as `dt`, which is the spacing between pulses rather than
+        between samples within one.  On a 0.5 ps source grid that
+        understates the bandwidth by five orders, and the PMD phase
+        `omega*dgd/2` comes out around 1e-17 rad -- an exact-looking null
+        produced by the wrong time base, which is §27.3's failure mode
+        rather than physics.
+
+        Required when `cd` or `pmd` is on and `source_field` carries more
+        than one sample.  A single-sample field warns instead: CD and PMD
+        cannot act on one time sample at all, so any null measured there is
+        arithmetic.
     pulse_energy_factors : sequence of float, or None — per-pulse energy
         multipliers with mean 1, the one thing a real source does change
         here.  Applied to the response power before detection, which is
@@ -359,6 +379,26 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
             raise ValueError("source_field carries no power")
         E_source = E_source * np.sqrt(power_per_pulse / p_mean)
 
+    # The time base CD and PMD are evaluated on.  See the `source_dt`
+    # docstring: handing them the pulse period instead of the sample
+    # interval produces a null that looks exact and means nothing.
+    n_samples = E_source.shape[0]
+    if cd or pmd:
+        if n_samples > 1 and source_dt is None:
+            raise ValueError(
+                "cd or pmd is enabled and source_field carries "
+                f"{n_samples} samples, but source_dt was not given. Falling "
+                "back to the pulse period would evaluate both operators on "
+                "the wrong time base and return a false null.")
+        if n_samples == 1:
+            warnings.warn(
+                "cd or pmd is enabled but the source field is a single time "
+                "sample. Both are frequency-domain operators, so neither can "
+                "act: the result is a null by construction, not a "
+                "measurement (§27.3). Pass a time-resolved source_field with "
+                "its source_dt.", UserWarning, stacklevel=2)
+    dt_field = dt_pulse if source_dt is None else source_dt
+
     factors = None if pulse_energy_factors is None else np.asarray(
         pulse_energy_factors, dtype=float)
     if factors is not None and factors.size == 0:
@@ -397,7 +437,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
 
         E = E_source
         E = pm_alice.modulate(E_field=E, V=v_a)
-        E = fibre.apply(E, dt=dt_pulse)
+        E = fibre.apply(E, dt=dt_field)
         if compensate and U_comp is not None:
             E = np.transpose(U_comp @ np.transpose(E))
         E = optics.voa(E, bob_loss_dB)
