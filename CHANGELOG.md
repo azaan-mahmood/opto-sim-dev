@@ -4,6 +4,65 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-17 — every validator in the harness; docstrings document the code, not its history
+
+### Session: `run_all.py` 8 validators → 18, `--quick` output guards, docstring cleanup
+
+| Change | Files | Rationale |
+|---|---|---|
+| Harness covers all 18 validators | `run_all.py` | It ran 8 of the 18 on disk. The other 10 already emit `[FAIL]` or exit non-zero, so they were written as regression checks and nothing invoked them. |
+| Per-validator CLI in the roster | `run_all.py` | The newer validators do not share a command line with the original eight. None of the 10 takes `--seed`, which the old harness passed unconditionally; for them that is an argparse error and exit code 2, indistinguishable in the summary from a physics failure. |
+| `--quick` output guard on the last three | `validate_dfb_drive.py`, `validate_dfb_duplinskiy.py`, `validate_gobby.py` | They wrote to the same paths whether or not the run was a smoke run, so a cheap run replaced a quotable artifact with an under-powered one. The other seven already had `_stem(quick)`. |
+| `--allow-underpowered` no longer overwrites the published table | `validate_gobby.py` | It wrote straight over `val_gobby_table.tex`. The statistical-power guard refusing to write was the only thing keeping a smoke table out of the repository, and that flag exists to switch the guard off. A run that opts out of the guard is by definition not quotable, so it now writes to `--quick` names. |
+| `*--quick.tex` ignored | `.gitignore` | The smoke block covered png, csv and md; Gobby's table is LaTeX. |
+| Docstrings: documentation, not history | 13 modules under `src/`, 11 under `analysis/`, `run_all.py` | They had become a record of how the code got here: hypotheses tested and rejected, measurements from those tests, values that changed and why, corrections to earlier versions. |
+| Generic components no longer discuss replications | `phase_modulator.py`, `interferometer.py`, `optics.py`, `bb84_time_bin.py` | A hardware model may cite a paper for a formula or a number, but not explain itself in terms of whether one experiment used it. `phase_modulator` had 5 Gobby mentions, none in a citation block. |
+| References to the issue log removed | 26 files | `opto-sim-issues-and-fixes.md` is untracked and never pushed, so anyone cloning the repository read citations to a document they cannot open. 138 lines. |
+| Measured sectional-birefringence behaviour recorded | `src/channel/fiber.py` | It was not written down anywhere. |
+
+**The rule applied to docstrings.** A docstring says what the thing is:
+what it models, units, defaults, the physics that constrains it, and its
+citations. It may carry a standing caution about correct use, such as
+that a value is a device specification rather than a fitting knob, or
+that two mechanisms must not both be applied because they double-count
+one measured aggregate. The test for a sentence is whether it would still
+be written if the code had been right the first time.
+
+Replication scripts are the opposite case and keep their parameter
+justifications. `AFTERPULSE_PROB = 0.0` in `validate_gobby.py` still
+explains itself from the paper's own Fig. 3, its stated error
+probability, and its list of three mechanisms. What went was the story of
+the value having been 0.05 and being changed.
+
+**Two harness findings, both from running it.** Gobby's
+`--gobby-bits 200000` default predates the link-budget correction, which
+cut the signal 3.68x; at that budget the sweep now yields 318 sifted bits
+at 0 km and zero at 122 km, and the power guard correctly refuses to
+write. Replaced by `--gobby-target-sifted`, since a flat budget spans a
+200x sifted fraction across the sweep and either starves 122 km or wastes
+hours at 0 km. Separately, threading `quick` into
+`validate_dfb_duplinskiy` missed that the PNG write sits inside
+`_figure()`, which did not take the argument: `NameError` at write time,
+caught on the harness's first run. That file had no automated caller
+before.
+
+**Measured sectional birefringence** (500 realizations per length, Haar
+SU(2) reference mean rotation angle 2.217 rad): the model is already
+indistinguishable from a uniformly random SU(2) by about **ten metres**,
+where the ensemble mean Stokes vector has fallen to the finite-sample
+floor of 1/sqrt(500). Unitarity error is machine epsilon times the
+section count, so **1.9e-10 at 50,000 km**, further than any cable on the
+planet. The build is one-time per realization, 2 ms at 122 km, because
+`FiberRealization` freezes the matrix at construction.
+
+**Verification.** 332 passed, 1 skipped throughout. All 173 bracketed
+citations preserved, along with the Duplinskiy paper's own section
+references and the Coldren, Agrawal, Keiser and Wiley section numbers.
+`run_all.py` 18 passed, 0 failed, 0 skipped, with no tracked artifact
+modified by a quick run.
+
+---
+
 ## 2026-08-14 — DFB device model: validated, merged to `main`, driving Duplinskiy
 
 ### Session: the `dfblaser_work` branch, 11 commits, fast-forwarded to `main`
