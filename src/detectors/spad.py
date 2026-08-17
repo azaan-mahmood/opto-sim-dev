@@ -96,10 +96,10 @@ class spad(apd):
         if not self._armed:
             if t - self._last_click_time >= self.dead_time:
                 self._armed = True
-                # PHYS-7: clear any afterpulse scheduled-but-never-fired
-                # during this dead period — otherwise it stays pending
-                # with a stale timestamp and can fire on the first gate
-                # of a *later* dead period (opto-sim-issues-and-fixes.md).
+                # Clear any afterpulse scheduled but never fired during
+                # this dead period.  Otherwise it stays pending with a
+                # stale timestamp and can fire on the first gate of a
+                # *later* dead period.
                 self._afterpulse_pending = False
                 self._afterpulse_time = -np.inf
             else:
@@ -129,19 +129,18 @@ class spad(apd):
             #
             #     P(click) = 1 - exp(-eta*mu)
             #
-            # This previously read `qe * (1 - exp(-mu))`, i.e. "at least one
-            # photon arrives, THEN one coin flip at eta".  That undercounts:
-            # if two photons arrive the chance of detecting at least one is
-            # 1 - (1-eta)^2, not eta.  Both forms agree as mu -> 0, which is
-            # why it survived -- the error grows with intensity:
-            #
-            #     mu = 0.001   -0.05 %      mu = 0.5   -20.4 %
-            #     mu = 0.077   -3.58 %      mu = 2.0   -54.8 %
+            # Not `qe * (1 - exp(-mu))`, which reads "at least one photon
+            # arrives, THEN one coin flip at eta".  That undercounts: if two
+            # photons arrive the chance of detecting at least one is
+            # 1 - (1-eta)^2, not eta.  The two forms agree as mu -> 0 and
+            # diverge with intensity -- -0.05 % at mu = 0.001, -20.4 % at
+            # mu = 0.5, -54.8 % at mu = 2.0 -- so the difference hides at
+            # single-photon levels and matters as soon as mu is raised.
             #
             # It was found as the residual disagreement between
             # `validate_gobby.signal_click_prob()` and the Monte Carlo:
             # predicted 0.9625 against a measured 0.9533 +/- 0.0123, 0.75
-            # sigma.  See GOBBY-7b §24.5 in opto-sim-issues-and-fixes.md.
+            # sigma.
             #
             # One RNG draw either way, so pulse-for-pulse stream alignment
             # is unchanged and any difference is physical.
@@ -160,7 +159,7 @@ class spad(apd):
     def _schedule_afterpulse(self, t):
         """With probability afterpulse_prob, schedule a false click.
 
-        Always assigns both fields (PHYS-7) so a failed roll clears any
+        Always assigns both fields so a failed roll clears any
         previously pending afterpulse rather than leaving its stale state
         in place.
         """

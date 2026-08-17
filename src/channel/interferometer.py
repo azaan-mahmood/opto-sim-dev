@@ -19,19 +19,13 @@ from src.channel.optics import coupler_split
 #     3762-3764, 2004. — source of the 5.8 ns delay and the visibility
 #     relation e_opt = (1 - V)/2.
 #
-#     CORRECTION: an earlier version of this note read "Gobby's 3.3 % QBER
-#     floor at short range is interferometer visibility, so V = 0.934".
-#     That is wrong, and the error propagated into the Gobby replication.
-#     The paper gives visibility in closed form as an *output* of the link
-#     budget, V = S/(S + 2*P_e) with S the signal click probability and
-#     P_e the measured error probability per clock — which yields V > 0.99
-#     at short range, not 0.934.  The 3.3 % floor is not visibility alone.
-#     Deriving a V from that floor and injecting it applies the same error
-#     physics twice.  See GOBBY-1 (section 18) in
-#     opto-sim-issues-and-fixes.md.  The `visibility` parameter below is
-#     still correct machinery — it is a genuine decoder imperfection knob —
-#     but it must not be used to reproduce an error rate that the link
-#     budget already produces.
+#     `visibility` is a decoder imperfection: finite fringe contrast in
+#     the device itself.  It is not the place to reproduce a link's
+#     measured error rate.  Where a link budget carries background counts,
+#     the observed fringe visibility follows from them as
+#     V = S/(S + 2*P_e), with S the signal click probability and P_e the
+#     background per clock — so injecting a visibility derived from a
+#     measured QBER on top of that budget applies the same physics twice.
 
 
 class AsymmetricMZI:
@@ -96,8 +90,8 @@ class AsymmetricMZI:
         intensity goes as cos(delta), which is even — but it stops being
         unobservable the moment the arms differ (unequal loss, a second
         modulator, chirp), so it is a property of the device rather than a
-        convention.  See the Gobby wiring in `bb84_time_bin.py`, where the
-        encoded pulse travels the short arm.
+        convention.  `bb84_time_bin.py` wires a chain where the encoded
+        pulse travels the short arm.
     insertion_loss_db : float or None
         Total device insertion loss in dB.  None (default) means ideal
         (0 dB, no insertion loss).
@@ -175,7 +169,7 @@ class AsymmetricMZI:
 
         The single source of truth for this device's static offset plus
         accumulated drift.  Callers that cannot afford to push fields
-        through `modulate` per shot -- the Gobby chain evaluates a closed
+        through `modulate` per shot -- the time-bin chain evaluates a closed
         form instead, see `bb84_time_bin` -- must obtain the offset here
         rather than re-expressing ``phase_error + rate * t`` themselves, so
         there is only ever one copy of the law to keep correct.

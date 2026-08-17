@@ -24,8 +24,7 @@ import numpy as np
 # interference term goes as sin(delta_phi) rather than cos(delta_phi), so
 # a protocol that encodes in {0, pi} -- as BB84 phase encoding does --
 # lands exactly on the zeros and the fringe vanishes entirely.  That bug
-# produced a flat ~50% QBER and is documented in GOBBY-2 (section 19) of
-# opto-sim-issues-and-fixes.md.
+# produced a flat ~50% QBER when it last happened here.
 #
 # RETARDER PHASE CONVENTION -- read before adding a wave plate.
 # `halfwave` and `quarterwave` use the standard Jones forms [2],
@@ -34,12 +33,9 @@ import numpy as np
 # leading `j` (or exp(-i*pi/2), exp(-i*pi/4)); that is the absolute-phase
 # variant and it multiplies the whole matrix, carrying no physical content.
 #
-# Both functions used to carry such a prefactor.  It made `halfwave` return
-# a *purely imaginary* field for a real input (measured |Im|/|Re| = 1.6e16)
-# -- invisible in |E|^2 for a single path, but a real relative phase as
-# soon as two interfering paths pass through different numbers of
-# retarders.  Removed; see GOBBY-4 (section 21) in
-# opto-sim-issues-and-fixes.md.
+# Such a prefactor is invisible in |E|^2 for a single path, but becomes a
+# real relative phase as soon as two interfering paths pass through
+# different numbers of retarders, so neither function carries one.
 #
 # What is NOT a global phase: the relative `i` between the fast and slow
 # axes of `quarterwave`.  That is the retardance -- the entire point of the
@@ -68,11 +64,9 @@ def coupler_split(power, E, ratio=0.5):
 
     Notes
     -----
-    An earlier version returned the *unscaled* input as `port_E` and a
-    Hadamard-mixed copy as `tap_E`, so `ratio` affected only the returned
-    powers while the fields ignored it entirely — the two were mutually
-    inconsistent.  Any caller relying on the old field behaviour was
-    relying on a bug.
+    `ratio` scales the fields and the powers consistently: `port_E` carries
+    `sqrt(ratio)` and `tap_E` carries `sqrt(1 - ratio)`, so the returned
+    powers are the squared magnitudes of the returned fields.
     """
     if not 0 <= ratio <= 1:
         raise Exception("Incorrect Ratio")
@@ -92,27 +86,16 @@ def coupler_combine(power_port, port_E, power_tap, tap_E, out_ports=1):
     Unitary, so total power is conserved, and the interference term goes as
     cos(delta_phi).
 
-    CONVENTION (GOBBY-7d).  This previously returned the imaginary form,
-    `(E1 + 1j*E2)/sqrt(2)` and `(1j*E1 + E2)/sqrt(2)`.  Both forms are
-    legitimate and unitary -- see the COUPLER PHASE CONVENTION note in the
-    module header -- but this module and `AsymmetricMZI` use the real one,
-    and mixing them is not cosmetic: with the imaginary form the
-    interference goes as sin(delta_phi), so a protocol encoding in {0, pi}
-    lands on the zeros and the fringe vanishes.  That produced a flat ~50%
-    QBER once already (GOBBY-2 §19).
+    CONVENTION.  The imaginary form, `(E1 + 1j*E2)/sqrt(2)` and
+    `(1j*E1 + E2)/sqrt(2)`, is equally legitimate and unitary -- see the
+    COUPLER PHASE CONVENTION note in the module header -- but this module
+    and `AsymmetricMZI` use the real one throughout, and mixing them is
+    not cosmetic: with the imaginary form the interference goes as
+    sin(delta_phi), so a protocol encoding in {0, pi} lands on the fringe
+    zeros and the contrast vanishes entirely.
 
-    It was left inconsistent through GOBBY-3 to GOBBY-7b as a known,
-    recorded deferral (§21.3) on the grounds that a legitimate-but-
-    inconsistent convention is a different category from a prefactor with
-    no physical content.  It is aligned here because the module now claims
-    the real form in its own header, and a function contradicting its
-    module's stated convention is a trap for the next reader.
-
-    **No production call site exists** -- this function is reachable only
-    through `src.channel.__init__` and its own tests, which is why the
-    change is safe to make in one step.  `AsymmetricMZI` implements its own
-    combiner (`E_c = r*E_s + s*E_l`, `E_d = r*E_s - s*E_l`) and is
-    untouched by this; the two now agree.
+    `AsymmetricMZI` implements its own combiner
+    (`E_c = r*E_s + s*E_l`, `E_d = r*E_s - s*E_l`) in the same convention.
 
     Parameters
     ----------
@@ -149,8 +132,8 @@ def halfwave(E, theta=0, rotation=True):
     2 sin t cos t = sin 2t.  Real, so a real input gives a real output --
     a HWP is a reflection on the Poincare sphere and introduces no phase.
 
-    See the RETARDER PHASE CONVENTION note in the module header for why
-    the `exp(-i*pi/2)` prefactor this used to carry was removed.
+    See the RETARDER PHASE CONVENTION note in the module header for why no
+    absolute-phase prefactor is applied.
     """
     if not rotation:
         half_matrix = np.array([
@@ -176,12 +159,11 @@ def quarterwave(E, theta=0, rotation=True):
     """Quarter-wave plate, standard Jones form (no absolute-phase prefactor).
 
     The relative `i` between the fast and slow axes is the **retardance**
-    and is the entire physical content of the component -- it stays.  Only
-    the overall `exp(-i*pi/4)` prefactor was removed; see the RETARDER
-    PHASE CONVENTION note in the module header.
+    and is the entire physical content of the component.  No overall
+    `exp(-i*pi/4)` prefactor is applied; see the RETARDER PHASE CONVENTION
+    note in the module header.
 
-    Consequently an H-polarised input now emerges real rather than rotated
-    45 degrees into the complex plane, while H at 45 degrees still becomes
+    So an H-polarised input emerges real, while H at 45 degrees becomes
     circular with E_y = -i*E_x.
     """
     if not rotation:
@@ -306,9 +288,8 @@ def circular_analyser(E):
     polarising beam splitter (QWP+PBS), projecting onto the L/R circular
     basis rather than H/V.
 
-    This is *not* a polarising beam splitter (PHYS-6 in
-    opto-sim-issues-and-fixes.md — this function used to be misnamed
-    `pbs`). A true PBS projects onto H and V (`diag(1,0)` / `diag(0,1)`,
+    This is *not* a polarising beam splitter; it was once misnamed `pbs`.
+    A true PBS projects onto H and V (`diag(1,0)` / `diag(0,1)`,
     see `pbs()` below) and is blind to the relative phase between Ex and
     Ey. This function instead converts that relative phase into an
     intensity imbalance between its two output ports:
@@ -376,9 +357,8 @@ def apply_extinction(P_a, P_b, epsilon):
     The paper states extinction end-to-end for Bob's whole measurement
     (PC2 -> PM2 -> PC3 -> PBS), not as a component spec, so one parameter
     stands for at least three mechanisms: PC3 tuning residual, PM2 voltage
-    error and PBS leakage.  That is faithful to what is published -- the
-    same choice `P_E` represents for Gobby -- but it is not "the PBS
-    extinction" and calling it that would be wrong.
+    error and PBS leakage.  That is faithful to what is published, but it
+    is not "the PBS extinction" and calling it that would be wrong.
 
     If it is ever decomposed, the components are *not* equivalent: PBS
     leakage is basis-symmetric while a polarisation-controller tuning
@@ -405,8 +385,7 @@ def pbs(E):
 
     A true PBS transmits the H component to one port and reflects the V
     component to the other, and is blind to the relative phase between Ex
-    and Ey — unlike `circular_analyser()` (formerly misnamed `pbs`, see
-    PHYS-6 in opto-sim-issues-and-fixes.md), which projects onto the
+    and Ey — unlike `circular_analyser()`, which projects onto the
     circular basis and *does* depend on that phase.
 
     Parameters

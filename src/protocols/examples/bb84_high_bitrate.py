@@ -48,8 +48,8 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9,
     n_samples = 1000
 
     # One physical fibre for the whole run: birefringence and PMD are
-    # quasi-static, so every bit must see the same impairments (see
-    # ROOT-1 in opto-sim-issues-and-fixes.md). Built once here, reused
+    # quasi-static, so every bit must see the same impairments. Built
+    # once here, reused
     # per bit below. `dispersion` gates CD+PMD, matching propagate()'s
     # legacy alias behaviour.
     fibre = FiberRealization(L_m=fiber_length * 1000, temperature=25,
@@ -98,7 +98,7 @@ def simulate_bb84_high_bitrate(num_bits, fiber_length=100, bandwidth=1e9,
         
         # Measurement: PBS splits into two spatial modes
         # circular_analyser, not pbs: detection depends on the relative
-        # phase between Ex/Ey (PHYS-6 in opto-sim-issues-and-fixes.md).
+        # phase between Ex/Ey, which a true PBS would be blind to.
         Ex, Ey = optics.circular_analyser(E)
 
         # Noisy photocurrent from each detector (power derived from field)

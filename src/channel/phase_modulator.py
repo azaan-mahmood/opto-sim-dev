@@ -18,8 +18,7 @@ class PhaseModulator:
                 offset -- a systematically mis-set Vpi.
             phase_noise_rad (float): per-call Gaussian phase jitter, sigma
                 in radians (default 0). Models drive-voltage noise, which
-                is random pulse to pulse. OFF BY DEFAULT and ruled out as
-                the mechanism for Gobby et al. -- see "Drive noise" below.
+                is random pulse to pulse -- see "Modulation error" below.
             rng (numpy.random.Generator, optional): source for the jitter.
                 Defaults to the global numpy.random state.
             bias_offset_v (float): STATIC bias error expressed as a drive
@@ -30,60 +29,32 @@ class PhaseModulator:
 
         Modulation error
         ----------------
-        Setting a modulator's bias imperfectly is universal to phase-encoded
-        QKD, and is the mechanism Gobby et al. (2004) name first. Two knobs
-        describe it, giving the same QBER floor for a given magnitude to
+        A modulator's bias is never set exactly. Two knobs describe the
+        error, and for a given magnitude they give the same QBER floor to
         within about 1%:
 
-            static offset d:  QBER = (1 - cos d) / 2
+            static offset d:   QBER = (1 - cos d) / 2
             Gaussian jitter s: QBER = (1 - exp(-s^2/2)) / 2
 
-        so reproducing a 3.3% floor needs d = 20.93 deg or s = 21.17 deg.
-        `bias_offset_v` expresses the static form in volts: on the default
-        crystal parameters V_pi = 3.8826 V, so 20.93 deg is 452 mV.
+        `bias_offset_v` is the static form, in volts. On the default
+        crystal parameters V_pi = 3.8826 V, so a 20.93 deg offset is
+        452 mV. `phase_noise_rad` is the jitter form, in radians: drive
+        voltage noise resampled per pulse, default 0.
 
-        Which to use is a statement about the hardware, not a way to match
-        a number. Gobby attribute their floor to "slight inaccuracies of the
-        phase modulator biases" together with interferometer phase drift --
-        neither of which is per-pulse random noise -- so a **static bias**
-        is the right default there, with arm-length drift carried by
-        `AsymmetricMZI.phase_drift_rad_s`.
+        Which one applies is a statement about the hardware. A bias set
+        once and left is static; noise on the drive electronics is
+        per-pulse random. Drive electronics typically deliver 0.1 to 1% of
+        V_pi, which is 0.0002 to 0.025% QBER, so jitter is a small term
+        unless the modulator is unusually noisy.
 
-        Drive noise: a NEGATIVE RESULT, kept because it is real hardware
-        -------------------------------------------------------------------
-        `phase_noise_rad` is the drive-voltage-noise model, and drive noise
-        was tested as the source of Gobby's 3.3% floor and **ruled out** on
-        two independent grounds (GOBBY-7 §24.1, §24.4):
-
-            reproducing the floor needs sigma = 21.17 deg = 0.457 V
-                = 11.8% of V_pi, one to two orders above what drive
-                electronics deliver (0.1-1%, worth 0.0002-0.025% QBER);
-
-            measured head to head at 0 km, a static bias gives
-                3.253 +/- 0.258% against jitter's 3.579 +/- 0.267%,
-                with the stated floor at 3.300%.
-
-        So it is **never a default anywhere** and is not the mechanism for
-        this replication. It is kept, not deleted, for the same reason
-        laser linewidth is kept: modulators whose error genuinely is random
-        shot to shot exist, and a replicator must be able to say so. Using
-        it to reach a target floor would be fitting.
-
-        NOTE on the magnitude. Where ~21 deg is used to reproduce Gobby
-        et al. (2004), it is derived from their stated 3.3% floor within
-        this model. That is the correct treatment rather than a shortcoming:
-        the paper names the mechanism and reports its aggregate size, and no
-        separately measured value exists to recover -- 3.3% *is* the
-        measurement. It is still not a measurement of their modulator and
-        must not be presented as one. See GOBBY-7 in
-        opto-sim-issues-and-fixes.md.
+        Interferometer arm-length drift is a separate mechanism and lives
+        on `AsymmetricMZI.phase_drift_rad_s`, not here.
 
         NOT MODELLED: LiNbO3 DC bias drift (charge migration, defect-bound
         charge, the LN/SiO2 RC loop). Its relaxation runs minutes to days,
         so over runs of this length it is indistinguishable from a constant
         offset and is already absorbed by `bias_offset_v`. Implement it when
-        a protocol simulates tens of minutes or longer; sources and the RC
-        model form are recorded in GOBBY-7.
+        a protocol simulates tens of minutes or longer.
 
         Raises:
             RuntimeError: If unknown crystal_cut, modulation, or parameter key is provided.

@@ -13,14 +13,12 @@ may be obtained by fitting to data the model exists to reproduce.  The one
 exception is a value the source *itself* states as fitted, and then it must
 be cited as such.  **Every parameter must carry a citable source.**
 
-This rule was written after being burned by its absence.  An earlier
-version of this module set `MU_EFF = 0.0793`, obtained by inverting
-V = S/(S + 2*P_e) against Gobby's *measured* fringe visibilities -- fitting
-to the very data the model was supposed to predict -- while the docstring
-claimed "Every parameter is from the source paper. Nothing is fitted."
-That single fitted number produced a phantom discrepancy which cost
-substantial effort to chase, and it resolved only when the quantity it was
-standing in for was identified: the interferometer transmission.
+The failure mode this guards against is subtle: a quantity inverted out
+of the source's own *measured* results looks sourced, and a docstring can
+truthfully say every number came from the paper while one of them was
+fitted to the data the model is meant to predict.  Such a parameter
+produces a discrepancy that cannot be diagnosed until the physical
+quantity it stands in for is identified.
 
   mu       = 0.1      photons/clock leaving Alice                       [1]
   r        = 1.6      Alice's reference:encoded intensity ratio         [1]
@@ -47,12 +45,11 @@ visibilities gives mu_eff/mu = 0.793 against the 0.769 this geometry
 predicts: 3% agreement between two independent routes.  If a future change
 makes those diverge, something has been tuned.
 
-This is the analytic reference implementation of GOBBY-2 (section 19 of
-opto-sim-issues-and-fixes.md).  It exists to be the *prediction*: the
+This is the analytic reference. It exists to be the *prediction*: the
 Monte Carlo field chain in analysis/val_gobby/validate_gobby.py must
 reproduce it before its comparison against Gobby's measured points means
-anything.  See section 19.13(a): a closed form matching four points is
-evidence the physics is understood, not evidence the simulator works.
+anything.  A closed form matching four points is evidence the physics is
+understood, not evidence the simulator works.
 
 References
 ----------
@@ -74,7 +71,7 @@ MU_EFF = MU * T_INT                 # = 0.0769, DERIVED -- never a literal
 ALPHA_DB = 0.2     # dB/km @ 1550 nm                                  [1]
 ETA_BOB = 0.045    # detector QE (0.12) x Bob apparatus (-4.26 dB)    [1]
 P_E = 8.5e-7       # total error probability /clock: dark + stray     [1]
-P_E_DARK = 3.2e-7  # dark-count component of P_E (section 19.11)      [1]
+P_E_DARK = 3.2e-7  # dark-count component of P_E      [1]
 E_MOD = 0.033      # modulation error, constant in L (Fig. 3 arrow)   [1]
 
 
@@ -97,8 +94,8 @@ def erroneous_counts(dist_km, p_e=P_E, mu_eff=MU_EFF):
 def qber(dist_km, p_e=P_E, mu_eff=MU_EFF):
     """Total QBER in percent: e_mod + erroneous counts.
 
-    p_e overrides the background budget (section 19.11's out-of-sample
+    p_e overrides the background budget (the out-of-sample
     test passes p_e = P_E_DARK to remove the stray-light term); mu_eff
-    overrides the effective signal (the section 19.3 sensitivity rows).
+    overrides the effective signal (the sensitivity rows).
     """
     return E_MOD * 100.0 + erroneous_counts(dist_km, p_e=p_e, mu_eff=mu_eff)

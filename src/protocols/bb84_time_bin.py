@@ -6,11 +6,11 @@ Signal chain:
 
 Based on Gobby, Yuan & Shields (2004), Appl. Phys. Lett. 84, 3762.
 
-Performance: the interference closed form (PERF-2, extended)
+Performance: the interference closed form
 ------------------------------------------------------------
 **This is why a 1e8-pulse sweep is feasible at all.  Preserve it.**
 
-PERF-2 observed that the field chain is deterministic given the three
+The field chain is deterministic given the three
 discrete choices (alice_basis, alice_bit, bob_basis), so 8 precomputed
 outcomes replace one field propagation per pulse — a 2,000,000-pulse run
 had been doing 4,000,000 propagations to obtain 8 distinct answers.
@@ -34,7 +34,7 @@ at delta = 0, pi/2, pi determine them:
     Im(S) = (g0 - P(pi/2)) / 2
 
 So the cost is three field propagations per *point* — not per pulse — and
-any phase thereafter costs two multiplies.  PERF-2 generalised from
+any phase thereafter costs two multiplies.  This generalises from
 "8 fixed answers" to "one closed form, any phase": strictly more capable
 at the same per-pulse cost.
 
@@ -49,7 +49,7 @@ Two properties worth not losing in a later refactor:
   delta = phi_A - phi_B.  A consistency assertion after the extraction
   checks that assumption against the chain at phi_B != 0, so the field
   chain stays authoritative — it fires on exactly the encoder
-  phase_arm / Bob sign coupling that GOBBY-4 section 21.2 had to verify by
+  phase_arm / Bob sign coupling that had to be verified by
   hand.
 
 Verified bit-identical to the 8-entry table at 0/65/122 km (max absolute
@@ -103,10 +103,10 @@ def field_grid(pulse_width=100e-12, delay=5.8e-9):
 
     Note what that costs: at a 10 ps grid the Nyquist is 50 GHz and the
     gain-switched chirp is hundreds, so most of the chirp is averaged
-    away.  For this chain that is not a loss -- see §37 -- because a
+    away.  For this chain that is not a loss, because a
     path-matched interferometer compares the pulse with a copy of itself
     at the same chirp phase.  It matters enormously in the polarisation
-    chain (§36.5), which is the contrast worth having.
+    chain, which is the contrast worth having.
     """
     dt = min(pulse_width / 10.0, delay / 20.0)
     n_samples = int(np.ceil((2.0 * delay + 5.0 * pulse_width) / dt))
@@ -160,8 +160,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         combiner/splitter routes Alice-short -> Bob-long and
         Alice-long -> Bob-short, so only two paths exist, there are no
         satellites, and the full mu reaches the single interference peak.
-        Use this for the Gobby replication.  See GOBBY-2 (section 19) in
-        opto-sim-issues-and-fixes.md.
+        Use this for the Gobby replication.
     split_ratio : float — Alice's reference:encoded intensity ratio,
         used only by 'polarisation_multiplexed' (default 1.6, per Gobby).
     linewidth : float — laser linewidth (Hz, default 0 = off).
@@ -181,7 +180,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         2-3.2 MHz); Gobby state no value, so any choice here is a
         documented assumption, never a derived or fitted quantity.  At
         realistic trim the contribution is <0.02% — see the contribution
-        budget in GOBBY-6.
+        budget.
     phase_error_rad : float — STATIC phase offset applied to every pulse
         (rad, default 0).  Models a modulator calibration offset.
     phase_noise_rad : float — per-pulse Gaussian phase jitter, sigma in
@@ -189,13 +188,10 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         quadrature with the linewidth term above, both being zero-mean
         Gaussians entering the same relative phase.
 
-        **A negative result, kept but never a default.** Drive noise was
-        tested as the source of Gobby's 3.3% floor and ruled out: it would
-        need 11.8% of V_pi, against the 0.1-1% real electronics deliver,
-        and a static bias reproduces the floor better (3.253% vs 3.579%,
-        stated 3.300%).  Retained because modulators with genuinely random
-        shot-to-shot error exist — see `PhaseModulator` for the full
-        argument, and GOBBY-7 §24.1/§24.4.
+        Drive electronics typically deliver 0.1-1% of V_pi, so this is a
+        small term unless the modulator is unusually noisy.  A bias set
+        once and left is the static mechanism instead; see
+        `phase_error_rad` and `bias_offset_v`.
     bias_offset_v : float — the same static bias error as
         `phase_error_rad`, expressed as a modulator drive voltage (default
         0).  Converted by `PhaseModulator` through its crystal-derived
@@ -226,7 +222,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         bars silently lengthens the simulated experiment.  That is what
         made the Gobby 122 km point read 13.52% against a stated 8.9%: it
         needed 1e9 pulses = 500 s at 2 MHz, accumulating 25 deg of drift
-        where their two-minute transfer accumulates 6 (GOBBY-7c).
+        where their two-minute transfer accumulates 6.
 
         With it set, the simulated pulses are a uniform sample across a run
         of that length.  The count may exceed what the apparatus actually
@@ -244,15 +240,16 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         stays calibrated once at the source and the swap changes the
         statistics of the light rather than its level.
 
-        Measured (§37): replacing the Gaussian with a gain-switched DFB
+        Measured: replacing the Gaussian with a gain-switched DFB
         leaves QBER alone across 0-122 km.  A path-matched AMZI interferes
         the pulse with a copy of itself at the same chirp phase, so a
-        common chirp cancels -- §23.2's linewidth argument reached from
-        another direction.  Contrast §36, where the same source's chirp
+        common chirp cancels, which is the linewidth argument reached
+        from another direction.  Contrast the polarisation chain, where
+        the same source's chirp
         turns PMD from nothing into +9.6 pp in the polarisation chain.
 
         Per-pulse ENERGY spread is not covered.  `bb84_duplinskiy` takes
-        `pulse_energy_factors` because §30.11 found energy was the one
+        `pulse_energy_factors` because energy was the one
         thing that mattered there; there is no equivalent here yet.
     seed : int or None — RNG seed.
     verbose : bool — print progress.
@@ -336,8 +333,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                 "visibility is not a free input for the "
                 "polarisation-multiplexed topology: the arm amplitudes "
                 "determine it. Injecting one would re-apply error physics "
-                "the link budget already produces -- see GOBBY-2 section "
-                "19.4 in opto-sim-issues-and-fixes.md."
+                "the link budget already produces."
             )
         # Alice: unbalanced splitter, arms taken out separately so a PBC
         # can put them on orthogonal axes.  Her modulator sits in the
@@ -437,9 +433,9 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         P_d = float(np.mean(np.sum(np.abs(E_d[start_i:end_i]) ** 2, axis=1)))
         return P_c, P_d
 
-    # --- Interference coefficients: PERF-2, extended (see module docstring)
+    # --- Interference coefficients (see module docstring) ---------------
     #
-    # PERF-2 precomputed the 8 outcomes reachable from the discrete
+    # The 8 outcomes reachable from the discrete choices were precomputed
     # (a_basis, a_bit, b_basis) choices.  That is exact only while the
     # response is deterministic; a per-pulse random phase -- laser
     # linewidth against a residual path mismatch, or modulator noise --
@@ -481,7 +477,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     # So assert it: evaluate the chain at points with phi_B != 0 and
     # require the closed form to reproduce them.  Three extra field
     # evaluations at build time, and it fails loudly on exactly the
-    # phase-arm/sign coupling that GOBBY-4 section 21.2 had to verify by
+    # phase-arm/sign coupling that had to be verified by
     # hand.
     _scale = max(abs(g0_c) + 2.0 * abs(S_c), 1e-300)
     for _pa, _pb in ((0.0, np.pi / 2.0), (np.pi, np.pi / 2.0),
@@ -498,7 +494,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                 "phase delta = phi_A - phi_B does not match the chain. This "
                 "usually means the encoder's phase_arm and Bob's phase sign "
                 "have been changed independently -- they are coupled. See "
-                "GOBBY-4 section 21.2."
+                "the phase-arm convention."
             )
 
     # Per-pulse random phase.  Both sources are zero-mean Gaussians and
@@ -546,7 +542,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     # accumulated 25 deg of drift against the 6 deg of their stated
     # two-minute transfer and inflated the effective modulation error from
     # 3.31% to 8.60% -- the QBER read 13.52% against their 8.9%, and the
-    # whole excess was this.  See GOBBY-7c.
+    # whole excess was this.
     #
     # More pulses must mean a better estimate of the same experiment, not a
     # longer one.  With `run_duration` set, the simulated pulses are a
