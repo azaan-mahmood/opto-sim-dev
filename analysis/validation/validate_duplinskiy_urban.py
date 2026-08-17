@@ -29,7 +29,7 @@ Three registered assumptions
 2.  **215 Hz is not a dark count rate.**  15 Hz of it is the ID230's, and
     200 Hz is stray light through Bob's WDM filter at 1554.94 nm.  Same
     effect on the observable, uncorrelated counts inside the gate;
-    different mechanism.  This is the naming defect sec. 19 raised against
+    different mechanism.  This is the naming defect raised against
     Gobby's `DCR`, recorded rather than renamed here.
 
 3.  **13 dB is the LINE, not the link.**  Bob's ~2 dB is stated separately
@@ -65,7 +65,7 @@ clicks, so the block-to-block variance may exceed the binomial prediction.
 
 At 120 blocks a ratio beyond about 1.26 is resolvable.  This is the same
 afterpulse model registers A1 and A8 turn on, reached from a third
-direction after sec. 32's discriminating grid.
+direction after discriminating grid.
 
 References
 ----------
@@ -104,7 +104,7 @@ PAPER_SIFTED = 106.0
 
 # Measured sifted yield at this configuration, used only to budget runs.
 YIELD = 3.34e-5
-TARGET_SIFTED = 3000       # sec. 25's quotable standard
+TARGET_SIFTED = 3000       # quotable standard
 
 N_BLOCKS = 120
 BLOCK_SIFTED = 300         # -> sigma ~1.26 pp per block
@@ -285,7 +285,7 @@ def _stem(quick):
     They used to share the full run's paths, so `--quick` silently replaced
     a 1.08e9-pulse artifact with a 43M-pulse one, and `--figure-only` then
     redrew from the smoke data.  Nothing warned; the PNG simply became
-    under-powered.  This is sec. 32.6's note about `val_duplinskiy/` holding
+    under-powered.  This is note about `val_duplinskiy/` holding
     regenerated artifacts, with teeth.
     """
     return 'val_duplinskiy_urban--quick' if quick else 'val_duplinskiy_urban'
@@ -439,7 +439,7 @@ def run(quick=False, figure_only=False):
           f"{'bit-identical' if same else 'MOVED'}, "
           f"blocks partition the run: {partition}")
     if not same:
-        failures.append("block_size moved the frozen sec. 27.1 baseline; it "
+        failures.append("block_size moved the frozen baseline; it "
                         "must consume no RNG")
     if not partition:
         failures.append("the blocks do not sum to the run totals")

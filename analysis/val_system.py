@@ -4,18 +4,18 @@ System-Level Time-Bin BB84 QKD Demonstration
 Demonstrates that the independently validated components compose correctly
 by simulating BB84 QKD under combined impairments (birefringence, CD, PMD,
 attenuation) with realistic laser, modulator, interferometer, and SPAD
-models — rebuilt on the time-bin (phase-encoded) path per ARCH-1.
+models — rebuilt on the time-bin (phase-encoded) path per .
 
 Signal chain (per bit):
   CWLaser → MZM (Gaussian carve) → AsymmetricMZI(encoder, phi_A)
     → FiberRealization (birefringence + CD + PMD + attenuation)
-    → AsymmetricMZI(decoder, phi_B) → 2x SPAD (PHYS-3 sifting)
+    → AsymmetricMZI(decoder, phi_B) → 2x SPAD ( sifting)
 
 Why time-bin encoding?  The old Section-5 demo used polarization encoding
 between Ex/Ey measured with a classical linear APD at 10 mW and 1 MHz
 bandwidth — fully classical, ~13 orders above the single-photon regime,
-and outside the manuscript's own -20..0 dBm validity range (ARCH-1 in
-opto-sim-issues-and-fixes.md).  The rebuilt demo is genuine QKD: 0.1
+and outside the manuscript's own -20..0 dBm validity range.  The
+rebuilt demo is genuine QKD: 0.1
 photons/pulse, gated SPADs, basis sifting with non-detections discarded.
 A second consequence is physical: time-bin phase encoding is immune to
 slow birefringence — the two bins pass through the *same* (quasi-static,
@@ -115,7 +115,7 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
     integration window.
 
     `delay` (s, default `DELAY` = 5.8 ns) is the AMZI differential delay,
-    i.e. the time-bin separation.  It exists for the OPEN-3 *code-path
+    i.e. the time-bin separation.  It exists for the  *code-path
     check*: at the Gobby delay, chromatic dispersion cannot produce bin
     crosstalk (CD and the AMZI are both LTI and therefore commute, so CD
     cannot move the constructive/destructive port ratio at all; and even
@@ -133,7 +133,7 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
     per-point configuration.  See module docstring for the linearity
     shortcut that makes each point cheap without changing the physics.
 
-    Impairment toggles (used by `val_system_scenarios.py`, BLOCK-2):
+    Impairment toggles (used by `val_system_scenarios.py`, ):
     `dispersion` is the legacy alias enabling both CD and PMD; `cd` /
     `pmd` override it when not None.  `birefringence` and `attenuation`
     toggle the other two chain impairments.
@@ -260,7 +260,7 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
         click_c = spd_c.detect(P_c, t_gate)
         click_d = spd_d.detect(P_d, t_gate)
 
-        # --- Bob's bit (PHYS-3: no click is a non-detection, not a bit) ---
+        # --- Bob's bit (: no click is a non-detection, not a bit) ---
         if click_c and not click_d:
             bob_bit = 0
         elif click_d and not click_c:
@@ -270,7 +270,7 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
         else:
             bob_bit = -1
 
-        # --- Sifting (PHYS-3): same basis AND a click ---
+        # --- Sifting: same basis AND a click ---
         if basis_a == basis_b and (click_c or click_d):
             n_sifted += 1
             if bit_a != bob_bit:
@@ -359,7 +359,7 @@ def main():
     # ── Save CSV ────────────────────────────────────────────────────
     csv_path = os.path.join(OUT, f'val_system--seed{SEED}.csv')
     with open(csv_path, 'w') as f:
-        f.write(f"# System-level time-bin BB84 demo (ARCH-1 rebuild), "
+        f.write(f"# System-level time-bin BB84 demo ( rebuild), "
                 f"seed {SEED}, {NUM_BITS} pulses/point\n")
         f.write("# Chain: CWLaser(1 MHz) -> MZM carve -> encoder AMZI "
                 "-> FiberRealization -> decoder AMZI -> 2x SPAD\n")

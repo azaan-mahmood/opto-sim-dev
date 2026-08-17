@@ -1,4 +1,4 @@
-"""DUPL-2: the extinction term, and what it says about the afterpulse budget.
+""": the extinction term, and what it says about the afterpulse budget.
 
 Duplinskiy's calibration goal 3 is
 
@@ -61,7 +61,7 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_duplinskiy')
 SEED = 42
 DISTANCE = 50
 
-# sec. 25's quotable standard is 3000 sifted; 50 km yields ~3.1e-4 per pulse.
+# quotable standard is 3000 sifted; 50 km yields ~3.1e-4 per pulse.
 N_PULSES = 10_000_000
 # 50 km is the fixed distance here, so even the smoke run needs ~1M pulses
 # to clear a few hundred sifted bits.
@@ -81,7 +81,7 @@ def run_cell(n, eps, p_ap, km=DISTANCE, **kw):
 
 
 def controls(quick, failures):
-    print("\n  controls (sec. 29.3)")
+    print("\n  controls")
 
     # 1. power conservation
     worst = 0.0
@@ -108,7 +108,7 @@ def controls(quick, failures):
     print(f"    negative, epsilon = 0       : "
           f"{'bit-identical to the frozen baseline' if ok else 'BASELINE MOVED'}")
     if not ok:
-        failures.append("epsilon = 0 moved the frozen sec. 27.1 baseline")
+        failures.append("epsilon = 0 moved the frozen baseline")
 
     # 3. positive (G2)
     n = N_QUICK if quick else 1_000_000
@@ -126,7 +126,7 @@ def controls(quick, failures):
                         "below would be vacuous")
 
     # 4. sifted invariance -- see the note below for why this is conditional
-    print("\n    sifted-count invariance, sec. 29.3's fourth control:")
+    print("\n    sifted-count invariance, fourth control:")
     print("      cross-talk moves power between ports without removing any,")
     print("      so P(no click) = exp(-eta(1-e)P) exp(-eta e P) = exp(-eta P)")
     print("      and the sifted rate cannot depend on epsilon -- for a")
@@ -155,7 +155,7 @@ def controls(quick, failures):
     print("      -> the invariance holds exactly where the algebra applies, and")
     print("         breaks with real dead time: a click on the weak port takes")
     print("         that detector offline for 130 pulses at 10 MHz, so the two")
-    print("         are no longer independent.  sec. 29.3 states the control")
+    print("         are no longer independent.  states the control")
     print("         unconditionally; it is conditional on a memoryless detector.")
 
 
@@ -194,8 +194,8 @@ def _print_matrix(cells):
 
 
 def verdict(cells):
-    """Apply sec. 29.5's four decision rules, committed before the run."""
-    print("\n  sec. 29.5's decision rules, as written")
+    """Apply four decision rules, committed before the run."""
+    print("\n  decision rules, as written")
     q = {k: v[0] for k, v in cells.items()}
     s = {k: v[1] for k, v in cells.items()}
     paper = 0.02
@@ -237,7 +237,7 @@ def run(quick=False, figure_only=False):
     os.makedirs(OUT_DIR, exist_ok=True)
     failures = []
     print("=" * 74)
-    print("DUPL-2: finite analyser extinction, and the A1 discriminating test")
+    print(": finite analyser extinction, and the A1 discriminating test")
     print("=" * 74)
 
     if figure_only:
@@ -251,7 +251,7 @@ def run(quick=False, figure_only=False):
         _figure(cells, quick)
         return 0
 
-    print("  predicted before the run (sec. 29.5): neither clean reading of A1")
+    print("  predicted before the run: neither clean reading of A1")
     print("  lands on the paper's implied p_eff = 0.020 -- A1-true overshoots")
     print("  2x, A1-false undershoots 3x. Expect neither branch cleanly.")
 
@@ -277,8 +277,7 @@ def _stem(quick):
 
     Sharing paths with the full run meant `--quick` silently replaced a
     quotable figure with an under-powered one, and `--figure-only` then
-    redrew from the smoke data.  See sec. 35.6.
-    """
+    redrew from the smoke data.  """
     return ('val_duplinskiy_extinction--quick' if quick
             else 'val_duplinskiy_extinction')
 
@@ -346,7 +345,7 @@ def _figure(cells, quick=False):
 
     # Ring the two bars that reach the paper's rate, labelled with what
     # each attributes the error to.  Two or three words; the reasoning
-    # belongs in sec. 32.4, not on the axes.
+    # belongs in , not on the axes.
     for (i, j, colour, tag) in ((2, 0, 'crimson', 'afterpulsing only'),
                                 (1, 1, 'darkgreen', 'both terms')):
         x = xs[i] + (j - 1) * width
@@ -377,7 +376,7 @@ def _figure(cells, quick=False):
 def _write_csv(cells, quick=False):
     path = os.path.join(OUT_DIR, _stem(quick) + '.csv')
     with open(path, 'w') as fh:
-        fh.write("# DUPL-2 extinction discriminating run, "
+        fh.write("#  extinction discriminating run, "
                  "validate_duplinskiy_extinction.py\n")
         fh.write(f"# {DISTANCE} km, compensate=True, seed={SEED}\n")
         fh.write("afterpulse_prob,extinction_epsilon,qber,qber_sigma,n_sifted\n")

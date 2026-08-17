@@ -1,7 +1,6 @@
 """The DFB source through the time-bin (Gobby) chain.
 
-The polarisation chain has already been driven from the DFB device model
-(sec. 30.11): it turned out blind to everything the source adds except
+The polarisation chain has already been driven from the DFB device model: it turned out blind to everything the source adds except
 pulse energy, because the encoding depends only on the ratio Ey/Ex and the
 device emits one amplitude times a fixed Jones vector.
 
@@ -16,7 +15,7 @@ A path-matched AMZI interferes a pulse with a copy of ITSELF, delayed and
 then re-delayed so both routes accumulate the same total. At the
 interference bin the two copies carry the same chirp at the same point in
 the pulse, so a chirp common to both cancels exactly -- the same argument
-sec. 23.2 made for linewidth, and sec. 27.9's CD-commutation note made for
+made for linewidth, and CD-commutation note made for
 dispersion.
 
 So the prediction is **no significant QBER shift** when the analytic
@@ -25,7 +24,7 @@ rather than a small number.
 
 That prediction is worth testing rather than assuming, because it is the
 opposite of what the same source does in the polarisation chain, where
-sec. 36 measured its chirp turning PMD from nothing into +9.6 pp.
+measured its chirp turning PMD from nothing into +9.6 pp.
 
 Two controls, because a null needs them (G2)
 --------------------------------------------
@@ -35,12 +34,12 @@ Bit-identical, or the hook is not neutral.
 Positive: hand it a DFB pulse displaced from the centre of the window.
 That breaks the arrival alignment the gate expects, so QBER must move. If
 it does not, the source is not reaching the observable and the null above
-is vacuous -- which is exactly the trap sec. 27.3 fell into.
+is vacuous -- which is exactly the trap fell into.
 
 What is NOT covered
 -------------------
 Per-pulse energy spread. `bb84_duplinskiy` takes `pulse_energy_factors`
-because sec. 30.11 found energy was the one thing that mattered there;
+because found energy was the one thing that mattered there;
 `bb84_time_bin` has no equivalent, so this script compares pulse SHAPE and
 PHASE only. Adding it would be a separate change with its own controls.
 
@@ -228,7 +227,7 @@ def sweep(dt, n, centre, quick, failures):
     if worst < 3.0:
         print("    -> the chain does not see the source. A path-matched AMZI")
         print("       interferes the pulse with a copy of itself at the same")
-        print("       chirp phase, so a common chirp cancels -- sec. 23.2's")
+        print("       chirp phase, so a common chirp cancels's")
         print("       linewidth argument, reached from a different direction.")
     else:
         print("    -> the source DOES move this chain, which contradicts the")

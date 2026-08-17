@@ -1,12 +1,12 @@
 """
-System-Level Impairment Scenarios (BLOCK-2: Table 11 generator)
+System-Level Impairment Scenarios (: Table 11 generator)
 ===============================================================
 Generates the system-level impairment table for the time-bin BB84 chain:
 each row is an *explicit, self-contained* impairment configuration, run
 at a fixed distance with a recorded seed, and written to both a CSV and a
 LaTeX table.  Every row's exact config dict is printed and stored, and the
 LaTeX caption carries the generating script, seed, pulse count, and commit
-hash — the reproducibility contract BLOCK-2 demands (the old
+hash — the reproducibility contract  demands (the old
 `paperwork/tables/val_system_table.tex` was hand-written: no script, no
 seed, no CSV).
 
@@ -19,7 +19,7 @@ Chain (identical to `analysis/val_system.py`, which this imports):
     -> FiberRealization(birefringence + CD + PMD + attenuation)
     -> decoder AMZI (visibility V) -> 2x SPAD (ID230), Gobby defaults.
 
-Physics to expect (established by ARCH-1, panels A-E):
+Physics to expect (established by , panels A-E):
   - time-bin encoding is immune to slow birefringence: rows that only
     toggle birefringence/CD/PMD move the sifted *rate*, not the QBER;
   - QBER is moved by decoder visibility V (e_opt = (1-V)/2) and by dark
@@ -103,7 +103,7 @@ SCENARIOS = [
 
 BASE = dict(pulse_sigma=30e-12, mu=0.1)
 
-# --- OPEN-3: statistical power + the CD code-path check -------------------
+# -
 # The original table had four rows that were bit-identical because they were
 # *the same single error* (1/86).  The 95% CI on 1/86 runs 0.03%-6.3%, so any
 # effect below ~6 pp was invisible and the "impairment X does nothing" rows
@@ -169,13 +169,13 @@ def run_to_target(config, target_sifted, ceiling, seed,
     3000).  Each retry re-estimates the fraction from the largest run so
     far, which is a much better estimator than the pilot.
 
-    Timing note, re-measured GOBBY-7d: `simulate_point` runs at ~118,000
+    Timing note, re-measured : `simulate_point` runs at ~118,000
     pulses/s (8.5 us/pulse) at 100 km, with a sifted fraction of 4.8e-5.
     So 3,000 sifted needs ~62.5e6 pulses/row, about 0.15 h/row and **1.2 h
     for eight rows** -- comfortably inside the 400e6 ceiling.
 
     The figure this replaces (~35.8 us/pulse, "budget ~5 h") was measured
-    before GOBBY-1 corrected the link budget and before the SPAD detection
+    before  corrected the link budget and before the SPAD detection
     fix, and was stale by about 4x.  Re-measure before trusting any timing
     note in this file.
     """
@@ -225,7 +225,7 @@ def check_statistical_power(rows, min_sifted, allow_underpowered):
         f"enabled come out bit-identical because they contain the same one "
         f"or two errors -- the table then cannot distinguish 'this "
         f"impairment does nothing' from 'this impairment was never applied' "
-        f"(see OPEN-3 in opto-sim-issues-and-fixes.md).\n"
+        f"(md).\n"
         f"Fix: re-run with --target-sifted {TARGET_SIFTED_DEFAULT} (grows "
         f"the pulse count per row), or raise --bits.\n"
         f"To emit anyway for a smoke test, pass --allow-underpowered."
@@ -300,7 +300,7 @@ def main():
                              f'budget. Recommended: {TARGET_SIFTED_DEFAULT} '
                              f'(sigma ~0.2 pp). NOTE: this chain runs at '
                              f'~8.5 us/pulse -- budget '
-                             f'~5 h for 8 rows. See OPEN-3.')
+                             f'~5 h for 8 rows. ')
     parser.add_argument('--ceiling', type=int, default=CEILING_DEFAULT,
                         help='Hard cap on pulses per row under '
                              '--target-sifted (default 400M)')
@@ -385,11 +385,11 @@ def main():
               "  -> INCONCLUSIVE: raise --code-path-bits", flush=True)
         code_path = (off, on, sig, drop)
 
-    # OPEN-3 guard: checked before any file is written.
+    #  guard: checked before any file is written.
     check_statistical_power([(n, r['n_sifted']) for n, _, r, _, _ in rows],
                             args.min_sifted, args.allow_underpowered)
 
-    # --- Provenance (OPEN-5) -------------------------------------------
+    # --- Provenance -------------------------------------------
     # `NUM_BITS` is `args.bits`, and under --target-sifted NO run uses it:
     # the per-row count comes from `run_to_target`.  Stamping it anyway put
     # "bits: 2000000" on an artifact whose own Pulses column read 95,963,904.
@@ -412,7 +412,7 @@ def main():
     csv_path = os.path.join(OUT, f'val_system_scenarios--seed{SEED}.csv')
     with open(csv_path, 'w') as f:
         f.write(f"# Impairment scenarios, time-bin BB84 chain "
-                f"(BLOCK-2, replaces hand-written Table 11)\n")
+                f"(, replaces hand-written Table 11)\n")
         f.write(f"# script: analysis/val_system_scenarios.py  seed: {SEED}  "
                 f"{BUDGET}  distance: {DIST} km  commit: {COMMIT}\n")
         f.write(f"# chain: CWLaser -> MZM carve -> encoder AMZI -> "

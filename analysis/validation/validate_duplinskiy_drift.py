@@ -1,6 +1,6 @@
 """How far Duplinskiy's polarisation channel can drift before it needs recalibrating.
 
-Polarisation encoding has few device-level impairments -- §30.11 showed the
+Polarisation encoding has few device-level impairments
 chain is blind to everything a real source adds except pulse energy -- but
 in practice it is the least stable encoding, because the channel's Jones
 matrix moves with temperature and mechanical stress and the receiver's
@@ -69,7 +69,7 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_duplinskiy')
 SEED = 42
 T0 = 25.0
 
-# Sized for >= 3000 sifted bits per cell (sec. 25's standard).  Measured
+# Sized for >= 3000 sifted bits per cell (standard).  Measured
 # yields: ~1.7e-3 sifted per pulse at 10 km, ~4e-4 at 50 km.
 N_PULSES = {0: 1_400_000, 10: 2_000_000, 50: 10_000_000}
 # Quick mode is sized so every distance clears the 250 threshold below.
@@ -112,7 +112,7 @@ def controls(failures):
     print(f"    negative, defaults          : "
           f"{'bit-identical to the frozen baseline' if ok else 'BASELINE MOVED'}")
     if not ok:
-        failures.append("the new parameters moved the frozen sec. 27.1 baseline "
+        failures.append("the new parameters moved the frozen baseline "
                         "at their defaults")
 
     # Matched drift: compensation is still exact, so the response table must
@@ -166,7 +166,7 @@ def temperature_curve(km, quick, failures):
             tol = dT
         print(f"    {dT:7.3f}   {res:8.4f} {s:8d} {e:7d}   "
               f"{100 * q:6.2f} +/- {sig * 100:.2f} %")
-        # 3000 is sec. 25's quotable standard.  The quick threshold is well
+        # 3000 is quotable standard.  The quick threshold is well
         # below the ~500 that mode yields, so it catches a broken run
         # without tripping on ordinary Poisson scatter around the mean.
         if s < (250 if quick else 3000):
@@ -303,9 +303,7 @@ def _stem(quick):
     """Smoke runs write to their own files.
 
     Sharing paths with the full run meant `--quick` silently replaced a
-    quotable figure with an under-powered one, and nothing warned.  See
-    sec. 35.6.
-    """
+    quotable figure with an under-powered one, and nothing warned.  """
     return 'val_duplinskiy_drift--quick' if quick else 'val_duplinskiy_drift'
 
 

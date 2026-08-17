@@ -1,12 +1,12 @@
 """The birefringence swing: the other half of a Level-3 pair.
 
-Section 26.6 of the issue log demonstrated the **null** side in the Gobby
-time-bin chain: birefringence perturbs the field hard
+The **null** side is demonstrated in the time-bin chain: birefringence
+perturbs the field hard
 (max|dE|/|E| = 1.679) while QBER stays *bit-identical* across 96e6 pulses.
 That is what a phase-encoded, path-matched interferometer should do -- the
 interfering routes share the polarisation rotation, so it cancels.
 
-But a null alone cannot validate an impairment model.  Section 26.6 says so
+But a null alone cannot validate an impairment model.  says so
 itself, and names the successor:
 
     "It is not a validation of the impairment models at the QBER level.
@@ -26,7 +26,7 @@ What a Level-3 pair is
 The **same unchanged impairment model** must produce **opposite required
 outcomes** in two chains:
 
-    birefringence   ->  exact NULL in Gobby      (sec. 26.6, done)
+    birefringence   ->  exact NULL in Gobby      (, done)
                     ->  large SWING in Duplinskiy (here)
 
 A model that silently no-ops passes the null and fails the swing.  A model
@@ -36,12 +36,12 @@ the sum of its halves.
 
 Scope: birefringence only
 -------------------------
-Section 26.6 also lists CD and PMD, and notes they were "hardcoded off"
-in this chain.  DUPL-1 exposed both -- but section 27.3 then showed they
+also lists CD and PMD, and notes they were "hardcoded off"
+in this chain.   exposed both -- but then showed they
 are **inert here for a different reason**: this chain evaluates a single
 time sample, and CD and PMD act on a time-resolved field.  So they cannot
 be tested by this sweep, and claiming otherwise would repeat exactly the
-mistake section 27.3 caught.  Birefringence is the one of the three that a
+mistake caught.  Birefringence is the one of the three that a
 single-sample polarisation observable can see.
 
 References
@@ -65,10 +65,9 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_duplinskiy')
 SEED = 42
 TARGET_SIFTED = 3000
 
-# Measured sifted yield per pulse, used to budget each cell to the sec. 25
-# standard.  Throughput is ~430k pulses/s after PERF-2's 8-outcome
+# Measured sifted yield per pulse, used to budget each cell to the # standard.  Throughput is ~430k pulses/s after 's 8-outcome
 # precompute, so even the 100 km cells cost about four minutes each --
-# an earlier estimate of two hours used the pre-PERF-2 figure of 30k/s.
+# an earlier estimate of two hours used the pre- figure of 30k/s.
 YIELD = {10: 1.72e-3, 50: 3.38e-4, 100: 3.25e-5}
 DISTANCES = (10, 50, 100)
 
@@ -81,7 +80,7 @@ def budget(km, quick):
 def field_perturbation(km):
     """How hard birefringence actually hits the field at this distance.
 
-    Section 26.6 needed this on the Gobby side to show its null was
+    needed this on the Gobby side to show its null was
     physics rather than a config key being ignored.  The same number is
     worth having here, as the common reference: it is the *same*
     perturbation that this chain turns into a 20+ pp swing and Gobby
@@ -105,8 +104,8 @@ def run(quick=False):
     print("Duplinskiy: the birefringence swing, against Gobby's null")
     print("=" * 74)
     print(f"  seed {SEED}, target {TARGET_SIFTED} sifted per cell "
-          f"(sec. 25's standard)")
-    print("  Gobby's null side, for reference (sec. 26.6, 100 km, 96e6 pulses):")
+          f"(standard)")
+    print("  Gobby's null side, for reference (, 100 km, 96e6 pulses):")
     print("    no impairments 2.91 +/- 0.27 %, + birefringence 2.92 +/- 0.27 %")
     print("    -- bit-identical: same sifted, same errors")
 
@@ -155,7 +154,7 @@ def run(quick=False):
             print(f"  - {f}")
         return 1
     print("[PASS] birefringence swings the polarisation observable at every")
-    print("       distance, completing the pair against sec. 26.6's null")
+    print("       distance, completing the pair against null")
     return 0
 
 
@@ -163,9 +162,7 @@ def _stem(quick):
     """Smoke runs write to their own files.
 
     Sharing paths with the full run meant `--quick` silently replaced a
-    quotable figure with an under-powered one, and nothing warned.  See
-    sec. 35.6.
-    """
+    quotable figure with an under-powered one, and nothing warned.  """
     return ('val_duplinskiy_birefringence--quick' if quick
             else 'val_duplinskiy_birefringence')
 

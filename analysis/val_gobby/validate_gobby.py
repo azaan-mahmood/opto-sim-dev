@@ -25,17 +25,13 @@ from src.analytic.gobby_model import T_INT
 GOBBY_DIST_KM = np.array([4.4, 65.0, 101.0, 122.0])
 GOBBY_QBER = np.array([3.3, 3.3, 6.0, 8.9])  # percent
 
-# --- Gobby's link budget (GOBBY-1) ---------------------------------------
+# --- Gobby's link budget --------------------------------------------------
 # Every value in this block is taken from [1].  None of them is fitted.
 #
-# The previous parameterisation was wrong at the link-budget level, which
-# is documented as GOBBY-1 in section 18 of opto-sim-issues-and-fixes.md.
-# It ran alpha = 0.182, eta = 0.10 and a 1 ns gate against a 15 Hz DCR:
-# the signal came out 3.68x too high and the error rate 57x too low, so
-# the error/signal ratio -- the only quantity QBER measures -- was off by
-# 209x.  That, not missing physics, is why the 9th-pass sweep came out
-# flat (slope +0.011 pp/100 km) and could never have reproduced Gobby's
-# rise from 3.3 % to 8.9 %.
+# QBER measures the error/signal ratio and nothing else, so an error in
+# either term propagates directly into it.  These five parameters set that
+# ratio, and getting them from the paper rather than from convenient
+# defaults is what makes the sweep a prediction.
 LAM = 1550e-9
 ALPHA_dB = 0.2         # paper's specified fibre attenuation
 MU = 0.1               # photons per clock cycle leaving Alice
@@ -71,12 +67,10 @@ ETA_BOB = 0.045
 #
 # The two are deliberately NOT split.  Their sum is what Gobby measured;
 # splitting them would add a parameter this replication cannot
-# independently constrain.  Note that the larger half is stray light, so
-# calling this a "dark count rate" is a category error -- the 9th pass
-# made exactly that mistake, fitted 1,788 Hz, and described it as "119x
-# the ID230 spec".  That characterisation is withdrawn (section 18.3):
-# corrected for the 3.68x signal error the required rate is 4.85e-7,
-# within 1.75x of the measured 8.5e-7, and no fit is needed at all.
+# independently constrain.  The larger half is stray light, so this is not
+# a dark count rate and must not be called one: a detector-spec name on a
+# lumped term invites someone to compare it against a datasheet and
+# conclude the detector is anomalous.
 P_E = 8.5e-7
 
 # The SPAD model expresses background counts as a rate, so convert once
@@ -89,40 +83,28 @@ BACKGROUND_RATE_HZ = P_E / GATE_WIDTH
 # Flagged because it is the second of only two non-Gobby inputs here.
 DEAD_TIME = 13e-6
 
-# Afterpulsing is the first, and it is the open question of section 18.5.
-# Gobby's QBER carries a third error source beyond the dark count and the
-# stray light, worth 2.9-4.2 pp and roughly distance-independent (see the
-# residual column in section 18.4).  Afterpulsing is the obvious
-# candidate: it is already in the SPAD model and was measured here in
-# isolation at e_ap = 2.262 +/- 0.176 % for afterpulse_prob = 0.05.
+# Afterpulsing is the second, and it is set to zero for this replication
+# on the paper's own evidence, not on a measurement of ours:
 #
-# 0.05 is the ID230 datasheet value, used as-is.  It is NOT fitted, and
-# it must not become fitted -- tuning it against Gobby's QBER would
-# reintroduce precisely the free parameter GOBBY-1 removes, and would
-# make the 122 km point a fit again instead of a prediction.  Pass
-# --afterpulse 0 for the control run that isolates the link budget.
+#   * Fig. 3's dashed curve starts near zero, where afterpulsing at the
+#     ID230 rate would put it at p_ap/2 = 2.5 %;
+#   * the stated P_e = 8.5e-7 is dark count plus stray light, with no
+#     afterpulse term in it;
+#   * the closing summary enumerates three error mechanisms and
+#     afterpulsing is not among them.
 #
-# RESOLVED (GOBBY-7b): the value above is 0, not the ID230 datasheet 0.05.
+# That is physically consistent with the apparatus: at 2 MHz gating with
+# a 13 us dead time the detector is off during most of the interval over
+# which trapped carriers release.
 #
-# §19.5 already settled this from the paper, on three independent grounds:
-# Fig. 3's dashed curve starts at ~0 where afterpulsing would put it at
-# p_ap/2 = 2.5 %; the stated P_e = 8.5e-7 is dark + stray with no
-# afterpulse term; and the closing summary enumerates three mechanisms,
-# none of them afterpulsing.  Physically consistent too -- at 2 MHz gating
-# with a 13 us dead time the detector is off while trapped carriers
-# release.
+# Carrying an afterpulse floor *and* the modulation error would double
+# count -- both would be supplying the same measured 3.3 %, and the 0 km
+# QBER comes out about 2.5 pp high, which is exactly the afterpulse term.
 #
-# It was nonetheless left at 0.05, because until GOBBY-6 afterpulsing was
-# the only thing in the chain supplying a floor at all.  Now that the
-# modulation error it was standing in for is implemented, carrying both
-# DOUBLE-COUNTS: on the old default the 0 km QBER read 5.806 % against
-# Gobby's 3.3 %, the excess being exactly the 2.5 % §19.5 predicts.  That
-# is the "pattern warning, third occurrence" §19.5 records against itself.
-#
-# Ownership is unchanged and correct: `afterpulse_prob` is a SPAD
-# parameter (spad.py, default 0.05 = ID230), and this constant is the
-# replication-level override -- a claim about Gobby's apparatus, not about
-# SPADs in general.  The datasheet value stays reachable via --afterpulse.
+# Ownership: `afterpulse_prob` is a SPAD parameter (spad.py, default 0.05
+# = ID230).  This constant is the replication-level override, a claim
+# about Gobby's apparatus rather than about SPADs in general, and the
+# datasheet value stays reachable through --afterpulse.
 AFTERPULSE_PROB = 0.0
 
 # Visibility is an OUTPUT of this link budget, not an input:
@@ -134,7 +116,7 @@ AFTERPULSE_PROB = 0.0
 # counts *produce* the visibility degradation, so injecting a measured
 # visibility as well applies the same physics twice.  The old
 # VISIBILITY = 0.934 did exactly that, and was wrong in kind rather than
-# merely in value (section 18.4).  The decoder is therefore ideal and
+# merely in value.  The decoder is therefore ideal and
 # --visibility survives only as a diagnostic override.
 #
 # The paper separately states a DEVICE bound: "the classical interference
@@ -150,10 +132,10 @@ AFTERPULSE_PROB = 0.0
 # stated bound is real residual imperfection (VOA balance, polarisation
 # extinction, residual path mismatch) worth at most (1 - 0.999)/2 = 0.050 %
 # QBER, i.e. <=1.5 % of the 3.3 % floor.  Not modelled, for the same reason
-# linewidth is carried but reported as negligible -- see GOBBY-7.
+# linewidth is carried but reported as negligible.
 VISIBILITY = 1.0
 
-# --- Modulation error (GOBBY-2 section 19.1 / GOBBY-6) -------------------
+# --- Modulation error ----------------------------------------------------
 # Gobby decompose the QBER additively: a constant modulation-error floor
 # plus the distance-dependent erroneous counts.  Fig. 3's arrow gives the
 # floor as 3.3 %; the paper's closing summary names phase modulation as
@@ -181,7 +163,7 @@ VISIBILITY = 1.0
 # paper names the mechanism and reports its aggregate size; no separately
 # measured value exists to recover, because 3.3 % *is* the measurement of a
 # hand-biased apparatus.  It remains not a measurement of their modulator
-# and must not be presented as one.  See GOBBY-7.
+# and must not be presented as one.
 E_MOD = 0.033
 
 
@@ -227,21 +209,19 @@ def _bias_for_aggregate(e_mod, rate_rad_s, duration_s):
 # NOTE: defined after PHASE_DRIFT_RAD_S / KEY_TRANSFER_S below, which is why
 # the assignment sits further down rather than here.
 
-# DIAGNOSTIC ONLY -- the jitter path is a recorded NEGATIVE RESULT, not an
-# alternative parameterisation.  Drive noise was tested as the source of the
-# 3.3 % floor and ruled out twice over (GOBBY-7 §24.1, §24.4):
+# DIAGNOSTIC ONLY, and not the mechanism for this replication.  Per-pulse
+# drive jitter large enough to produce the stated floor would need
+# 21.17 deg = 0.457 V = 11.8 % of V_pi, one to two orders above what drive
+# electronics deliver.  The paper also attributes the floor to "slight
+# inaccuracies of the phase modulator biases", which is a setting that is
+# wrong and stays wrong, not noise that is fresh every pulse.
 #
-#   * it would need 21.17 deg = 0.457 V = 11.8 % of V_pi, one to two orders
-#     above what drive electronics deliver;
-#   * measured head to head at 0 km, static bias gives 3.253 +/- 0.258 %
-#     against jitter's 3.579 +/- 0.267 %, with the stated floor at 3.300 %.
-#
-# Kept so the negative control stays reachable and re-runnable:
+# Reachable so the alternative can be run deliberately:
 #     simulate_qber(0, N, phase_error_rad=0.0, phase_noise_rad=PHASE_NOISE_RAD)
 # Never a default here or in any component.
 PHASE_NOISE_RAD = math.sqrt(-2.0 * math.log(1.0 - 2.0 * E_MOD))  # jitter 21.17
 
-# --- Interferometer arm-length drift (GOBBY-7) ---------------------------
+# --- Interferometer arm-length drift -------------------------------------
 # The second mechanism the paper names, and the one they MEASURE:
 #
 #   "A drift in the phase of the interferometer, due to variations in the
@@ -265,16 +245,16 @@ KEY_TRANSFER_S = 120.0                      # "averaged over a 2-minute key tran
 # The static bias, solved so that bias + drift together reproduce the stated
 # 3.3 % over the stated transfer duration.  See `_bias_for_aggregate`.
 #
-# This corrects a double-count introduced in GOBBY-7: PHASE_ERROR_RAD was
-# `arccos(1 - 2*E_MOD)` = 20.93 deg, the bias-ONLY solution, while drift was
-# separately applied on top.  Harmless while runs were ~1 s (drift ~0.05 deg),
-# but once run_duration was set to the paper's own 120 s it put the 0 km floor
-# at 4.30 % against their 3.3 %.  Same category of error as the afterpulse
-# double-count in §19.5 -- two mechanisms, one measured aggregate, counted
-# twice.  See GOBBY-7c.
+# Bias and drift must be solved TOGETHER.  The paper reports one aggregate
+# floor and names two mechanisms contributing to it, so taking the
+# bias-only solution `arccos(1 - 2*E_MOD)` and then applying drift on top
+# counts the same measurement twice.  The error is invisible on short runs,
+# where accumulated drift is a fraction of a degree, and grows with
+# duration: over the paper's own 120 s transfer it puts the 0 km floor
+# about 1 pp high.
 PHASE_ERROR_RAD = _bias_for_aggregate(E_MOD, PHASE_DRIFT_RAD_S, KEY_TRANSFER_S)
 
-# --- Laser linewidth (GOBBY-6) -------------------------------------------
+# --- Laser linewidth -----------------------------------------------------
 # Gobby state no linewidth, and in a path-matched scheme they do not need
 # to: the S-L and L-S routes traverse the same total path, so the
 # frequency-noise term cancels and linewidth couples only through the
@@ -285,12 +265,12 @@ PHASE_ERROR_RAD = _bias_for_aggregate(E_MOD, PHASE_DRIFT_RAD_S, KEY_TRANSFER_S)
 # run from several hundred kHz to ~10 MHz (current parts cite 2-3.2 MHz);
 # 2004 hardware sits at the wider end.  A documented ASSUMPTION with a
 # cited range -- never derived, never fitted.  Default mismatch 0 keeps it
-# inert; see the contribution budget in GOBBY-6 for what it is worth.
+# inert.
 LINEWIDTH = 3.0e6          # Hz, mid-range DFB assumption
 PATH_MISMATCH = 0.0        # s, residual after trimming (0 = perfectly trimmed)
 
 
-# --- OPEN-2: statistical power guards ------------------------------------
+# --- Statistical power guards --------------------------------------------
 # A flat pulse budget is badly matched to this sweep: the sifted fraction
 # runs from ~1.1e-3 at 0 km to ~1e-5 at 122 km, so a flat count
 # over-samples the short end and starves the long end -- which is the only
@@ -306,7 +286,7 @@ PATH_MISMATCH = 0.0        # s, residual after trimming (0 = perfectly trimmed)
 MIN_SIFTED = 500
 TARGET_SIFTED_DEFAULT = 3000      # sigma ~ 0.5 pp at QBER ~8 %
 
-# Both raised for the GOBBY-1 parameterisation.  Correcting the link
+# Both raised for the corrected link budget.  Correcting the link
 # budget cut the signal by 3.68x, so every pulse count in this sweep grew
 # by about the same factor:
 #   - PILOT_BITS 200k gave only ~2 sifted bits at 122 km, far too noisy a
@@ -330,11 +310,10 @@ def signal_click_prob(dist_km):
     definition, already covered by
     `test_analytic_gobby.py::test_mu_eff_is_derived_not_fitted`.
 
-    GOBBY-7 §24.5: this factor was **missing**, which put this function
-    41% above what the chain delivers and made every quantity built on it
-    (`model_qber`, `predicted_visibility`) optimistic.  Restoring it is not
-    fitting -- `T_INT` is derived from the stated split ratio, and the same
-    value already sits in `src/analytic/gobby_model.py` as `MU_EFF`.
+    Omitting it puts this function 41% above what the chain delivers and
+    makes every quantity built on it (`model_qber`,
+    `predicted_visibility`) optimistic.  It is derived from the stated
+    split ratio, not fitted.
 
     ACCURACY AGAINST THE MONTE CARLO, measured with dead time and
     afterpulsing off:
@@ -344,12 +323,6 @@ def signal_click_prob(dist_km):
         65 km                  0.985 +/- 0.031   [1,025 sifted]
 
     Agreement to ~2%, consistent with unity across the range.
-
-    It read 0.954 / 1.012 / 0.994 until the SPAD detection probability was
-    corrected: `spad.detect` computed `eta*(1 - exp(-mu))` where photons are
-    detected independently and the right form is `1 - exp(-eta*mu)`.  That
-    was the residual disagreement this docstring previously recorded as
-    bounded-but-unattributed, and it is now closed (GOBBY-7b §24.5).
 
     Detector dead time is a further ~3% at 0 km, falling to nothing at
     range as click rates drop.  That is deliberately NOT carried here: a
@@ -364,7 +337,7 @@ def predicted_visibility(dist_km, p_e=P_E):
     """Fringe visibility as Gobby's own closed form, V = S/(S + 2*P_e).
 
     This is an *output* of the link budget, not a tunable input -- see the
-    VISIBILITY note above and section 18.4.  Reproduces both visibilities
+    VISIBILITY note above.  Reproduces both visibilities
     the paper states: >0.99 at 65 km (0.9903 here) and 0.884 at 122 km
     (0.8809 here).
 
@@ -405,20 +378,14 @@ def model_qber(dist_km, p_e=P_E, visibility=VISIBILITY,
     ------------------------------------------------------------------
     THIS IS AN APPROXIMATION.  THE MONTE CARLO IS AUTHORITATIVE.
     ------------------------------------------------------------------
-    Do NOT fit detector parameters against this function.  The 8th pass
-    did exactly that and it produced 7,593 Hz, which made the Monte Carlo
-    overshoot to 17.5 % at 122 km against Gobby's 8.9 %.  Fitting the same
-    endpoint against the MC directly gave 1,788 Hz and reproduced the
-    sweep to a mean residual of 0.36 pp -- and GOBBY-1 then showed that
-    *both* numbers were artifacts of a mis-specified link budget, and that
-    the paper's own measured P_e removes the need to fit anything.  The
-    accuracy figures previously quoted here were measured against that
-    superseded parameterisation and have been dropped rather than
-    restated; they described a chain that no longer exists.
+    Do NOT fit detector parameters against this function.  It is a
+    first-order closed form and it does not track the Monte Carlo closely
+    enough to carry a fit: a parameter tuned to make this expression match
+    the data will not make the chain match it.  Every parameter here comes
+    from the paper, which is what makes the sweep a prediction.
 
-    The structural fix in this function -- weighting every click channel
-    into a single ratio -- stands on its own and is independent of the
-    parameter question (section 18.6).  The form it replaced,
+    Weighting every click channel into a single ratio is what makes it
+    correct in its limits.  The form it replaced,
     `(P_dark/2)/(p_signal + P_dark) + QBER_opt`, had three defects: it
     counted only one detector's background rate, halved the background
     error term that should be whole, and bolted the misalignment on as an
@@ -470,10 +437,9 @@ def gobby_nearest_measured(dist_km):
     four times rather than four data points.
 
     Reporting those as "measured" is the same species of defect as
-    BLOCK-1, one step milder: a derived column presented as experimental
-    data.  It is not a copy-paste slip here -- the values do come from the
-    paper -- but a reader comparing nine rows would believe there are nine
-    measurements to disagree with, and there are four.
+    a derived column presented as experimental data.  The values do come
+    from the paper, but a reader comparing nine rows would believe there
+    are nine measurements to disagree with, and there are four.
 
     Returning the *published* pair rather than a bare flag matters: at
     100 km np.interp gives 5.93 while what Gobby actually measured is
@@ -491,16 +457,16 @@ def gobby_is_measured(dist_km):
     return gobby_nearest_measured(dist_km) is not None
 
 
-# --- Cross-checks against the paper's prose (GOBBY-7) --------------------
+# --- Cross-checks against the paper's prose ------------------------------
 # Both bounds below come from the text rather than Fig. 3, so they test the
 # budget against something it was not built from.  They are REPORTED, never
 # used to adjust a parameter: tuning P_E until the 65 km check passed would
-# make it fitted, which is exactly what GOBBY-1 removed.
+# make it fitted.
 
 # "the contributions due to detector dark counts and stray light are less
 # than 0.4%" for fibre lengths up to 65 km.
 #
-# READING, settled in GOBBY-7d: the sentence names BOTH terms, so the bound
+# READING: the sentence names BOTH terms, so the bound
 # covers P_E in full (3.2e-7 dark + 5.3e-7 stray).  Reading it as the dark
 # term alone would let us pass comfortably -- 0.184% at 65 km, crossing only
 # at 82 km -- but the text does not support that, and taking it would be
@@ -557,14 +523,14 @@ def print_paper_cross_checks(p_e=P_E, visibility=VISIBILITY, s_65=None):
             lo, hi = (mid, hi) if share < ERRONEOUS_BOUND_PCT else (lo, mid)
         print(f"           over by {v / ERRONEOUS_BOUND_PCT - 1.0:+.0%} at the "
               f"endpoint; holds to {lo:.1f} km.")
-        # Resolved in GOBBY-7f: propagate the paper's OWN 122 km visibility
-        # back to 65 km using only its own alpha and P_e -- no part of this
-        # model enters -- and see where it lands against its own bound.
+        # Propagate the paper's OWN 122 km visibility back to 65 km using
+        # only its own alpha and P_e -- no part of this model enters -- and
+        # see where it lands against its own bound.
         v122 = 0.884
         s122_req = v122 * 2.0 * p_e / (1.0 - v122)
         s65_req = s122_req * 10.0 ** (ALPHA_dB * (122.0 - 65.0) / 10.0)
         share_paper = 100.0 * p_e / (s65_req + 2.0 * p_e)
-        print(f"           CAUSE (GOBBY-7f): the paper's own V(122) = {v122} "
+        print(f"           CAUSE: the paper's own V(122) = {v122} "
               f"implies S(122) = {s122_req:.3e},")
         print(f"           hence S(65) = {s65_req:.3e} and a share of "
               f"{share_paper:.3f}% -- above its own bound.")
@@ -577,13 +543,13 @@ def print_paper_cross_checks(p_e=P_E, visibility=VISIBILITY, s_65=None):
               f"BOUND, not a measurement --")
         print(f"           the two simply cannot both be tight, and we match "
               f"the measured one.")
-        print(f"           NOT tuned -- moving P_E would re-fit what GOBBY-1 "
-              f"unfitted.")
+        print("           NOT tuned -- moving P_E would make it a fitted "
+              "parameter.")
     if s_65 is None:
         print(f"           (first-order S agrees with the chain to ~2% "
               f"since the missing T_INT and")
-        print(f"           the SPAD Poisson form were fixed (GOBBY-7b "
-              f"§24.5), so the number above")
+        print(f"           the SPAD Poisson form are both correct, so the "
+              f"number above")
         print(f"           is trustworthy.)")
     dev_ok = visibility >= DEVICE_VISIBILITY_BOUND
     print(f"    [{'OK  ' if dev_ok else 'MISS'}] device visibility = "
@@ -633,7 +599,6 @@ def simulate_qber(dist_km, num_bits, seed=42, verbose=False,
         # an artefact of the wrong interferometer, not a property of the
         # experiment.  Measured: balanced gates mu/2 (ratio 2.0 with dead
         # time off), polarisation-multiplexed gates the full mu (1.0).
-        # See GOBBY-2 section 19.7 in opto-sim-issues-and-fixes.md.
         interferometer='polarisation_multiplexed',
         split_ratio=SPLIT_RATIO,
         phase_error_rad=phase_error_rad,
@@ -650,7 +615,7 @@ def simulate_qber(dist_km, num_bits, seed=42, verbose=False,
         # the QBER at 13.52 % against a stated 8.9 %.  The pulse count at
         # long range therefore EXCEEDS what the apparatus sent in 120 s,
         # deliberately: these are more samples of the same two-minute
-        # experiment, not a longer one.  See GOBBY-7c.
+        # experiment, not a longer one.
         phase_drift_rad_s=phase_drift_rad_s,
         run_duration=run_duration,
         seed=seed, verbose=verbose,
@@ -707,7 +672,7 @@ def run_to_target(dist_km, target_sifted, ceiling, seed, visibility,
 
 
 def check_statistical_power(rows, min_sifted, allow_underpowered):
-    """Refuse to emit a table whose rows cannot support a claim (OPEN-2).
+    """Refuse to emit a table whose rows cannot support a claim.
 
     `rows` is a sequence of (distance_km, n_sifted).  Raises unless every
     row clears `min_sifted`, or the caller explicitly opts out.
@@ -727,9 +692,7 @@ def check_statistical_power(rows, min_sifted, allow_underpowered):
         f"fewer than {min_sifted} sifted bits ({detail}).\n"
         f"A row below {min_sifted} cannot resolve a Gobby-scale QBER "
         f"difference at 3 sigma, so the artifact would look like a result "
-        f"without being one (see OPEN-2 in opto-sim-issues-and-fixes.md; "
-        f"the 122 km point once landed within 0.6 pp of the published "
-        f"value on 12 sifted bits, purely by chance).\n"
+        f"without being one: at such counts a point can land within a fraction of a pp of the published value by chance.\n"
         f"Fix: re-run with --target-sifted {TARGET_SIFTED_DEFAULT} (grows the "
         f"pulse count per distance), or raise --bits.\n"
         f"To emit anyway for a smoke test, pass --allow-underpowered."
@@ -742,7 +705,7 @@ def _stem(base, reduced):
     A run that opts out of the statistical-power guard is by definition
     not quotable, so it must not be able to replace an artifact that is.
     Before this, `--allow-underpowered` wrote straight over
-    `val_gobby_table.tex`, which is the same hole OPEN-2 opened with: a
+    `val_gobby_table.tex`: a
     smoke table sitting in the repository looking like a result.  The
     guard refusing to write was the only thing standing in the way, and
     the flag exists precisely to switch that off.
@@ -828,7 +791,7 @@ def run_validation(num_bits=200000, seed=42, distances=None,
     sim_sifted = np.array(sim_sifted)
     sim_pulses = np.array(sim_pulses)
 
-    # OPEN-2 guard: refuse to emit an artifact that looks like a result
+    # Power guard: refuse to emit an artifact that looks like a result
     # but cannot support one.  Checked before any file is written.
     check_statistical_power(list(zip(sim_dist, sim_sifted)), min_sifted,
                             allow_underpowered)
@@ -851,7 +814,7 @@ def run_validation(num_bits=200000, seed=42, distances=None,
         Written into every artifact because the single most important
         fact about these numbers is which of them came from the paper
         (all the link parameters) and which did not (two detector
-        parameters) -- see GOBBY-1, section 18.
+        parameters).
         """
         c = comment
         lines = [
@@ -869,7 +832,7 @@ def run_validation(num_bits=200000, seed=42, distances=None,
             f"  afterpulse_prob = {afterpulse_prob}   dead_time = "
             f"{DEAD_TIME*1e6:g} us   [ID230 datasheet]",
             "  Afterpulsing is the candidate for the paper's acknowledged",
-            "  third error source (section 18.4 residual: 2.9-4.2 pp, roughly",
+            "  third error source (residual 2.9-4.2 pp, roughly",
             "  distance-independent; measured here in isolation at 2.26 %).",
             "  It is used at its datasheet value and MUST NOT be fitted --",
             "  doing so would make the 122 km point a fit rather than a",
@@ -878,7 +841,7 @@ def run_validation(num_bits=200000, seed=42, distances=None,
             "Visibility is an OUTPUT, V = S/(S + 2*P_e), not an input; the",
             f"decoder is ideal (V = {visibility}).  Injecting a measured",
             "visibility as well would apply the same physics twice -- see",
-            "section 18.4.  The V column below is that prediction; the paper",
+            "twice.  The V column below is that prediction; the paper",
             "states > 0.99 at 65 km and 0.884 at 122 km.",
             "",
             "Structural difference worth recording: Gobby's 1.6:1 reference-",
@@ -1015,8 +978,8 @@ if __name__ == "__main__":
                         help='DIAGNOSTIC ONLY. Decoder visibility (default '
                              '1.0 = ideal). V is an OUTPUT of this link '
                              'budget, V = S/(S+2*P_e); injecting one as well '
-                             'double-counts the error physics (GOBBY-1 '
-                             'section 18.4). Overriding it is a debugging '
+                             'double-counts the error physics. Overriding '
+                             'it is a debugging '
                              'aid, not a way to match the paper.')
     parser.add_argument('--target-sifted', type=int, default=None,
                         metavar='N',
@@ -1025,7 +988,7 @@ if __name__ == "__main__":
                              f'--bits budget. Recommended: '
                              f'{TARGET_SIFTED_DEFAULT} (sigma ~0.5 pp). A '
                              f'flat budget starves the long distances, which '
-                             f'are the contested ones -- see OPEN-2.')
+                             f'are the contested ones.')
     parser.add_argument('--p-e', type=float, default=P_E, dest='p_e',
                         metavar='P',
                         help=f'Background click probability per clock per '
@@ -1034,7 +997,7 @@ if __name__ == "__main__":
                              f'clock-laser stray light 5.3e-7). Replaces the '
                              f'old --dcr, which was a category error -- the '
                              f'larger half of this term is stray light, not '
-                             f'dark counts (GOBBY-1 section 18.3). Pass 0 to '
+                             f'dark counts. Pass 0 to '
                              f'isolate the afterpulse floor.')
     parser.add_argument('--afterpulse', type=float, default=AFTERPULSE_PROB,
                         metavar='A',
@@ -1043,7 +1006,7 @@ if __name__ == "__main__":
                              f'value). This is the candidate for Gobby\'s '
                              f'acknowledged third error source. Pass 0 for '
                              f'the control run that isolates the link '
-                             f'budget. Do NOT fit it -- see section 18.5.')
+                             f'budget. Do NOT fit it.')
     parser.add_argument('--ceiling', type=int, default=CEILING_DEFAULT,
                         help='Hard cap on pulses per point under '
                              '--target-sifted (default 500M)')

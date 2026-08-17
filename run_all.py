@@ -45,7 +45,7 @@ matter, and each is recorded per entry rather than assumed:
 
 Gobby is worth a note.  It has no cheap *quotable* setting: its
 statistical-power guard refuses any row under 500 sifted bits, and since
-GOBBY-1 corrected the link budget -- eta 0.10 to eta_Bob 0.045, alpha
+the link budget was corrected -- eta 0.10 to eta_Bob 0.045, alpha
 0.182 to 0.2, cutting the signal 3.68x -- clearing that at 122 km needs
 of order 1e8 pulses at that distance alone.  Its ``--quick`` therefore
 switches the guard off and writes to ``--quick`` names, which exercises
@@ -139,7 +139,7 @@ parser.add_argument('--gobby-target-sifted', type=int, default=3000,
                     help='sifted bits per distance point for the Gobby '
                          'validator under --full (default 3000, the '
                          'published budget). A flat --bits count is no '
-                         'longer usable: since GOBBY-1 the sifted fraction '
+                         'longer usable: the sifted fraction '
                          'spans ~200x across the sweep, so any flat budget '
                          'either starves 122 km or wastes hours on 0 km.')
 parser.add_argument('--full', action='store_true',

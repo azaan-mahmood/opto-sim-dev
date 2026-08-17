@@ -35,8 +35,8 @@ Stokes parameters depend only on the ratio Ey/Ex, so the source's RIN,
 phase noise and chirp divide out exactly -- measured DOP = 1.000000 with
 the states exact.  A polarisation-encoding chain is blind to everything a
 real source adds *except pulse energy*.  This is the same cancellation
-Sec. 23.2 of the issue log found for linewidth in Gobby's matched AMZI,
-reached independently from the other side.
+that removes linewidth in a matched AMZI, reached independently from the
+other side.
 
 So the prediction, on record before the run: **a null**, with any residual
 coming only through per-pulse energy.
@@ -285,8 +285,8 @@ def run(quick=False, do_qber=True):
 
     if do_qber:
         distances = (0, 10) if quick else (0, 10, 50)
-        # Sized for >= 3000 sifted bits per cell, which is Sec. 25's
-        # standard for a quotable QBER.  Measured yields: ~2.4e-3 sifted
+        # Sized for >= 3000 sifted bits per cell, the standard used
+        # here for a quotable QBER.  Measured yields: ~2.4e-3 sifted
         # per pulse at 0 km, ~1.7e-3 at 10 km, ~4e-4 at 50 km.
         n_pulses = {0: 200_000 if quick else 1_400_000,
                     10: 300_000 if quick else 2_000_000,

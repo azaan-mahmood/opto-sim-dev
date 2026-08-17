@@ -25,7 +25,7 @@ temp_coeff = -3.0e-9
 bend_factor = 0.135
 REALIZATIONS = 50
 
-# --- Self-consistency checks moved to the test suite (REPRO-4) ---
+# --- Self-consistency checks moved to the test suite ---
 # The 13 internal invariants (power conservation, temperature/wavelength
 # sensitivity, seed dependence, auto-dispatch, enabled=False, ...) used to
 # live here, printed as [PASS] lines. They are unit-test material, not
@@ -34,7 +34,7 @@ REALIZATIONS = 50
 # are TestBirefringenceDepolarization (Menyuk & Wai [10] p^N law) and
 # TestUlrichBendLaw (Ulrich [7] Eq. 1) in the same file.
 
-# --- Model note (PHYS-5, 5th pass) ---
+# --- Model note (, 5th pass) ---
 # The former phenomenological model (single SU(2) rotation with fitted
 # theta = min(pi, sqrt(L/L_char)*pi/2)) was removed: the multi-section
 # model is quasi-static, converges to uniform SU(2) within a few hundred
@@ -88,7 +88,7 @@ ax1.annotate('Random walk on\nPoincar\\\'e sphere',
 # --- Panel B: mean |Ex|^2 vs distance (0–200 km, ensemble) ---
 # With L_c = 50 m and per-section retardance delta ~ 10 rad, the ensemble
 # mean reaches its uniform-SU(2) value (1/2) within a few hundred metres —
-# the honest long-distance behaviour of the single model (PHYS-5).
+# the honest long-distance behaviour of the single model.
 np.random.seed(SEED)
 dist_long_km = np.arange(0, 210, 10)
 mean_ex_long = []
@@ -237,7 +237,7 @@ plt.close(fig)
 # multi-section (sectional) model at increasing distances,
 # showing the transition from ordered → uniform SU(2).
 #
-# With the physical correlation length L_c = 50 m (PHYS-4) exceeding the
+# With the physical correlation length L_c = 50 m exceeding the
 # beat length L_B ~ 31 m, a fibre shorter than L_c is a *single* random-axis
 # section whose retardation phase (alpha = 2*pi*|Δn|*L/lambda) already
 # wraps past 2*pi within a few metres — so |mean(S)| oscillates with L

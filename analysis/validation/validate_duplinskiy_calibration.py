@@ -31,12 +31,12 @@ A mapping is needed, and it is not a fudge
 ------------------------------------------
 This chain's outcome depends on the phase **sum** phi_A + phi_B, not the
 difference, so the paper's pairs look broken until Bob's basis labels are
-mapped as sec. 28.6a established: chain-X(pi/2) is the paper's
+mapped as established: chain-X(pi/2) is the paper's
 "linear"(0), chain-C(0) the paper's "circular"(pi/2).  With that mapping
 every pair holds exactly.
 
 That makes this an independent re-confirmation of register entry A4 --
-the third route to it, after the state table (sec. 28.6a) and the Jones
+the third route to it, after the state table and the Jones
 algebra.  Here it comes from the calibration criterion instead.
 
 References
@@ -59,7 +59,7 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_duplinskiy')
 
 # This script has no --quick flag; it takes --pulses, and 20000 is the
 # full run.  Anything smaller is a reduced run and writes to its own file
-# rather than replacing the committed figure (sec. 35.6).
+# rather than replacing the committed figure.
 FULL_PULSES = 20000
 
 
@@ -90,7 +90,7 @@ PHASE_NAME = {0: '0', 1: r'$\pi/2$', 2: r'$\pi$', 3: r'$3\pi/2$'}
 # (basis, bit) each corresponds to in this chain's encoding.
 ALICE_PHASE = {(0, 'X'): 0, (0, 'C'): 1, (1, 'X'): 2, (1, 'C'): 3}
 
-# Bob's two, and the sec. 28.6a mapping to the paper's labelling.
+# Bob's two, and the mapping to the paper's labelling.
 # The chain's X basis drives PM2 at pi/2, which is the paper's "linear" at
 # 0; the chain's C basis drives it at 0, the paper's "circular" at pi/2.
 BOB_PHASE = {'X': 1, 'C': 0}
@@ -160,7 +160,7 @@ def check_pairs(chain, failures):
     """The paper's four indistinguishability conditions, on port fractions."""
     print("\n  the paper's four indistinguishability pairs (sec. 5)")
     print("    a pair is indistinguishable when the two settings give the")
-    print("    same port statistics.  Bob's labels are mapped per sec. 28.6a.")
+    print("    same port statistics.  Bob's labels are mapped per .")
 
     # Index the chain's eight settings by the PAPER's (Alice, Bob) phases.
     by_paper = {}
@@ -185,7 +185,7 @@ def check_pairs(chain, failures):
     if worst > 1e-9:
         failures.append(f"the paper's indistinguishability pairs do not hold "
                         f"(worst {worst:.2e}); either the readout or the "
-                        "sec. 28.6a basis mapping is wrong")
+                        "basis mapping is wrong")
     else:
         print("    -> all four hold. Independent re-confirmation of A4, from")
         print("       the calibration criterion rather than the state table.")

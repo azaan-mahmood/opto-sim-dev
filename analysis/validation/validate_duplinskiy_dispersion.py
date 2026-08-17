@@ -1,6 +1,6 @@
 """CD and PMD in a polarisation chain: one is inert by algebra, one is not.
 
-Section 27.3 found both impairments exposed but inert in this chain, and
+found both impairments exposed but inert in this chain, and
 blamed the single time sample: CD and PMD are frequency-domain operators,
 and the FFT of one sample is the sample. That was right, and it left the
 pair untestable until a source could supply a time-resolved field. The DFB
@@ -23,8 +23,8 @@ A constant ratio in time is a constant ratio in frequency, so H(f) scales
 both equally and Ey'(t) = c'*Ex'(t) still. The normalised Stokes vector
 depends only on that ratio, so it cannot move. CD would therefore stay
 inert here at ANY sampling rate, with any source that emits a single
-polarisation state. This is the same cancellation as sec. 23.2's linewidth
-argument and sec. 30.11's source-blindness result.
+polarisation state. This is the same cancellation as linewidth
+argument and source-blindness result.
 
 It is a structural null, not a measurement, and reporting it as evidence
 that the CD model works would be wrong. The positive control below is the
@@ -60,7 +60,7 @@ The chain passed `dt=1/rep_rate` to `FiberRealization.apply` -- 100 ns, the
 spacing BETWEEN pulses, where the operators need the spacing between
 samples WITHIN one. Measured below: at 100 ns the PMD perturbation reads
 2.8e-06 instead of 0.55, five orders down. That null looks exact and means
-nothing, which is sec. 27.3's failure mode in a second costume.
+nothing, which is failure mode in a second costume.
 
 References
 ----------
@@ -89,14 +89,14 @@ LASER_SEED = 11
 N_SECTIONS = 15
 
 # The gain-switched operating point characterised in validate_dfb_drive.py.
-# 150 ps sits mid-window between sec. 30.11's 100 and 200 ps ends (A9).
+# 150 ps sits mid-window between 100 and 200 ps ends (A9).
 I_BIAS, I_PEAK = 0.060, 0.140
 HARVEST_PERIOD = 5e-9
 PULSE_WIDTH = 150e-12
 N_SAMPLES = 8192
 
 DISTANCES = (10, 50, 100)
-# Measured sifted yield per pulse at mu = 0.1, from sec. 33's sweep.
+# Measured sifted yield per pulse at mu = 0.1, from sweep.
 YIELD = {10: 1.72e-3, 50: 3.38e-4, 100: 3.25e-5}
 TARGET_SIFTED = 3000
 
@@ -112,7 +112,7 @@ def _stem(quick):
 def source(dt=None, n=N_SAMPLES):
     """The DFB field at PM1's input, on the device's own time grid.
 
-    The grid matters here in a way it did not in sec. 30.11.  `sample_field`
+    The grid matters here in a way it did not in .  `sample_field`
     decimates by averaging, which band-limits, and PMD's effect scales with
     the source bandwidth -- so a coarse grid does not merely add noise, it
     systematically understates the impairment.  Quantified in `grid_scan`.
@@ -287,7 +287,7 @@ def qber_sweep(E, dt, quick, failures):
               f"{100 * d:+6.2f} +/-{100 * ds:5.2f} pp   {d / ds:5.1f} sigma")
         # Quick mode carries ~290 sifted per cell against ~3400, so the
         # same swing lands near 2 sigma there.  A threshold a smoke run
-        # cannot meet is not a smoke run -- the defect fixed in sec. 35.6.
+        # cannot meet is not a smoke run -- the defect fixed in .
         floor = 1.5 if quick else 3.0
         if d < floor * ds:
             failures.append(f"PMD at {km} km moved QBER by only "
@@ -398,7 +398,7 @@ def run(quick=False):
         return 1
     print("[PASS] CD is inert by algebra with a positive control on the field;")
     print("       PMD swings the observable, completing a second pair against")
-    print("       sec. 26.6's null in the time-bin chain")
+    print("       null in the time-bin chain")
     return 0
 
 
