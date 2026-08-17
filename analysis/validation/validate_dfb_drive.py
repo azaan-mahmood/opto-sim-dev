@@ -95,6 +95,23 @@ from src.lasers import CWLaser, DFBLaser, DriveParams, LaserDriver
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_dfb')
 
+
+def _stem(base, quick):
+    """Smoke runs write to their own files.
+
+    Sharing paths with the full run meant `--quick` silently replaced a
+    quotable figure and its RIN spectrum with under-powered ones, and
+    nothing warned.
+
+    Takes the base name because this script writes two artifacts with
+    different names, unlike the single-artifact validators whose `_stem`
+    takes only the flag.  The marker has to be the LAST thing before the
+    extension either way: `.gitignore` matches `*--quick.csv` and
+    `*--quick.png`, so `val_dfb_drive--quick--cw_rin.csv` would sit
+    outside the ignore rules and could be committed by accident.
+    """
+    return f'{base}--quick' if quick else base
+
 SETTLE = 40e-9          # discarded turn-on, measured ~30 ns
 N_SECTIONS = 15         # the paper's recommendation at 600 um
 SEED = 11
@@ -610,8 +627,8 @@ def run(cw_current=0.120, cw_window=60e-9, gs_window=30e-9, quick=False,
     if do_cwlaser:
         vs_cwlaser(failures)
 
-    _write_csv(f, S, cw_current, cw_window, P)
-    _figure(t, P, f, S, peaks, rg, stg, rt, cw_current)
+    _write_csv(f, S, cw_current, cw_window, P, quick)
+    _figure(t, P, f, S, peaks, rg, stg, rt, cw_current, quick)
 
     print()
     if failures:
@@ -624,8 +641,8 @@ def run(cw_current=0.120, cw_window=60e-9, gs_window=30e-9, quick=False,
     return 0
 
 
-def _write_csv(f, S, current, window, P):
-    path = os.path.join(OUT_DIR, 'val_dfb_drive--cw_rin.csv')
+def _write_csv(f, S, current, window, P, quick=False):
+    path = os.path.join(OUT_DIR, _stem('val_dfb_drive--cw_rin', quick) + '.csv')
     db, var = rin_summary(f, S)
     with open(path, 'w') as fh:
         fh.write("# DFB relative intensity noise under CW drive, "
@@ -640,7 +657,7 @@ def _write_csv(f, S, current, window, P):
     print(f"\n  CSV: {path}")
 
 
-def _figure(t, P, f, S, peaks, rg, stg, rt, cw_current):
+def _figure(t, P, f, S, peaks, rg, stg, rt, cw_current, quick=False):
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -701,7 +718,7 @@ def _figure(t, P, f, S, peaks, rg, stg, rt, cw_current):
     ax[1, 1].legend(h1 + h2, l1 + l2, fontsize=8, loc='upper right')
 
     fig.tight_layout()
-    png = os.path.join(OUT_DIR, 'val_dfb_drive.png')
+    png = os.path.join(OUT_DIR, _stem('val_dfb_drive', quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"  figure: {png}")

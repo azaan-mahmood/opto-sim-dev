@@ -30,31 +30,27 @@ matter, and each is recorded per entry rather than assumed:
     ``'safe'``   -- takes ``--quick`` and writes smoke output to its own
                     ``--quick`` files, so a fast run cannot replace a
                     quotable artifact.  The harness uses it by default.
-    ``'shared'`` -- takes ``--quick`` but writes to the SAME paths as the
-                    full run.  The harness never passes it.  Running these
-                    quick would silently swap a published figure for an
-                    under-powered one, which is the exact defect commit
-                    2360ad0 fixed elsewhere.  They therefore always run at
-                    full budget and cost about eleven minutes between
-                    them; giving them the ``_stem(quick)`` guard the other
-                    seven already have would let them run quick too.
-    ``'blocked'``-- has no honest cheap setting at all, so it runs only
-                    under ``--full`` and is reported SKIP otherwise, with
-                    the reason, rather than quietly left out.  Gobby is
-                    the only one.  Its statistical-power guard refuses to
-                    write a table with any row under 500 sifted bits, and
-                    since GOBBY-1 corrected the link budget -- eta 0.10 to
-                    eta_Bob 0.045, alpha 0.182 to 0.2, cutting the signal
-                    3.68x -- clearing that at 122 km needs of order 1e8
-                    pulses at that distance alone.  Below it the run
-                    fails; above it the run is slow; and because
-                    ``validate_gobby`` writes ``val_gobby_table.tex``
-                    unconditionally, any middle setting would replace the
-                    published 3000-sifted table with a weaker one.  The
-                    ``_stem(quick)`` guard would fix this too.
+    ``'shared'`` -- would take ``--quick`` but writes to the SAME paths as
+                    the full run, so a smoke run would swap a published
+                    figure for an under-powered one.  No validator is in
+                    this state any more: ``validate_dfb_drive``,
+                    ``validate_dfb_duplinskiy`` and ``validate_gobby``
+                    were, and each has since been given the
+                    ``_stem(quick)`` guard the others had.  The category
+                    is kept because it is the right home for the next
+                    validator written without one.
     ``None``     -- no quick mode.  ``validate_duplinskiy_calibration``
                     reaches full at its default ``--pulses 20000``, and
                     ``validate_dfb_reflection`` takes seven seconds.
+
+Gobby is worth a note.  It has no cheap *quotable* setting: its
+statistical-power guard refuses any row under 500 sifted bits, and since
+GOBBY-1 corrected the link budget -- eta 0.10 to eta_Bob 0.045, alpha
+0.182 to 0.2, cutting the signal 3.68x -- clearing that at 122 km needs
+of order 1e8 pulses at that distance alone.  Its ``--quick`` therefore
+switches the guard off and writes to ``--quick`` names, which exercises
+the chain end to end in about 20 s while producing numbers that are
+explicitly not citable.  Use ``--full`` for the real sweep.
 
 ``output``
     Checked after the run.  ``{seed}`` fills in for the seeded validators;
@@ -101,18 +97,18 @@ VALIDATORS = [
     _v('MZM', 'analysis/validation/validate_mzm.py',
        'analysis/val_mzm/val_mzm--seed{seed}_table.csv', seeded=True),
     _v('Gobby', 'analysis/val_gobby/validate_gobby.py',
-       'analysis/val_gobby/val_gobby_table.tex', seeded=True,
-       quick='blocked'),
+       'analysis/val_gobby/val_gobby_table{q}.tex', seeded=True,
+       quick='safe'),
 
     # --- DFB device ------------------------------------------------------
     _v('DFB-reflection', 'analysis/validation/validate_dfb_reflection.py',
        'analysis/val_dfb/val_dfb_reflection--N15.csv'),
     _v('DFB-drive', 'analysis/validation/validate_dfb_drive.py',
-       'analysis/val_dfb/val_dfb_drive.png', quick='shared'),
+       'analysis/val_dfb/val_dfb_drive{q}.png', quick='safe'),
     _v('DFB-gobby', 'analysis/validation/validate_dfb_gobby.py',
        'analysis/val_dfb/val_dfb_gobby{q}.csv', quick='safe'),
     _v('DFB-dupl', 'analysis/validation/validate_dfb_duplinskiy.py',
-       'analysis/val_dfb/val_dfb_duplinskiy_poincare.png', quick='shared'),
+       'analysis/val_dfb/val_dfb_duplinskiy_poincare{q}.png', quick='safe'),
 
     # --- Duplinskiy polarisation chain -----------------------------------
     _v('DUPL-birefringence',
@@ -198,18 +194,12 @@ for v in VALIDATORS:
         results.append((v.name, 'SKIP', 0.0))
         continue
 
-    # 'blocked' validators have no honest cheap setting, so they are
-    # reported as a visible SKIP with the reason rather than silently
-    # omitted or run at a budget that would degrade a published artifact.
-    if v.quick == 'blocked' and not args.full:
-        print(f"[{v.name}] SKIPPED (no honest cheap budget; use --full)")
-        results.append((v.name, 'SKIP', 0.0))
-        continue
-
     cmd = [sys.executable, v.script]
     if v.seeded:
         cmd += ['--seed', str(args.seed)]
-    if v.name == 'Gobby':
+    # Gobby's --quick supplies its own budget and switches the power guard
+    # off, so --target-sifted only applies to the full run.
+    if v.name == 'Gobby' and args.full:
         cmd += ['--target-sifted', str(args.gobby_target_sifted)]
 
     # Only 'safe' validators may be run quick: the 'shared' ones would

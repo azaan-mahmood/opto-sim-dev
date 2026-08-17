@@ -77,6 +77,18 @@ from src.visualization import compute_stokes_parameters
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_dfb')
 
+
+def _stem(quick):
+    """Smoke runs write to their own files.
+
+    Sharing paths with the full run meant `--quick` silently replaced a
+    quotable figure with an under-powered one, and nothing warned: the PNG
+    simply became worse.  `.gitignore` excludes the `--quick` names, so a
+    smoke artifact cannot reach the repository either.
+    """
+    return ('val_dfb_duplinskiy_poincare--quick' if quick
+            else 'val_dfb_duplinskiy_poincare')
+
 SEED = 42
 LASER_SEED = 11
 N_SECTIONS = 15
@@ -282,7 +294,7 @@ def run(quick=False, do_qber=True):
         all_sources = [('flat', None, None)] + sources
         qber_section(all_sources, distances, n_pulses, failures)
 
-    _figure(stages)
+    _figure(stages, quick)
 
     print()
     if failures:
@@ -295,7 +307,7 @@ def run(quick=False, do_qber=True):
     return 0
 
 
-def _figure(stages):
+def _figure(stages, quick=False):
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -330,7 +342,7 @@ def _figure(stages):
     fig.suptitle('BB84 polarisation states on the Poincare sphere, '
                  'DFB-driven Duplinskiy chain', fontsize=11)
     fig.tight_layout()
-    png = os.path.join(OUT_DIR, 'val_dfb_duplinskiy_poincare.png')
+    png = os.path.join(OUT_DIR, _stem(quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f"\n  figure: {png}")
