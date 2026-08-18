@@ -129,6 +129,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                             birefringence=False, cd=False, pmd=False,
                             temperature=25.0, bend_radius=None,
                             pmd_coeff_ps_sqrt_km=0.1, compensate=True,
+                            drift_temperature_rate_C_s=0.0, drift_blocks=100,
                             seed=None, verbose=False):
     """BB84 time-bin phase-encoding simulation.
 
@@ -255,6 +256,44 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         Per-pulse ENERGY spread is not covered.  `bb84_duplinskiy` takes
         `pulse_energy_factors` because energy was the one
         thing that mattered there; there is no equivalent here yet.
+    birefringence, cd, pmd : bool — fibre impairments, all default False.
+        Names and meanings match `bb84_duplinskiy`.  Attenuation is NOT
+        among them: it stays the scalar `alpha_dB` factor in every case, so
+        with all three off the field chain is untouched and results are
+        bit-identical to a run predating them.
+    temperature : float — ambient temperature in C (default 25.0).
+    bend_radius : float or None — bend radius in metres (default None =
+        unbent).
+    pmd_coeff_ps_sqrt_km : float — PMD coefficient in ps/sqrt(km) (default
+        0.1, the Corning SMF-28 Ultra spec).
+    compensate : bool — whether Bob aligns to the fibre (default True).
+        Gobby et al. [1] describe "careful alignment of the polarisation
+        maintaining optics" and measure 99.96 % classical fringe visibility
+        over the full 122 km link, so the apparatus is an aligned one.
+        Alignment is the channel matrix's conjugate transpose and removes a
+        STATIC fibre exactly -- U_comp @ J = I for any unitary -- so a null
+        measured with compensation on and nothing drifting is arithmetic
+        rather than physics.  False gives the uncompensated control.
+    drift_temperature_rate_C_s : float — rate (C/s) at which the fibre's
+        ambient temperature changes during the run, default 0.0 (static).
+        Requires `birefringence=True`, the only operator it acts through.
+
+        This is the FIBRE's drift, distinct from the interferometer
+        arm-length drift on `phase_drift_rad_s`.  In the
+        polarisation-multiplexed topology the two are degenerate in their
+        effect on QBER: the Jones matrix is SU(2), so the fibre contributes
+        a common amplitude |U00|^2 and a relative phase 2*arg(U11), and
+        that phase enters `delta` exactly as an arm-length offset would.
+        They cannot be separated from QBER data alone.
+
+        Off by default in the Gobby replication for that reason -- see
+        PHASE_DRIFT_RAD_S in `validate_gobby.py`, where the paper's stated
+        3.3 % floor is already assigned in full to modulator bias plus arm
+        drift, and adding a third term would count it twice.
+    drift_blocks : int — how many times the fibre is re-evaluated across the
+        run while it drifts (default 100).  A COUNT rather than a pulse
+        size, so raising `num_bits` for statistical power leaves the drift
+        resolution alone.  Ignored when nothing drifts.
     seed : int or None — RNG seed.
     verbose : bool — print progress.
 
@@ -404,6 +443,13 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     # of a reduced signal, the regime the 122 km point lives in.
     #
     # `validate_gobby_impairments.py` measures both closed forms.
+    if drift_temperature_rate_C_s != 0.0 and not birefringence:
+        raise ValueError(
+            "drift_temperature_rate_C_s acts only through the birefringence "
+            "Jones matrix, which is not built when birefringence=False, so "
+            "this combination would drift nothing. Pass birefringence=True, "
+            "or leave the rate at 0.")
+
     fibre = None
     if birefringence or cd or pmd:
         fibre = FiberRealization(
@@ -412,7 +458,8 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
             attenuation_factor=alpha_dB,
             pmd_coeff_ps_sqrt_km=pmd_coeff_ps_sqrt_km,
             birefringence=birefringence, cd=cd, pmd=pmd,
-            attenuation=False, seed=seed)
+            attenuation=False, seed=seed,
+            drift_temperature_rate_C_s=drift_temperature_rate_C_s)
 
     # Polarisation alignment.  Gobby et al. [1] describe "careful alignment
     # of the polarisation maintaining optics", measure 99.96 % classical
@@ -456,8 +503,15 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
              'Y': {0: np.pi / 2.0, 1: 3.0 * np.pi / 2.0}}
     PHI_B = {'X': 0.0, 'Y': np.pi / 2.0}
 
-    def _gate_powers(phi_a, phi_b):
-        """Run the field chain once and return the gated (P_c, P_d)."""
+    def _gate_powers(phi_a, phi_b, op_fibre):
+        """Run the field chain once and return the gated (P_c, P_d).
+
+        `op_fibre` is the fibre as it is at the instant being evaluated --
+        `fibre` itself when nothing drifts, `fibre.at(t)` when it does.
+        Bob's `U_comp` is deliberately NOT re-derived from it: his
+        compensator was aligned once against the fibre as it was, and the
+        residual `U_comp @ J(t)` is the entire physics of drift.
+        """
         if polmux:
             # Alice: unbalanced split, arms kept separate.  `enc` is
             # built with phase_arm='short', so phi_A lands on the
@@ -470,8 +524,8 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
             E_field = enc.modulate(E_pulse, dt, phase=phi_a)
 
         E_field = E_field * fiber_loss_lin
-        if fibre is not None:
-            E_field = fibre.apply(E_field, dt=dt)
+        if op_fibre is not None:
+            E_field = op_fibre.apply(E_field, dt=dt)
             if U_comp is not None:
                 E_field = np.transpose(U_comp @ np.transpose(E_field))
 
@@ -529,45 +583,47 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     # re-deriving them by hand, keeps this exact by construction for both
     # topologies -- there is no second expression of the physics to drift
     # out of step.  Any delta then costs two multiplies.
-    def _coeffs(index):
-        P0 = _gate_powers(0.0, 0.0)[index]
-        Ph = _gate_powers(np.pi / 2.0, 0.0)[index]
-        Pp = _gate_powers(np.pi, 0.0)[index]
+    def _coeffs(index, op_fibre):
+        P0 = _gate_powers(0.0, 0.0, op_fibre)[index]
+        Ph = _gate_powers(np.pi / 2.0, 0.0, op_fibre)[index]
+        Pp = _gate_powers(np.pi, 0.0, op_fibre)[index]
         g0 = 0.5 * (P0 + Pp)
         return g0, complex(0.25 * (P0 - Pp), 0.5 * (g0 - Ph))
 
-    g0_c, S_c = _coeffs(0)
-    g0_d, S_d = _coeffs(1)
+    def _extract(op_fibre):
+        """(g0_c, S_c, g0_d, S_d) for one fibre state, chain re-verified."""
+        g0_c, S_c = _coeffs(0, op_fibre)
+        g0_d, S_d = _coeffs(1, op_fibre)
 
-    # The coefficients above are extracted by sweeping phi_A at phi_B = 0,
-    # so they carry no information about how phi_B enters.  The per-pulse
-    # formula then *assumes* delta = phi_A - phi_B.  If Bob's sign in
-    # `_gate_powers` were ever flipped, that assumption would silently
-    # become wrong and the closed form would keep returning the old
-    # answers -- the field chain would no longer be authoritative.
-    #
-    # So assert it: evaluate the chain at points with phi_B != 0 and
-    # require the closed form to reproduce them.  Three extra field
-    # evaluations at build time, and it fails loudly on exactly the
-    # phase-arm/sign coupling that had to be verified by
-    # hand.
-    _scale = max(abs(g0_c) + 2.0 * abs(S_c), 1e-300)
-    for _pa, _pb in ((0.0, np.pi / 2.0), (np.pi, np.pi / 2.0),
-                     (np.pi / 2.0, np.pi / 2.0)):
-        _ref_c, _ref_d = _gate_powers(_pa, _pb)
-        _e = np.exp(1j * (_pa - _pb))
-        _got_c = g0_c + 2.0 * (S_c * _e).real
-        _got_d = g0_d + 2.0 * (S_d * _e).real
-        if (abs(_got_c - _ref_c) > 1e-9 * _scale
-                or abs(_got_d - _ref_d) > 1e-9 * _scale):
-            raise RuntimeError(
-                "interference closed form disagrees with the field chain at "
-                f"(phi_A={_pa:.4f}, phi_B={_pb:.4f}): the assumed relative "
-                "phase delta = phi_A - phi_B does not match the chain. This "
-                "usually means the encoder's phase_arm and Bob's phase sign "
-                "have been changed independently -- they are coupled. See "
-                "the phase-arm convention."
-            )
+        # The coefficients are extracted by sweeping phi_A at phi_B = 0, so
+        # they carry no information about how phi_B enters.  The per-pulse
+        # formula then *assumes* delta = phi_A - phi_B.  If Bob's sign in
+        # `_gate_powers` were ever flipped, that assumption would silently
+        # become wrong and the closed form would keep returning the old
+        # answers -- the field chain would no longer be authoritative.
+        #
+        # So assert it: evaluate the chain at points with phi_B != 0 and
+        # require the closed form to reproduce them.  Three extra field
+        # evaluations per extraction, and it fails loudly on exactly the
+        # phase-arm/sign coupling that had to be verified by hand.
+        _scale = max(abs(g0_c) + 2.0 * abs(S_c), 1e-300)
+        for _pa, _pb in ((0.0, np.pi / 2.0), (np.pi, np.pi / 2.0),
+                         (np.pi / 2.0, np.pi / 2.0)):
+            _ref_c, _ref_d = _gate_powers(_pa, _pb, op_fibre)
+            _e = np.exp(1j * (_pa - _pb))
+            _got_c = g0_c + 2.0 * (S_c * _e).real
+            _got_d = g0_d + 2.0 * (S_d * _e).real
+            if (abs(_got_c - _ref_c) > 1e-9 * _scale
+                    or abs(_got_d - _ref_d) > 1e-9 * _scale):
+                raise RuntimeError(
+                    "interference closed form disagrees with the field chain "
+                    f"at (phi_A={_pa:.4f}, phi_B={_pb:.4f}): the assumed "
+                    "relative phase delta = phi_A - phi_B does not match the "
+                    "chain. This usually means the encoder's phase_arm and "
+                    "Bob's phase sign have been changed independently -- they "
+                    "are coupled. See the phase-arm convention."
+                )
+        return g0_c, S_c, g0_d, S_d
 
     # Per-pulse random phase.  Both sources are zero-mean Gaussians and
     # add in the same delta, so one draw covers them:
@@ -629,7 +685,52 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     else:
         _drift_scale = 1.0 / repetition_rate
 
+    # --- Fibre drift, and why it needs blocks -----------------------------
+    #
+    # The closed form fixes (g0, S) for ONE fibre state, so a fibre that
+    # changes during the run puts it out of reach the same way a per-pulse
+    # random phase does.  Re-extracting per pulse would cost the field
+    # propagations the closed form exists to avoid, so the run is cut into
+    # blocks: within a block the fibre is held still and the closed form is
+    # exact, and between blocks it is re-extracted from `fibre.at(t)`.
+    #
+    # `drift_blocks` is a COUNT, not a pulse size, and that is deliberate.
+    # A pulse size would tie the drift resolution to the statistical budget,
+    # which is the mistake `run_duration` exists to prevent one level up --
+    # asking for tighter error bars must not silently change the physics.
+    # As a count, doubling num_bits leaves the resolution alone.
+    #
+    # Blocks advance on the DRIFT clock, never the detector clock.  See the
+    # two-clocks note above; this must not introduce a third.
+    #
+    # Cost is three field propagations plus one Jones build (about 2 ms at
+    # 122 km) per block, so the default 100 blocks is negligible against the
+    # 1e8-pulse runs the long distances need.
+    #
+    # Not drifting means exactly one block and nothing rebuilt, so the
+    # no-drift path is provably unchanged rather than approximately so.
+    _fibre_drifts = (fibre is not None
+                     and fibre.drift_temperature_rate_C_s != 0.0)
+    _n_blocks = max(1, int(drift_blocks)) if _fibre_drifts else 1
+
+    def _block_bounds(i):
+        return (i * num_bits) // _n_blocks, ((i + 1) * num_bits) // _n_blocks
+
+    def _extract_for(lo, hi):
+        """Coefficients for the block [lo, hi), fibre taken at its midpoint."""
+        t_mid = 0.5 * (lo + max(hi - 1, lo)) * _drift_scale
+        return _extract(fibre if fibre is None else fibre.at(t_mid))
+
+    _blk = 0
+    _blk_lo, _blk_end = _block_bounds(0)
+    g0_c, S_c, g0_d, S_d = _extract_for(_blk_lo, _blk_end)
+
     for pulse_idx in range(num_bits):
+        if pulse_idx >= _blk_end:
+            _blk += 1
+            _blk_lo, _blk_end = _block_bounds(_blk)
+            g0_c, S_c, g0_d, S_d = _extract_for(_blk_lo, _blk_end)
+
         # --- Alice's encoding ---
         alice_basis = random.choice(['X', 'Y'])
         alice_bit = random.randint(0, 1)

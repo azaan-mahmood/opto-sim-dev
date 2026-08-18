@@ -305,20 +305,33 @@ class FiberRealization:
     seed : int or None — seeds this realization's own RNG stream,
         independent of the global `numpy.random` state used elsewhere in
         the simulation (e.g. for bit/basis choices, detector noise).
+    drift_temperature_rate_C_s : float — rate (C/s) at which the ambient
+        temperature changes during a run (default 0.0 = static, the
+        behaviour this class has always had). Read by `at()`; it does
+        nothing to this realization itself, which is the fibre at t = 0.
 
     Examples
     --------
     >>> fibre = FiberRealization(L_m=50_000, cd=True, pmd=True, seed=42)
     >>> for _ in range(num_bits):
     ...     E = fibre.apply(E, dt=dt)   # same impairments every call
+
+    >>> fibre = FiberRealization(L_m=50_000, seed=42,
+    ...                          drift_temperature_rate_C_s=1e-5)
+    >>> later = fibre.at(60.0)          # the same fibre, a minute on
     """
 
     def __init__(self, L_m, wavelength=1550e-9, temperature=25,
                 bend_radius=None, correlation_length=50.0, model='auto',
                 attenuation_factor=0.182, pmd_coeff_ps_sqrt_km=0.1,
                 birefringence=True, cd=False, pmd=False, attenuation=True,
-                seed=None):
+                seed=None, drift_temperature_rate_C_s=0.0):
         self.rng = np.random.default_rng(seed)
+        # Kept so `at()` can rebuild this same fibre in a later state; the
+        # shared seed is what makes the two states the same piece of glass
+        # rather than two unrelated draws.
+        self._seed = seed
+        self.drift_temperature_rate_C_s = float(drift_temperature_rate_C_s)
         self.L_m = L_m
         self.wavelength = wavelength
         self.temperature = temperature
@@ -392,6 +405,79 @@ class FiberRealization:
         ndarray (2, 2) or None — a copy of the Jones matrix.
         """
         return None if self._J is None else self._J.copy()
+
+    def at(self, t):
+        """This same fibre as it is `t` seconds into the run.
+
+        Returns a new `FiberRealization` whose ambient temperature has
+        moved by ``drift_temperature_rate_C_s * t``, or `self` when the
+        rate is zero — so a non-drifting fibre costs nothing and stays
+        provably unchanged rather than approximately so.
+
+        Why this is the SAME fibre and not another draw
+        -----------------------------------------------
+        The new realization is built from the same seed, and
+        `_build_jones_sectional` consumes its RNG in an order and a count
+        that do not depend on temperature: one normal for the delta_n
+        perturbation, then 2N uniforms for the section axes, with
+        N = round(L / L_c). The section axes are therefore reproduced
+        exactly and only the deterministic term
+
+            delta_n = 5.0e-8 + (-3.0e-9) * (T - 25)
+
+        moves. That temperature coefficient is the one this module already
+        uses (Agrawal [6] §4.1), so drift introduces no new constant.
+
+        The PMD draw follows the Jones build on the same stream, so it sees
+        the same state and the DGD is unchanged. That is the right answer
+        as well as the convenient one: DGD is set by the fibre's length and
+        geometry, not by an ambient degree.
+
+        `bb84_duplinskiy` builds its calibration fibre this way for the
+        same reason — see its `cal_fibre`.
+
+        Composition is exact: ``f.at(a).at(b)`` is ``f.at(a + b)``, because
+        the rate carries forward and the offsets add.
+
+        How much drift a given rate buys
+        --------------------------------
+        Steeply length-dependent, and worth knowing before choosing a rate.
+        Each correlation cell carries
+
+            delta_beta * dz = 2*pi * delta_n * L_c / lambda = 10.13 rad
+
+        at L_c = 50 m and 1550 nm, so one degree Celsius shifts every cell
+        by 0.61 rad and re-randomises the ordered product of all N of them.
+        At 122 km N is 2440 and a single degree is total rescrambling, so
+        useful rates are very small.
+
+        The relationship is not monotonic either — the observable relative
+        phase wraps — so a drift quoted in rad/s is only locally meaningful
+        and has to be MEASURED over the window in use rather than assumed.
+        `validate_gobby_impairments.py` reports that mapping per distance.
+
+        Parameters
+        ----------
+        t : float — elapsed time in seconds since this realization.
+
+        Returns
+        -------
+        FiberRealization — the fibre at time t, or `self` if it cannot
+        have changed.
+        """
+        if self.drift_temperature_rate_C_s == 0.0 or t == 0.0:
+            return self
+        return FiberRealization(
+            L_m=self.L_m, wavelength=self.wavelength,
+            temperature=self.temperature + self.drift_temperature_rate_C_s * t,
+            bend_radius=self.bend_radius,
+            correlation_length=self.correlation_length, model=self.model,
+            attenuation_factor=self.attenuation_factor,
+            pmd_coeff_ps_sqrt_km=self.pmd_coeff_ps_sqrt_km,
+            birefringence=self.birefringence_enabled, cd=self.cd_enabled,
+            pmd=self.pmd_enabled, attenuation=self.attenuation_enabled,
+            seed=self._seed,
+            drift_temperature_rate_C_s=self.drift_temperature_rate_C_s)
 
 
 def apply_birefringence(E, L, wavelength=1550e-9, temperature=25,

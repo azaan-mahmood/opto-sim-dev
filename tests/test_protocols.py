@@ -123,3 +123,112 @@ class TestDuplinskiyResponseTable:
         finally:
             _dupl.optics.circular_analyser = original
         assert r['qber'] != pytest.approx(0.0273972603, abs=1e-9)
+
+
+class TestTimeBinFibreDrift:
+    """`bb84_time_bin`'s fibre and its clock.
+
+    The time-bin chain models the channel with a closed form that fixes
+    the interference coefficients for one fibre state, so a drifting fibre
+    has to be blocked. These pin the properties that makes safe.
+    """
+
+    # Gobby's link budget at a short distance, sized for speed rather than
+    # for statistical power -- these test invariants, not physics values.
+    BASE = dict(num_bits=60_000, fiber_length=10, alpha_dB=0.2, mu=0.1,
+                repetition_rate=2e6, pulse_width=80e-12, spad_eta=0.045,
+                dark_count_rate=8.5e-7 / 3.5e-9, afterpulse_prob=0.0,
+                dead_time=13e-6, gate_width=3.5e-9, split_ratio=1.6,
+                interferometer='polarisation_multiplexed',
+                run_duration=120.0, seed=42)
+
+    @staticmethod
+    def _key(r):
+        return r['qber'], r['n_sifted'], r['n_errors']
+
+    def test_impairments_off_is_bit_identical(self):
+        """The whole fibre block must be inert when every flag is off, or
+        the existing Gobby sweep stops being comparable to what has run."""
+        from src.protocols.bb84_time_bin import simulate_bb84_time_bin
+        plain = simulate_bb84_time_bin(**self.BASE)
+        explicit = simulate_bb84_time_bin(birefringence=False, cd=False,
+                                          pmd=False, **self.BASE)
+        assert self._key(plain) == self._key(explicit)
+
+    def test_static_fibre_with_alignment_is_an_exact_null(self):
+        """U_comp @ J = I for any unitary, so this null is arithmetic and
+        must be reported as such -- it is not evidence about physics."""
+        from src.protocols.bb84_time_bin import simulate_bb84_time_bin
+        ref = simulate_bb84_time_bin(**self.BASE)
+        aligned = simulate_bb84_time_bin(birefringence=True, compensate=True,
+                                         **self.BASE)
+        assert self._key(aligned) == self._key(ref)
+
+    def test_uncompensated_static_fibre_cuts_the_rate(self):
+        """The Jones matrix is SU(2), so both interfering arms are scaled by
+        the same |U00| and the sifted rate falls as |U00|^2 -- Gobby's
+        "polarisation drift reduces the bit rate". A run that shows no rate
+        change has not applied the impairment."""
+        from src.channel.fiber import _build_jones_matrix
+        from src.protocols.bb84_time_bin import simulate_bb84_time_bin
+        J = _build_jones_matrix(np.random.default_rng(42), 10_000.0)
+        ref = simulate_bb84_time_bin(**self.BASE)
+        unc = simulate_bb84_time_bin(birefringence=True, compensate=False,
+                                     **self.BASE)
+        assert unc['n_sifted'] < ref['n_sifted']
+        # Predicted rate factor, generous tolerance for binomial noise at
+        # this deliberately small pulse budget.
+        assert unc['n_sifted'] / ref['n_sifted'] == pytest.approx(
+            abs(J[0, 0]) ** 2, rel=0.35)
+
+    def test_drift_blocks_do_not_perturb_a_static_run(self):
+        """`drift_blocks` is ignored when nothing drifts. Without this the
+        knob would silently change results on runs that have no drift."""
+        from src.protocols.bb84_time_bin import simulate_bb84_time_bin
+        a = simulate_bb84_time_bin(birefringence=True, drift_blocks=1,
+                                   **self.BASE)
+        b = simulate_bb84_time_bin(birefringence=True, drift_blocks=500,
+                                   **self.BASE)
+        assert self._key(a) == self._key(b)
+
+    def test_residual_after_alignment_is_mostly_phase(self):
+        """The deterministic half of the claim, asserted on the operator
+        rather than through Monte Carlo noise.
+
+        Bob aligns at t=0, so what light meets is the residual
+        R = U_comp @ J(t). R is SU(2) like its factors, so it splits the
+        same way: |R00|^2 scales both arms (rate) and 2*arg(R11) separates
+        them (QBER). At these rates the phase runs far ahead of the
+        amplitude, which is why drift shows up in QBER first."""
+        from src.channel.fiber import FiberRealization
+        fibre = FiberRealization(L_m=10_000, seed=42, attenuation=False,
+                                 drift_temperature_rate_C_s=1e-3)
+        U = fibre.birefringence_matrix().conj().T
+        R = U @ fibre.at(120.0).birefringence_matrix()
+        implied_qber = (1.0 - np.cos(2.0 * np.angle(R[1, 1]))) / 2.0
+        assert abs(R[0, 0]) ** 2 > 0.8          # rate largely spared
+        assert implied_qber > 0.05              # QBER clearly moved
+
+    def test_drift_degrades_qber(self):
+        """The Monte Carlo half. Only the QBER is asserted here: the effect
+        size is large, whereas the rate claim above needs more sifted bits
+        than this deliberately small budget produces and is pinned
+        deterministically instead."""
+        from src.protocols.bb84_time_bin import simulate_bb84_time_bin
+        ref = simulate_bb84_time_bin(**self.BASE)
+        drift = simulate_bb84_time_bin(
+            birefringence=True, compensate=True,
+            drift_temperature_rate_C_s=1e-3, drift_blocks=50, **self.BASE)
+        assert drift['qber'] > ref['qber'] + 0.05
+        # Distinguishes "rate largely spared" from the uncompensated case,
+        # which lands near 0.19 at this distance.
+        assert drift['n_sifted'] / ref['n_sifted'] > 0.7
+
+    def test_drift_without_birefringence_raises(self):
+        """Drift acts only through the Jones matrix, so this combination
+        would silently do nothing."""
+        from src.protocols.bb84_time_bin import simulate_bb84_time_bin
+        with pytest.raises(ValueError, match="birefringence"):
+            simulate_bb84_time_bin(birefringence=False, cd=True,
+                                   drift_temperature_rate_C_s=1e-3,
+                                   **self.BASE)

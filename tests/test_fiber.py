@@ -561,3 +561,80 @@ class TestImpairmentsAreLiveNotNoOps:
         p0 = np.sum(np.abs(base) ** 2)
         p1 = np.sum(np.abs(out) ** 2)
         assert abs(p1 - p0) / p0 < 1e-9
+
+
+class TestDriftClock:
+    """FiberRealization.at() — the same fibre at a later moment.
+
+    Drift is what separates a fibre Bob calibrated against from the fibre
+    light is travelling through now, and it is the mechanism Duplinskiy et
+    al. spend 20% of their duty cycle fighting.
+    """
+
+    @staticmethod
+    def _fibre(rate=0.0, **kw):
+        return FiberRealization(L_m=50_000, seed=7, attenuation=False,
+                                drift_temperature_rate_C_s=rate, **kw)
+
+    def test_static_fibre_returns_itself(self):
+        """No drift rate means at() cannot change anything, so it must not
+        rebuild -- that identity is what makes the no-drift path provably
+        unchanged rather than merely close."""
+        fibre = self._fibre()
+        assert fibre.at(120.0) is fibre
+        assert fibre.at(0.0) is fibre
+
+    def test_zero_time_returns_itself_even_when_drifting(self):
+        fibre = self._fibre(rate=1e-3)
+        assert fibre.at(0.0) is fibre
+
+    def test_drift_actually_moves_the_jones_matrix(self):
+        """A drift that changes nothing is a skipped code path, not physics."""
+        fibre = self._fibre(rate=1e-3)
+        J0 = fibre.birefringence_matrix()
+        J1 = fibre.at(120.0).birefringence_matrix()
+        assert np.abs(J1 - J0).max() > 1e-6
+
+    def test_drifted_matrix_stays_unitary(self):
+        J = self._fibre(rate=1e-3).at(120.0).birefringence_matrix()
+        np.testing.assert_allclose(J.conj().T @ J, np.eye(2), atol=1e-10)
+
+    def test_composition_is_exact(self):
+        """f.at(a).at(b) == f.at(a + b): the rate carries forward and the
+        temperature offsets add, so there is no drift budget to lose track
+        of when a run is cut into blocks."""
+        fibre = self._fibre(rate=1e-3)
+        np.testing.assert_array_equal(
+            fibre.at(30.0).at(90.0).birefringence_matrix(),
+            fibre.at(120.0).birefringence_matrix(),
+        )
+
+    def test_same_seed_keeps_the_same_section_axes(self):
+        """Drift must move the environmental term only. A fresh draw would
+        be a different piece of fibre, which is a different and much less
+        interesting experiment -- the same argument bb84_duplinskiy makes
+        for building its calibration fibre from the operating seed."""
+        drifted = self._fibre(rate=1e-3).at(120.0)
+        rebuilt = FiberRealization(
+            L_m=50_000, seed=7, attenuation=False,
+            temperature=25.0 + 1e-3 * 120.0)
+        np.testing.assert_allclose(drifted.birefringence_matrix(),
+                                   rebuilt.birefringence_matrix(),
+                                   rtol=0, atol=0)
+
+    def test_dgd_is_untouched_by_drift(self):
+        """DGD is set by length and geometry, not by an ambient degree, and
+        the PMD draw follows the Jones build on the same stream so it sees
+        the same state."""
+        fibre = self._fibre(rate=1e-3, pmd=True)
+        assert fibre.at(120.0)._dgd == fibre._dgd
+
+    def test_su2_structure_survives_drift(self):
+        """|U00| = |U11| and arg(U00) = -arg(U11) is what makes the fibre's
+        whole effect on a polarisation-multiplexed interferometer a common
+        amplitude plus a relative phase. If drift broke it, the arms could
+        become unbalanced and the decomposition would stop holding."""
+        for t in (0.0, 30.0, 120.0):
+            J = self._fibre(rate=1e-3).at(t).birefringence_matrix()
+            assert abs(abs(J[0, 0]) - abs(J[1, 1])) < 1e-12
+            assert abs(np.angle(J[0, 0]) + np.angle(J[1, 1])) < 1e-12
