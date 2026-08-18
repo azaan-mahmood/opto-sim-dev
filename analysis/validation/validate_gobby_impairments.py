@@ -432,7 +432,9 @@ def _write_csv(rows, preds, quick=False):
             amp, _, q = preds[km]
             pr = f"{amp:.6f}" if lab == UNCOMP else ""
             pq = f"{q:.6f}" if lab == UNCOMP else ""
-            fh.write(f"{km},{topo},{lab},{r['n_total']},{r['n_sifted']},"
+            # The labels contain commas, so the field must be quoted or
+            # every column after it shifts by one.
+            fh.write(f"{km},{topo},\"{lab}\",{r['n_total']},{r['n_sifted']},"
                      f"{r['n_errors']},{r['qber']:.6f},"
                      f"{_sigma(r['qber'], r['n_sifted']):.6f},"
                      f"{r['n_sifted'] / max(ref['n_sifted'], 1):.6f},"
@@ -484,7 +486,10 @@ def _figure(rows, preds, quick=False):
         for j, km in enumerate(kms):
             amp, _, q = preds[km]
             target = 100 * q if metric == 'qber' else amp
-            ax.plot([x[j] + w * 1.0, x[j] + w * 2.0], [target, target],
+            # Centred on the UNCOMPENSATED bar, which is index 3 of six
+            # drawn at x + (i - 2.5)*w, i.e. x + 0.5*w.  The prediction
+            # applies to that cell alone, so it has to sit over it.
+            ax.plot([x[j], x[j] + w], [target, target],
                     color='k', lw=2.2, zorder=5,
                     label=('predicted from the Jones matrix'
                            if (ax is axes[0] and j == 0) else None))
@@ -492,18 +497,26 @@ def _figure(rows, preds, quick=False):
         ax.set_xticklabels([f'{k} km' for k in kms])
         ax.set_ylabel(ylab)
         ax.grid(True, axis='y', alpha=0.3)
+        # Fixed limits so runs are comparable by eye, and so the tallest
+        # bar is never the one the axes decide to clip.
+        ax.set_ylim(0, 100 if metric == 'qber' else 1.15)
 
     axes[0].set_title('QBER: balanced absorbs the rotation, polmux does not',
                       fontsize=10)
     axes[1].set_title('Sifted rate: what a rotation actually costs',
                       fontsize=10)
-    axes[0].legend(fontsize=8, loc='upper left')
+    # Figure-level legend below both panels.  Inside the axes it sat on top
+    # of the tallest bar and its prediction marker, which are the two things
+    # the reader most needs to see.
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, fontsize=8, ncol=4, loc='lower center',
+               frameon=False, bbox_to_anchor=(0.5, -0.01))
     fig.suptitle(f'Fibre impairments in the Gobby chain (seed {SEED}, '
                  f'drift {DRIFT_QUIET_C_S:g} and {DRIFT_LOUD_C_S:g} C/s over '
                  f'{KEY_TRANSFER_S:g} s)'
                  + ('   [QUICK -- not quotable]' if quick else ''),
                  fontsize=11)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.09, 1, 1))
     png = os.path.join(OUT_DIR, _stem(quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
     plt.close(fig)
