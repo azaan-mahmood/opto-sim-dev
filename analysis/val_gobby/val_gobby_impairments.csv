@@ -1,0 +1,20 @@
+# validate_gobby_impairments.py
+# seed=42 target_sifted=1200 drift_quiet_C_s=0.0001 drift_loud_C_s=0.001 run_duration_s=120
+# Link budget imported from val_gobby/validate_gobby.py.
+# predicted_rate = |U00|^2 and predicted_qber = (1-cos(2*arg(U11)))/2, both derived from the fibre's own
+# Jones matrix, which is SU(2).  They apply to the uncompensated cell only.
+distance_km,topology,configuration,pulses,sifted,errors,qber,sigma,rate_vs_reference,predicted_rate,predicted_qber,field_perturbation
+10,balanced,no fibre (reference),622641,448,0,0.000000,0.000000,1.000000,,,1.968736
+10,balanced,birefringence, no align,622641,448,0,0.000000,0.000000,1.000000,,,1.968736
+10,polmux,no fibre (reference),1269230,1303,1,0.000767,0.000767,1.000000,,,1.968736
+10,polmux,birefringence, aligned,1269230,1303,1,0.000767,0.000767,1.000000,,,1.968736
+10,polmux,birefringence, uncompensated,1269230,149,129,0.865772,0.027927,0.114351,0.101703,0.884205,1.968736
+10,polmux,aligned, drifting (quiet),1269230,1367,2,0.001463,0.001034,1.049117,,,1.968736
+10,polmux,aligned, drifting (loud),1269230,1274,179,0.140502,0.009736,0.977744,,,1.968736
+50,balanced,no fibre (reference),3666666,416,4,0.009615,0.004785,1.000000,,,1.199806
+50,balanced,birefringence, no align,3666666,416,4,0.009615,0.004785,1.000000,,,1.199806
+50,polmux,no fibre (reference),7457627,1339,7,0.005228,0.001971,1.000000,,,1.199806
+50,polmux,birefringence, aligned,7457627,1339,7,0.005228,0.001971,1.000000,,,1.199806
+50,polmux,birefringence, uncompensated,7457627,456,151,0.331140,0.022039,0.340553,0.350076,0.328606,1.199806
+50,polmux,aligned, drifting (quiet),7457627,1331,17,0.012772,0.003078,0.994025,,,1.199806
+50,polmux,aligned, drifting (loud),7457627,1194,548,0.458961,0.014421,0.891710,,,1.199806
