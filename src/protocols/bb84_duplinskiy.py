@@ -93,6 +93,8 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
                               temperature=25.0, bend_radius=None,
                               calibration_temperature=SAME_AS_OPERATING,
                               calibration_bend_radius=SAME_AS_OPERATING,
+                              drift_temperature_rate_C_s=0.0, drift_blocks=100,
+                              run_duration=None,
                               source_field=None, source_dt=None,
                               pulse_energy_factors=None,
                               block_size=None,
@@ -190,6 +192,31 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         calibration fibre shares the operating fibre's seed, so the two
         differ only in the environmental term rather than being unrelated
         draws.
+    drift_temperature_rate_C_s : float — rate (C/s) at which the fibre's
+        ambient temperature changes DURING the run, default 0.0 (static).
+
+        The `calibration_*` pair above gives a fixed two-state mismatch;
+        this is the time dependence they cannot express, where the residual
+        `U_comp @ J(t)` grows from the identity as the run proceeds. That
+        growth is what forces recalibration, so it is the mechanism behind
+        the paper's 20 % duty cycle rather than a proxy for it.
+    drift_blocks : int — how many times the response table is rebuilt
+        across the run while the fibre drifts (default 100). A count, not
+        a pulse size, so raising `num_bits` for statistical power leaves
+        the drift resolution alone. Independent of `block_size`, which
+        slices the run for reporting rather than for physics. Ignored when
+        nothing drifts.
+    run_duration : float or None — physical duration of the experiment
+        being simulated, in seconds (default None), used as the DRIFT clock
+        only. The detector clock always keeps true 1/rep_rate spacing,
+        because dead time and afterpulsing are defined against real elapsed
+        time.
+
+        None ties drift to the pulse budget, which is the historical
+        behaviour and bit-identical to it. Prefer setting it: the budget is
+        chosen for statistical power, so leaving drift tied to it means
+        asking for tighter error bars silently lengthens the simulated
+        experiment. Same argument, and the same fix, as in `bb84_time_bin`.
     source_field : ndarray (n, 2) complex, or None — the optical field
         entering Alice's phase modulator.  Default None keeps the flat
         analytic field this chain has always used,
@@ -310,9 +337,11 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     # They reach the sectional birefringence model, which shifts
     # delta_n by -3e-9 per degree and adds the Ulrich bend term
     # 0.135*(r/R)^2 (see `src/channel/fiber.py`).
-    fibre = FiberRealization(L_m=fiber_length * 1000, temperature=temperature,
-                             bend_radius=bend_radius, attenuation_factor=alpha_dB,
-                             cd=cd, pmd=pmd, model=model, seed=seed)
+    fibre = FiberRealization(
+        L_m=fiber_length * 1000, temperature=temperature,
+        bend_radius=bend_radius, attenuation_factor=alpha_dB,
+        cd=cd, pmd=pmd, model=model, seed=seed,
+        drift_temperature_rate_C_s=drift_temperature_rate_C_s)
 
     # Bob's polarization compensation (default on): the channel's Jones
     # matrix is unitary, so the inverse is its conjugate transpose.
@@ -425,8 +454,13 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     # per-pulse random phase (`phase_noise_rad` on either modulator) would
     # break it, exactly as it broke the 8-outcome form in the time-bin chain.
     # Neither modulator is given one here.
-    def _response(a_basis, a_bit, b_basis):
-        """Run the full field chain once; return the gated (P_x, P_y)."""
+    def _response(a_basis, a_bit, b_basis, op_fibre):
+        """Run the full field chain once; return the gated (P_x, P_y).
+
+        `op_fibre` is the fibre at the instant being evaluated. `U_comp`
+        is deliberately not re-derived from it: Bob calibrated once, and
+        the residual `U_comp @ J(t)` is the whole physics of drift.
+        """
         if a_basis == 'C':
             v_a = Vpi / 2 if a_bit == 0 else 3 * Vpi / 2
         else:
@@ -434,7 +468,7 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
 
         E = E_source
         E = pm_alice.modulate(E_field=E, V=v_a)
-        E = fibre.apply(E, dt=dt_field)
+        E = op_fibre.apply(E, dt=dt_field)
         if compensate and U_comp is not None:
             E = np.transpose(U_comp @ np.transpose(E))
         E = optics.voa(E, bob_loss_dB)
@@ -453,10 +487,13 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         # applied in the wrong place.
         return optics.apply_extinction(P_x, P_y, extinction_epsilon)
 
-    RESPONSE = {(ab, bit, bb): _response(ab, bit, bb)
+    def _build_response(op_fibre):
+        return {(ab, bit, bb): _response(ab, bit, bb, op_fibre)
                 for ab in ('C', 'X')
                 for bit in (0, 1)
                 for bb in ('C', 'X')}
+
+    RESPONSE = _build_response(fibre)
 
     # Sifting is accumulated inline rather than into per-pulse lists.
     # Keeping alice_bits, alice_bases, bob_bits, bob_bases and has_click
@@ -476,9 +513,51 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         raise ValueError(f"block_size must be >= 1, got {block_size}")
     snapshots = []
 
+    # --- Fibre drift ------------------------------------------------------
+    #
+    # `calibration_temperature` / `calibration_bend_radius` give a fixed
+    # two-state mismatch: Bob calibrated the fibre in one state, light
+    # travels it in another, and neither state moves. Drift is the missing
+    # time dependence -- the mismatch GROWS during the run, which is what
+    # actually forces the paper's recalibrations.
+    #
+    # The response table is exact only for one fibre state, so the run is
+    # cut into blocks: the fibre is held still within a block and the table
+    # rebuilt between them. This partition is INDEPENDENT of `block_size`
+    # above, which slices the run for statistical reporting; conflating the
+    # two would tie the physics resolution to a reporting choice.
+    #
+    # `drift_blocks` is a count rather than a pulse size for the same
+    # reason `run_duration` exists: raising `num_bits` for tighter error
+    # bars must not silently change the simulated experiment.
+    #
+    # Not drifting means nothing here runs and the table stays exactly as
+    # built above.
+    _drift_on = fibre.drift_temperature_rate_C_s != 0.0
+    _n_dblocks = max(1, int(drift_blocks)) if _drift_on else 1
+    if run_duration is not None and num_bits > 1:
+        _drift_scale = float(run_duration) / (num_bits - 1)
+    else:
+        _drift_scale = dt_pulse
+
+    def _dblock_bounds(i):
+        return (i * num_bits) // _n_dblocks, ((i + 1) * num_bits) // _n_dblocks
+
+    _dblk = 0
+    _dlo, _dblk_end = _dblock_bounds(0)
+    if _drift_on:
+        RESPONSE = _build_response(
+            fibre.at(0.5 * (_dlo + max(_dblk_end - 1, _dlo)) * _drift_scale))
+
     t_start = time.time()
 
     for pulse_idx in range(num_bits):
+        if _drift_on and pulse_idx >= _dblk_end:
+            _dblk += 1
+            _dlo, _dblk_end = _dblock_bounds(_dblk)
+            RESPONSE = _build_response(
+                fibre.at(0.5 * (_dlo + _dblk_end - 1) * _drift_scale))
+
         # --- Alice's encoding ---
         alice_basis = random.choice(['C', 'X'])
         alice_bit = random.randint(0, 1)

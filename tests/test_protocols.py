@@ -6,6 +6,7 @@ Jones correction, and the correction must exist at all (a fibre with a
 scrambling quasi-static Jones matrix must raise the QBER when it is
 disabled).
 """
+import math
 import random
 
 import numpy as np
@@ -123,6 +124,58 @@ class TestDuplinskiyResponseTable:
         finally:
             _dupl.optics.circular_analyser = original
         assert r['qber'] != pytest.approx(0.0273972603, abs=1e-9)
+
+
+class TestDuplinskiyFibreDrift:
+    """The same fibre clock on the polarisation chain.
+
+    `calibration_temperature` / `calibration_bend_radius` already give a
+    fixed two-state mismatch. Drift is the time dependence they cannot
+    express: the residual grows during the run, which is what actually
+    forces the paper's recalibrations.
+    """
+
+    BASE = dict(num_bits=20_000, fiber_length=50, mu=2.0, bob_loss_dB=0.0,
+                model='sectional', seed=42)
+
+    @staticmethod
+    def _key(r):
+        return r['qber'], r['n_sifted'], r['n_errors']
+
+    def test_drift_blocks_do_not_perturb_a_static_run(self):
+        """The drift partition must be inert when nothing drifts, and must
+        stay independent of `block_size`, which slices the run for
+        reporting rather than for physics."""
+        ref = simulate_bb84_duplinskiy(compensate=True, **self.BASE)
+        for blocks in (1, 250):
+            got = simulate_bb84_duplinskiy(compensate=True,
+                                           drift_blocks=blocks, **self.BASE)
+            assert self._key(got) == self._key(ref)
+
+    def test_drift_degrades_qber(self):
+        """Bob aligns at t=0 and the fibre walks away from it."""
+        ref = simulate_bb84_duplinskiy(compensate=True, **self.BASE)
+        drift = simulate_bb84_duplinskiy(
+            compensate=True, run_duration=120.0,
+            drift_temperature_rate_C_s=1e-3, drift_blocks=50, **self.BASE)
+        assert drift['n_sifted'] > 50
+        assert drift['qber'] > ref['qber'] + 0.15
+
+    def test_run_duration_decouples_drift_from_the_pulse_budget(self):
+        """Two budgets sampling the same 120 s experiment must agree on the
+        QBER, or asking for tighter error bars would silently be asking for
+        a longer experiment -- the bug `run_duration` exists to prevent."""
+        common = dict(compensate=True, run_duration=120.0,
+                      drift_temperature_rate_C_s=1e-3, drift_blocks=50,
+                      fiber_length=50, mu=2.0, bob_loss_dB=0.0,
+                      model='sectional', seed=42)
+        short = simulate_bb84_duplinskiy(num_bits=20_000, **common)
+        long = simulate_bb84_duplinskiy(num_bits=60_000, **common)
+        # Both estimate the same expectation; 3x the pulses must not move it
+        # beyond the binomial spread of the smaller run.
+        spread = 3.0 * math.sqrt(
+            short['qber'] * (1 - short['qber']) / short['n_sifted'])
+        assert abs(short['qber'] - long['qber']) < spread
 
 
 class TestTimeBinFibreDrift:
