@@ -79,6 +79,7 @@ sys.path.insert(0, 'src')
 from src.channel.interferometer import AsymmetricMZI
 from src.channel.phase_modulator import PhaseModulator
 from src.channel.optics import pbs, pbc, voa
+from src.channel.fiber import FiberRealization
 from src.detectors.spad import spad
 
 
@@ -125,6 +126,9 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                             phase_error_rad=0.0, phase_noise_rad=0.0,
                             bias_offset_v=0.0, phase_drift_rad_s=0.0,
                             run_duration=None, source_field=None,
+                            birefringence=False, cd=False, pmd=False,
+                            temperature=25.0, bend_radius=None,
+                            pmd_coeff_ps_sqrt_km=0.1, compensate=True,
                             seed=None, verbose=False):
     """BB84 time-bin phase-encoding simulation.
 
@@ -368,6 +372,70 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     # Fiber loss factor
     fiber_loss_lin = 10.0 ** (-alpha_dB * fiber_length / 20.0)  # field factor (sqrt of power)
 
+    # Fibre impairments, off by default.  Attenuation stays the scalar
+    # factor above in every case, so with all three flags off the field
+    # chain is untouched and results are bit-identical to a run without
+    # this block.  `FiberRealization` therefore carries only the unitary
+    # and dispersive operators here, built with attenuation=False.
+    #
+    # Where it goes matters.  In the polarisation-multiplexed topology the
+    # fibre sits between Alice's beam combiner and Bob's splitter, which is
+    # a real fibre's place in that apparatus and the only place a rotation
+    # can act on the two arms at all.
+    #
+    # What a rotation does there is exactly two things, because the Jones
+    # matrix is SU(2): |U00| = |U11| and arg(U00) = -arg(U11).  So both
+    # interfering arms are scaled by the SAME |U00| -- there is no
+    # imbalance available to collapse the fringe, and the sifted rate falls
+    # as |U00|^2 -- while the pair acquires a relative phase 2*arg(U11),
+    # which is degenerate with a modulator bias offset.
+    #
+    # The leaked light (reference into Bob's long arm, encoded into his
+    # short) travels L-L and S-S, lands in the satellite bins two delays
+    # late or not delayed at all, and is excluded by the gate.  Lost, not
+    # misassigned: that is why the amplitude term is a pure rate loss.
+    #
+    # Both halves of Gobby et al. [1] follow -- "Polarisation drift reduces
+    # the bit rate, but does not degrade the QBER provided that the signal
+    # rate is significantly higher than the intrinsic error rate."  The
+    # rate falls by |U00|^2; the QBER holds because the phase is calibrated
+    # out, which their Bob does with the piezo-driven fibre stretcher in
+    # his long arm; and the proviso is the background taking a larger share
+    # of a reduced signal, the regime the 122 km point lives in.
+    #
+    # `validate_gobby_impairments.py` measures both closed forms.
+    fibre = None
+    if birefringence or cd or pmd:
+        fibre = FiberRealization(
+            L_m=fiber_length * 1000.0, wavelength=wavelength,
+            temperature=temperature, bend_radius=bend_radius,
+            attenuation_factor=alpha_dB,
+            pmd_coeff_ps_sqrt_km=pmd_coeff_ps_sqrt_km,
+            birefringence=birefringence, cd=cd, pmd=pmd,
+            attenuation=False, seed=seed)
+
+    # Polarisation alignment.  Gobby et al. [1] describe "careful alignment
+    # of the polarisation maintaining optics", measure 99.96 % classical
+    # fringe visibility over the full 122 km link, and report polarisation
+    # stable for over 30 minutes there, so the apparatus is an ALIGNED one.
+    # What it experiences is residual drift about that alignment, not the
+    # free rotation an uncompensated fibre applies.
+    #
+    # That distinction is not cosmetic.  Beyond about ten metres the
+    # sectional model delivers an essentially random SU(2), so 2*arg(U11)
+    # is a uniformly random phase and the QBER lands wherever it lands --
+    # which is neither what the paper reports nor what the apparatus does.
+    #
+    # Aligning is the inverse of the channel's own matrix, the same fixed
+    # point `bb84_duplinskiy` uses for its calibration loop.  It removes
+    # both terms exactly, U_comp @ J = I, so a null measured on this path
+    # is arithmetic rather than physics.  Pass compensate=False for the
+    # uncompensated control.
+    U_comp = None
+    if fibre is not None and compensate:
+        J = fibre.birefringence_matrix()
+        U_comp = None if J is None else J.conj().T
+
     # SPAD gate in samples (half-window for power extraction)
     gate_half_samples = max(1, int(gate_width / dt / 2.0))
     delay_samples = int(delay / dt)
@@ -402,6 +470,10 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
             E_field = enc.modulate(E_pulse, dt, phase=phi_a)
 
         E_field = E_field * fiber_loss_lin
+        if fibre is not None:
+            E_field = fibre.apply(E_field, dt=dt)
+            if U_comp is not None:
+                E_field = np.transpose(U_comp @ np.transpose(E_field))
 
         if polmux:
             # Bob's PBS routes by polarisation: Alice's reference (H)
