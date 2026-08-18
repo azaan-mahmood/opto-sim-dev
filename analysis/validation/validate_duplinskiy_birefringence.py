@@ -1,10 +1,18 @@
 """The birefringence swing: the other half of a Level-3 pair.
 
-The **null** side is demonstrated in the time-bin chain: birefringence
-perturbs the field hard
-(max|dE|/|E| = 1.679) while QBER stays *bit-identical* across 96e6 pulses.
-That is what a phase-encoded, path-matched interferometer should do -- the
-interfering routes share the polarisation rotation, so it cancels.
+The **null** side is measured by `validate_gobby_impairments.py`:
+birefringence perturbs the field hard, max|dE|/|E| of order 1-2, while the
+QBER of the BALANCED topology stays bit-identical -- same qber, same
+sifted count, same error count.  That is what a phase-encoded,
+path-matched interferometer should do, because both time bins ride one
+polarisation and the rotation is common to the interfering pair.
+
+The qualifier matters.  The Gobby *replication* runs the
+polarisation-multiplexed topology, where the arms leave on orthogonal
+polarisations and a rotation does reach them -- as a common amplitude
+|U00|^2 and a relative phase 2*arg(U11), the Jones matrix being SU(2).
+So "the time-bin chain is blind to birefringence" is a statement about a
+topology, not about an encoding.
 
 But a null alone cannot validate an impairment model.  says so
 itself, and names the successor:
@@ -105,9 +113,14 @@ def run(quick=False):
     print("=" * 74)
     print(f"  seed {SEED}, target {TARGET_SIFTED} sifted per cell "
           f"(standard)")
-    print("  Gobby's null side, for reference (, 100 km, 96e6 pulses):")
-    print("    no impairments 2.91 +/- 0.27 %, + birefringence 2.92 +/- 0.27 %")
-    print("    -- bit-identical: same sifted, same errors")
+    print("  The null side is measured by "
+          "analysis/validation/validate_gobby_impairments.py,")
+    print("  not transcribed here.  What it establishes is bit-identity in")
+    print("  the BALANCED topology -- same qber, same sifted, same errors --")
+    print("  under a field perturbation of the same size this chain sees.")
+    print("  A QBER value is the wrong thing to quote for it: the claim is")
+    print("  exactness, and a number would invite comparison against error")
+    print("  bars that do not apply to it.")
 
     print(f"\n  {'km':>5} {'pulses':>12} {'compensated':>22} "
           f"{'uncompensated':>22} {'swing':>20}")
@@ -210,8 +223,11 @@ def _figure(rows, quick=False):
         ax.text(i + w / 2, qu[i] + su[i] + 1.2, f'{qu[i]:.2f}', ha='center',
                 fontsize=8)
 
-    ax.axhline(2.92, color='0.35', ls='--', lw=1.5,
-               label='Gobby with birefringence (2.92 %, bit-identical)')
+    # No Gobby line here.  Its null is bit-identity rather than a value, so
+    # drawing it as a horizontal QBER would misrepresent the claim -- and
+    # the two chains do not share an error budget, so the heights would not
+    # be comparable even when both are measured.  See
+    # validate_gobby_impairments.py.
     ax.set_xticks(x)
     ax.set_xticklabels([f'{k} km' for k in km])
     ax.set_xlabel('fibre length')

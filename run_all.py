@@ -52,6 +52,13 @@ switches the guard off and writes to ``--quick`` names, which exercises
 the chain end to end in about 20 s while producing numbers that are
 explicitly not citable.  Use ``--full`` for the real sweep.
 
+A second Gobby entry is worth a note.  ``Gobby`` replicates the
+published QBER-vs-distance sweep; ``Gobby-impairments`` asks a different
+question -- whether the fibre model reaches that chain at all, and what it
+does when it gets there.  They are separable because the second turns the
+modulation-error floor off, so a fibre contribution of a fraction of a
+percent is not buried under 3.3 %.
+
 ``output``
     Checked after the run.  ``{seed}`` fills in for the seeded validators;
     ``{q}`` becomes ``--quick`` only when the harness actually passed
@@ -99,6 +106,12 @@ VALIDATORS = [
     _v('Gobby', 'analysis/val_gobby/validate_gobby.py',
        'analysis/val_gobby/val_gobby_table{q}.tex', seeded=True,
        quick='safe'),
+    # Not seeded: it pins its own SEED so the Jones matrix the closed-form
+    # predictions are derived from is the one the Monte Carlo runs through.
+    # A harness-supplied seed would move one without the other.
+    _v('Gobby-impairments',
+       'analysis/validation/validate_gobby_impairments.py',
+       'analysis/val_gobby/val_gobby_impairments{q}.csv', quick='safe'),
 
     # --- DFB device ------------------------------------------------------
     _v('DFB-reflection', 'analysis/validation/validate_dfb_reflection.py',

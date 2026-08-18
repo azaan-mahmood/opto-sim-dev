@@ -4,6 +4,63 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-18 — the Gobby chain gets a real fibre, and the fibre gets a clock
+
+### Session: `FiberRealization` in `bb84_time_bin`, drift on both protocols, a new validator
+
+| Change | Files | Rationale |
+|---|---|---|
+| Fibre impairments in the time-bin chain | `src/protocols/bb84_time_bin.py` | It modelled 122 km of fibre as one scalar multiply while `bb84_duplinskiy` and `bb84_test_dispersion` both built a `FiberRealization`. The justification was that both interfering paths share the operator so birefringence divides out -- true for the *balanced* topology, but the Gobby replication runs the polarisation-multiplexed one, where the arms leave on orthogonal polarisations and a rotation reaches them. |
+| `FiberRealization.at(t)` and `drift_temperature_rate_C_s` | `src/channel/fiber.py` | `_J` was built once at construction and never rebuilt, so nothing could express a fibre changing between the moment Bob calibrates against it and the moment light travels through it. `calibration_temperature` / `calibration_bend_radius` gave a fixed two-state mismatch; what was missing is a mismatch that *grows*. |
+| Blocked coefficient extraction | `src/protocols/bb84_time_bin.py`, `src/protocols/bb84_duplinskiy.py` | The closed form and the response table are each exact for one fibre state. Runs are now cut into `drift_blocks` pieces with the fibre held still inside each. A count rather than a pulse size, so raising `num_bits` for statistical power does not change the drift resolution. |
+| `run_duration` on the polarisation chain | `src/protocols/bb84_duplinskiy.py` | Without it the pulse budget sets the simulated experiment length, so asking for tighter error bars quietly asks for a longer experiment. Same bug and same fix as the time-bin chain already had. |
+| New validator | `analysis/validation/validate_gobby_impairments.py`, `run_all.py` (19 validators) | Three different required outcomes from one impairment model in one chain, plus the drift crossover. |
+| Transcribed Gobby literals removed | `analysis/validation/validate_duplinskiy_birefringence.py` | It printed "no impairments 2.91 %, + birefringence 2.92 %" as the Gobby null, with no generating script -- the numbers came from the retired `val_system.py`. It now points at the validator that measures it. |
+
+**The mechanism, because it is not the obvious one.** The sectional Jones
+matrix is exactly SU(2): `|U00| = |U11|` and `arg(U00) = -arg(U11)`, both
+to the float64 floor at 10/50/122 km across seeds. A rotation therefore
+does exactly two things in the polarisation-multiplexed topology -- scale
+**both** arms by the same `|U00|`, and shift their relative phase by
+`2*arg(U11)`. There is no arm imbalance available to collapse the fringe.
+
+Both halves of the paper's sentence follow from that. "Polarisation drift
+reduces the bit rate" is the common amplitude; "but does not degrade the
+QBER" holds because the phase is calibrated out, which their Bob does with
+the piezo-driven fibre stretcher in his long arm; and the proviso, "provided
+that the signal rate is significantly higher than the intrinsic error
+rate", is the background claiming a larger share of a reduced signal.
+
+Measured uncompensated against those two closed forms: QBER 86.77 +/- 1.60 %
+at 10 km against a predicted 88.42, and 34.04 +/- 1.50 % at 50 km against
+32.86; rate ratios 0.1068 and 0.3512 against 0.1017 and 0.3501. Cancelling
+`2*arg(U11)` with the *modulator bias* parameter alone restores the QBER
+while leaving the rate loss untouched, which is what establishes the
+degeneracy.
+
+**Drift is off by default in the replication, deliberately.** In this
+topology fibre drift is degenerate with the interferometer arm drift
+already modelled -- the fibre's phase enters `delta` exactly as an
+arm-length offset would -- and `_bias_for_aggregate` has already assigned
+the paper's full 3.3 % floor to modulator bias plus arm drift. A third
+term would count one measurement twice. The paper also rules the fibre out
+independently: the floor is flat to 65 km while a fibre effect grows with
+length, classical fringe visibility is 99.96 % measured over the full
+122 km link, and polarisation is reported stable for over 30 minutes there.
+
+**A correction to an earlier diagnosis.** The QBER movement under an
+uncompensated fibre was attributed to "arm imbalance at Bob's PBS". That
+is wrong -- a unitary cannot imbalance the arms -- and the comments
+carrying it have been replaced. The movement is the phase term alone.
+
+**Bit-identity, which everything rests on.** Impairments off and drift off
+reproduce the previous commit exactly at 0 and 50 km on both topologies:
+same `qber`, `n_sifted`, `n_errors`. A static fibre with alignment on is an
+exact null, `U_comp @ J = I` for any unitary, and is reported as arithmetic
+rather than as evidence about impairments. Suite 350 passed, 1 skipped.
+
+---
+
 ## 2026-08-17 — every validator in the harness; docstrings document the code, not its history
 
 ### Session: `run_all.py` 8 validators → 18, `--quick` output guards, docstring cleanup
