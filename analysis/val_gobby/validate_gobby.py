@@ -808,54 +808,45 @@ def run_validation(num_bits=200000, seed=42, distances=None,
                   + ("" if afterpulse_prob == AFTERPULSE_PROB
                      else f" --afterpulse {afterpulse_prob:g}"))
 
-    def provenance(comment):
+    def provenance(comment, marking=True):
         """Parameter provenance, shared by the .tex and .csv headers.
 
-        Written into every artifact because the single most important
-        fact about these numbers is which of them came from the paper
-        (all the link parameters) and which did not (two detector
-        parameters).
+        Records which numbers came from the paper and which did not,
+        because that is the one fact a reader cannot recover from the data.
+        Parameters, sources, units.  It does not argue: the reasoning for
+        each choice lives beside its constant above, where it can be kept
+        correct, rather than being copied into every artifact.
+
+        `marking=False` omits the (m)/(i) paragraph, for callers that print
+        their own legend next to the table it describes.
         """
         c = comment
         lines = [
             "Gobby et al. (2004) link budget -- from the paper, not fitted:",
-            f"  alpha = {ALPHA_dB} dB/km   mu = {MU} photons/clock   "
-            f"eta_Bob = {ETA_BOB} (incl. Bob's 5 dB)",
-            f"  gate = {GATE_WIDTH*1e9:.1f} ns   clock = {REP_RATE/1e6:g} MHz   "
-            f"pulse = {PULSE_WIDTH*1e12:.0f} ps",
-            f"  P_e = {p_e:.2e}/clock/detector -- Gobby's measured total error",
-            "        probability (dark count 3.2e-7 + 1.3 um clock-laser stray",
-            "        light 5.3e-7, deliberately lumped: their sum is what was",
-            "        measured, and splitting them adds an unconstrained knob).",
+            f"  alpha   {ALPHA_dB} dB/km       mu     {MU} photons/clock",
+            f"  eta_Bob {ETA_BOB}         (includes Bob's 5 dB apparatus loss)",
+            f"  gate    {GATE_WIDTH*1e9:.1f} ns         clock  {REP_RATE/1e6:g} MHz"
+            f"       pulse  {PULSE_WIDTH*1e12:.0f} ps",
+            f"  P_e     {p_e:.2e}/clock/detector -- measured total error",
+            "          probability: dark count 3.2e-7 + clock-laser stray",
+            "          light 5.3e-7, lumped because the sum is what was measured",
             "",
-            "Detector parameters NOT from Gobby (the only free inputs here):",
-            f"  afterpulse_prob = {afterpulse_prob}   dead_time = "
-            f"{DEAD_TIME*1e6:g} us   [ID230 datasheet]",
-            "  Afterpulsing is the candidate for the paper's acknowledged",
-            "  third error source (residual 2.9-4.2 pp, roughly",
-            "  distance-independent; measured here in isolation at 2.26 %).",
-            "  It is used at its datasheet value and MUST NOT be fitted --",
-            "  doing so would make the 122 km point a fit rather than a",
-            "  prediction, which is the whole point of this parameterisation.",
+            "Not from Gobby, both at datasheet value and NOT to be fitted --",
+            "fitting either would make the 122 km point a fit, not a prediction:",
+            f"  afterpulse_prob {afterpulse_prob}   dead_time {DEAD_TIME*1e6:g} us   [ID230]",
             "",
-            "Visibility is an OUTPUT, V = S/(S + 2*P_e), not an input; the",
-            f"decoder is ideal (V = {visibility}).  Injecting a measured",
-            "visibility as well would apply the same physics twice -- see",
-            "twice.  The V column below is that prediction; the paper",
-            "states > 0.99 at 65 km and 0.884 at 122 km.",
-            "",
-            "Structural difference worth recording: Gobby's 1.6:1 reference-",
-            "to-encoded intensity ratio puts 0.04 photons in the encoded",
-            "pulse, whereas this encoder AMZI splits 50:50.  That is a",
-            "difference in the chain, not a parameter, and may account for",
-            "part of any residual.",
-            "",
-            "The Gobby column is a MEASUREMENT only on rows marked (m).",
-            f"The paper published four points -- {', '.join(f'{d:g}' for d in GOBBY_DIST_KM)} km",
-            "-- and rows marked (i) are np.interp between them, or below",
-            "4.4 km the endpoint value repeated.  Compare against the (m)",
-            "rows; the (i) rows cannot disagree with anything.",
+            f"Visibility is an output of this budget, V = S/(S + 2*P_e), and the",
+            f"decoder is ideal at V = {visibility}.  The V column is that prediction;",
+            "the paper states > 0.99 at 65 km and 0.884 at 122 km.",
         ]
+        if marking:
+            lines += [
+                "",
+                "The Gobby column is a MEASUREMENT only on rows marked (m); the",
+                f"paper published four points, {', '.join(f'{d:g}' for d in GOBBY_DIST_KM)} km.  Rows marked (i)",
+                "are np.interp between them, or below 4.4 km the endpoint",
+                "repeated, and cannot disagree with anything.",
+            ]
         return ''.join(f"{c} {ln}\n" if ln else f"{c}\n" for ln in lines)
 
     # Save results table.  An under-powered run writes to its own name so
@@ -867,7 +858,10 @@ def run_validation(num_bits=200000, seed=42, distances=None,
         f.write(f"% Generated by analysis/val_gobby/validate_gobby.py "
                 f"{invocation}\n")
         f.write("% QBER error bars are binomial sqrt(q(1-q)/n_sifted).\n%\n")
-        f.write(provenance('%'))
+        # marking=False: this file prints its own (m)/(m@x)/(i) legend below
+        # the tabular, where a reader of the table needs it. The CSV has no
+        # such place, so it keeps the paragraph in its header.
+        f.write(provenance('%', marking=False))
         f.write("%\n")
         f.write(r"\begin{tabular}{rcccccc}" + "\n")
         f.write(r"  Distance & Pulses & Sifted & QBER & Predicted & This work "
@@ -948,7 +942,12 @@ def run_validation(num_bits=200000, seed=42, distances=None,
         ax.plot(GOBBY_DIST_KM, GOBBY_QBER, 'gs', label='Gobby paper (Fig 3)')
         ax.set_xlabel('Distance (km)')
         ax.set_ylabel('QBER (%)')
-        ax.set_title('Time-bin BB84 — QBER vs Distance')
+        # Self-describing, because a figure travels away from the script
+        # that made it. Which paper, which seed, what budget.
+        ax.set_title('Replication of Gobby, Yuan & Shields (2004): '
+                     'time-bin BB84 QBER vs distance\n'
+                     f'seed {seed}, {budget_mode}, link budget from the '
+                     'paper with nothing fitted')
         ax.legend()
         ax.grid(True, alpha=0.3)
         ax.axhline(y=11.0, color='r', linestyle='--', alpha=0.5, label='BB84 threshold (11%)')

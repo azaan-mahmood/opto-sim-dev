@@ -396,6 +396,16 @@ def _figure(tr, quick=False):
     ax2.grid(True, alpha=0.3)
     ax2.legend(fontsize=8)
 
+    # Neither panel title names the experiment, and a figure travels away
+    # from the script that made it.
+    # Second line carries provenance, not a repeat of the panel titles
+    # below, which already name the block length and the link.
+    fig.suptitle('Duplinskiy polarisation chain over an urban line: is the '
+                 'QBER stationary in time?\n'
+                 f'{N_BLOCKS} blocks of ~{BLOCK_SIFTED} sifted bits, seed '
+                 f'{SEED}'
+                 + ('   [QUICK -- not quotable]' if quick else ''),
+                 fontsize=11)
     fig.tight_layout()
     png = os.path.join(OUT_DIR, _stem(quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')

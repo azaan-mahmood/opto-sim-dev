@@ -741,6 +741,13 @@ def _figure(t, P, f, S, peaks, rg, stg, rt, cw_current, quick=False):
     # with something that does not belong.
     ax[1, 2].axis('off')
 
+    # Each panel title says what that panel shows; none says what the figure
+    # is, and a figure travels away from the script that made it.
+    fig.suptitle('Split-step DFB under drive: continuous-wave noise, '
+                 'gain-switched pulses, and the resulting eye\n'
+                 f'{N_SECTIONS} sections, seed {SEED}'
+                 + ('   [QUICK -- not quotable]' if quick else ''),
+                 fontsize=11)
     fig.tight_layout()
     png = os.path.join(OUT_DIR, _stem('val_dfb_drive', quick) + '.png')
     fig.savefig(png, dpi=150, bbox_inches='tight')
