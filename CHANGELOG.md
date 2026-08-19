@@ -4,6 +4,115 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-19 — the servo Gobby's receiver actually has, and a clear-out
+
+### Session: phase servo and piezo stretcher, four scripts retired, two false statements cut
+
+| Change | Files | Rationale |
+|---|---|---|
+| Bob's phase servo | `src/protocols/bb84_time_bin.py` | The drift model contradicted the paper it replicates. Gobby report that drift costs bit rate and not QBER; ours did the reverse, because a residual rotation is SU(2) and so costs O(eps^2) in amplitude against O(eps) in phase. Their receiver holds its operating point with a piezo stretcher, and that component was missing. |
+| `PiezoFibreStretcher` | `src/channel/piezo_stretcher.py` (NEW) | The servo was a scalar knob with no range, no drive voltage and no device. Every other piece of hardware here lives in `src/channel/` with a cited formula. |
+| Eye diagram ported out of the retiring script | `src/visualization/eye.py` (NEW), `validate_cwlaser.py`, `validate_dfb_drive.py` | The one thing worth keeping from `laser_characterization.py`. Porting it exposed three faults it had always had. |
+| Four proof-of-concept scripts retired | `analysis/examples/` (NEW), `git mv` of `val_system.py`, `val_system_scenarios.py`, `qber_vs_distance_dispersion.py`, `laser_characterization.py` | Never literature-validated: their numbers could be checked only against themselves. The protocol chains replaced them. |
+| Two false statements cut from an artifact header | `analysis/val_gobby/validate_gobby.py` | Not merely verbose — wrong. See below. |
+| Figure titles | `validate_gobby.py`, `validate_dfb_drive.py`, `validate_duplinskiy_urban.py` | A figure travels away from the script that made it. |
+| Two reproducibility defects fixed | `validate_duplinskiy_calibration.py`, `val_cwlaser--seed42.png` | Found by running the harness, not by reading the code. |
+| Full Gobby sweep re-run | `val_gobby--seed42.{csv,png}`, `val_gobby_table.tex` | The regression check for the whole fibre-and-drift workstream. |
+
+**The servo, and why it costs nothing to run.** The closed form is
+`P = g0 + 2*Re(S*exp(i*delta))`, so a fibre phase `theta` sends
+`S -> S*exp(i*theta)` and shifts `arg(S)` by exactly `theta`. `arg(S)` is
+the fringe phase, which is what a real lock-in servo measures, so the
+error signal was already being computed once per block. Verified sharply
+rather than assumed: with the fibre frozen, the servo is bit-identical to
+cancelling `2*arg(R11)` by hand.
+
+It is **phase only**, which is the entire point. Inverting the full Jones
+matrix would null the amplitude too and the rate loss would vanish with
+it. Measured at 10 km and 3e-3 C/s over the paper's 120 s transfer: the
+sifted rate falls to 0.589 of reference with the servo on and 0.589 with
+it off, while the QBER goes from 41.6 % to 0.054 % against a 0.095 %
+baseline. Sample-and-hold gives the crossover — 0.00 %, 0.39 %, 4.09 % and
+14.57 % at re-lock intervals of 1.2 s, 12 s, 60 s and never.
+
+Not offered on `bb84_duplinskiy`: there the residual is a full SU(2)
+acting on the encoding itself, so a phase-only correction has nothing to
+correct.
+
+**The stretcher is a specific part.** Thorlabs FVP155P, DOC-103641 Rev B,
+supplied by the user after asking for a citable design. Every default is
+one line of that datasheet — half-wave voltage < 20 V, 7 pi stroke at
+150 V, 80 kHz resonance, 0.1 dB insertion loss, 0.15 % residual AM — and
+the values appear in that file only. The physics under it is Butter &
+Hocker, *Appl. Opt.* 17(18) 2867 (1978).
+
+`voltage_for` wraps into one fringe before converting, which is what makes
+a finite stroke sufficient: an interferometer's operating point is
+periodic, so a 5 pi correction and a pi one are the same point. The demand
+therefore never exceeds 2*v_pi = 40 V against a 150 V limit however far
+the fibre has drifted.
+
+Insertion loss is applied **by default** and suppressed explicitly in the
+Gobby chain, where `ETA_BOB = 0.045` already folds in "5 dB of loss in
+Bob's apparatus". Residual AM is carried and not applied: the datasheet
+bounds its size without giving its dependence on drive, and applying it
+would mean inventing that shape.
+
+**Two statements in a committed header were false, not just long.** It
+told the reader afterpulsing "is the candidate for the paper's
+acknowledged third error source"; page 6 resolves that source itself as
+interferometer imperfection, bounded as minor. And it recorded a
+"structural difference" — that Gobby split 1.6:1 while "this encoder AMZI
+splits 50:50" — attributing residual to it. The chain passes
+`split_ratio=SPLIT_RATIO=1.6` and reproduces the paper's ratio exactly, so
+the header was blaming a difference that does not exist. Headers down from
+37 of 47 lines to 23 of 33 in the CSV, 46 of 60 to 27 of 41 in the .tex,
+with the (m)/(i) marking intact.
+
+**The sweep was the regression check, and it passed.** 1.07e9 pulses
+across nine distances to 122 km, every row bit-identical to the previous
+artifact: same pulse count, same sifted count, same QBER to four decimals.
+`bb84_time_bin.py` had changed substantially — `FiberRealization`, the
+drift clock, blocked coefficient extraction — and bit-identity had only
+been shown at 0 and 50 km on 300k pulses.
+
+**Three faults in the eye diagram, and only one was known.** It was
+unseeded, so every run differed. The X-cut MZM modulates Ey while
+`LaserDriver` emits entirely on Ex, so the DFB eye was a flat line with
+the modulator doing nothing, and `CWLaser` at 45 degrees left half its
+power unmodulated as a floor capping extinction near 3 dB. And the drive
+was an ideal rectangle, so edges were one sample wide and there was no eye
+opening at all. Fixed with a seed, a polarisation controller implemented
+as a unitary, and the fourth-order Bessel-Thomson drive at 0.75*baud the
+eye-mask standards specify.
+
+**Two reproducibility defects, found by running the harness.** The CW
+laser figure was stale and that one was self-inflicted: regenerated
+mid-way through fixing the eye, then committed alongside the finished
+code. The calibration figure was never reproducible at all — three runs,
+three hashes — because `SEED` reached `FiberRealization` while
+`spad.detect` drew from the global `numpy` state that nothing had seeded.
+
+**A property of this chain worth not relearning.** Its RNG desynchronises
+on any float-level change: one flipped detection alters how many draws
+follow, and every later pulse gets different numbers. Measured with a
+deliberate nudge on the servo phase, 1e-15 relative moves the sifted count
+about 13 % with no systematic trend — a reshuffled sample, not a different
+answer. So a feature can be bit-identical when off only if the default
+path's arithmetic is *literally* untouched; computing the same value a
+different way is enough to break it.
+
+**Scope corrections worth recording.** The figure-subtitle work was
+believed to cover 21 scripts, then 8 by a regex, and was actually 3. Both
+earlier counts were false negatives from a pattern that required the
+newline in the first quoted segment, where these titles are built from
+concatenated literals. Checked individually in the end.
+
+Suite 332 -> 378 passed, 1 skipped. `run_all.py` 19 validators, all 18
+non-Gobby passing in 51 minutes.
+
+---
+
 ## 2026-08-18 — the Gobby chain gets a real fibre, and the fibre gets a clock
 
 ### Session: `FiberRealization` in `bb84_time_bin`, drift on both protocols, a new validator
