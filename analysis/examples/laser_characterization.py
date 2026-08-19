@@ -1,3 +1,21 @@
+"""RETIRED to analysis/examples/. Kept because it runs and because the
+reasoning in it is worth reading, not because anything depends on it.
+Nothing in src/ or run_all.py imports from this directory.
+
+What it was: an eight-panel CWLaser dashboard -- power calibration,
+phase noise, RIN, polarisation, and eye diagrams.
+
+What replaced it: analysis/validation/validate_cwlaser.py covers the
+spectra with pass/fail criteria, which this file never had.
+
+The eye diagrams were the exception and were kept. They moved to
+src/visualization/eye.py, which this file now imports, and are drawn by
+validate_cwlaser.py and validate_dfb_drive.py. Porting them turned up
+three faults that had always been there: no seed, so every run differed;
+no polarisation control, so the X-cut MZM was modulating a component the
+source had not put its light on; and an unfiltered drive, so the edges
+were one sample wide and there was no eye opening at all.
+"""
 import matplotlib
 matplotlib.use('Agg')
 import numpy as np
@@ -5,10 +23,14 @@ import matplotlib.pyplot as plt
 from scipy import signal
 import os, sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.lasers.cwlaser import CWLaser
 from src.visualization.stokes import compute_stokes_parameters, poincare
 from src.channel.mzm import MZM
+# One implementation, and it is not this file's any more: the eye was
+# ported to src/visualization/ when this script retired, and gained a
+# seed, a polarisation controller and a band-limited drive there.
+from src.visualization import eye_diagram
 
 OUT = os.path.join(os.path.dirname(__file__))
 
@@ -201,63 +223,6 @@ def plot_stokes_summary(laser, ax):
     ax.text(0.5, 0.5, text, transform=ax.transAxes, ha='center', va='center',
             fontsize=10, family='monospace')
     return S1, S2, S3
-
-
-# --------------------------------------------─
-#  6. Eye diagram (NRZ-OOK) via MZM
-# --------------------------------------------─
-def eye_diagram(laser, bitrate, n_bits=128, spb=64, ax=None, title=None):
-    """
-    NRZ On-Off Keying eye diagram generated with a physical MZM model.
-
-    The MZM converts the CW laser field into an OOK signal by applying
-    a push-pull voltage swing of 0 V (ON) to V_pi (OFF).  This
-    replaces the idealised intensity-modulator model (E * wfm) used in
-    earlier versions.
-
-    Parameters
-    ----------
-    bitrate : float   (baud, e.g. 10e9)
-    n_bits  : int     number of random bits
-    spb     : int     samples per bit
-    """
-    dt   = 1.0 / (bitrate * spb)
-    Tbit = 1.0 / bitrate
-
-    mzm = MZM()
-    V_off = mzm.switching_voltage  # voltage for null
-
-    bits = np.random.randint(0, 2, n_bits)
-    wfm  = np.repeat(bits, spb).astype(float)
-
-    N = len(wfm)
-    E_cw = laser.sample_field(dt, N)
-
-    V_signal = np.where(wfm > 0.5, 0.0, V_off)
-    E_mod = mzm.modulate(E_cw, V_signal)
-    I = np.sum(np.abs(E_mod)**2, axis=1)
-
-    eye_len = 2 * spb
-    n_eyes  = len(I) // eye_len
-    if n_eyes < 2:
-        return
-
-    I = I[:n_eyes * eye_len]
-    eye = I.reshape(n_eyes, eye_len)
-
-    t_eye = np.arange(eye_len) * dt / Tbit
-
-    if ax is None:
-        fig, ax = plt.subplots()
-    for row in eye:
-        ax.plot(t_eye, row * 1e3, 'steelblue', lw=0.4, alpha=0.5)
-
-    ax.set_xlabel('Time (UI)')
-    ax.set_ylabel('Intensity (mW)')
-    ax.set_title(title or f'Eye diagram @ {bitrate/1e9:.1f} Gbaud '
-                          f'(MZM, RIN = {laser.rin_density:.0f} dB/Hz)')
-    ax.set_xlim(0, 2)
-    return eye
 
 
 # --------------------------------------------─

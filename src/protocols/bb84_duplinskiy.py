@@ -390,8 +390,8 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
     #
     # With `source_field` given, a real laser drives the chain instead.  It
     # is renormalised to the same power_per_pulse, so mu stays calibrated
-    # once at the source (val_system.py:181's convention) and the swap
-    # changes the *statistics* of the light, not its mean level.  Anything
+    # once at the source and the swap changes the *statistics* of the
+    # light, not its mean level.  `bb84_time_bin` renormalises the same way.  Anything
     # passed here must already be polarised at 45 degrees to the modulator
     # axes; see the parameter docstring.
     if source_field is None:

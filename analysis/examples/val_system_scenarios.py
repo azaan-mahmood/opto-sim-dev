@@ -1,4 +1,17 @@
 """
+RETIRED to analysis/examples/. Kept because it runs and because the
+reasoning in it is worth reading, not because anything depends on it.
+Nothing in src/ or run_all.py imports from this directory.
+
+What it was: the impairment-table generator for the proof-of-concept
+chain above -- eight configurations at 100 km, each with a recorded
+seed and pulse budget.
+
+What replaced it: the same sweeps run on the protocol chains, where a
+row means something about a published apparatus rather than about a
+chain assembled to demonstrate that assembly works. It imports
+simulate_point from val_system, so it retires with it.
+
 System-Level Impairment Scenarios (: Table 11 generator)
 ===============================================================
 Generates the system-level impairment table for the time-bin BB84 chain:
@@ -31,8 +44,8 @@ author regenerate at any budget.
 
 Usage
 -----
-    python analysis/val_system_scenarios.py            # defaults below
-    python analysis/val_system_scenarios.py --bits 50000000 --distance 75
+    python analysis/examples/val_system_scenarios.py   # defaults below
+    python analysis/examples/val_system_scenarios.py --bits 50000000 --distance 75
 """
 import argparse
 import os
@@ -41,8 +54,8 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from analysis.val_system import simulate_point, qber_err, VIS_DEFAULT
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from analysis.examples.val_system import simulate_point, qber_err, VIS_DEFAULT
 
 # --- Explicit impairment configurations (one full dict per row) --------
 # Every row is self-contained: no hidden defaults.  Values that differ
@@ -322,7 +335,7 @@ def main():
     SEED, NUM_BITS, DIST = args.seed, args.bits, args.distance
     COMMIT = commit_hash()
 
-    OUT = os.path.join(os.path.dirname(__file__), '..', 'val_system')
+    OUT = os.path.join(os.path.dirname(__file__), 'val_system')
     os.makedirs(OUT, exist_ok=True)
 
     if args.target_sifted:

@@ -24,8 +24,20 @@ TABLES = [
     ('val_attenuation',   'val_attenuation',    'tab:attenuation',   'Attenuation validation summary.'),
     ('val_birefringence', 'val_birefringence',  'tab:birefringence', 'Birefringence validation summary.'),
     ('val_apd',           'val_apd',            'tab:apd',           'APD validation summary.'),
-    ('val_system',        'val_system',         'tab:system',        'System-level combined impairment scenarios at 100~km.'),
 ]
+
+# The roster is the seven COMPONENT validators, and stops there.
+#
+# `val_system` was the eighth until its script retired to
+# analysis/examples/; it was a proof-of-concept chain rather than a
+# replication, so its table was a statement about itself.
+#
+# The protocol validators are deliberately absent rather than pending.
+# They write their own .tex directly -- validate_gobby.py emits
+# val_gobby_table.tex with a provenance header this generator has no way to
+# produce -- and their CSVs open with `#` comment blocks that `read_csv`
+# below would swallow as a header row.  Adding them means generalising the
+# reader and the naming, and nothing currently consumes the output.
 
 
 def escape_latex(s):
@@ -86,11 +98,8 @@ def main():
     seed = args.seed
 
     for subdir, csv_prefix, tex_label, caption in TABLES:
-        csv_path = os.path.join(BASE, 'analysis', subdir if subdir != 'val_system' else '',
+        csv_path = os.path.join(BASE, 'analysis', subdir,
                                 f'{csv_prefix}--seed{seed}_table.csv')
-        if not os.path.exists(csv_path):
-            # Try alternate path for val_system
-            csv_path = os.path.join(BASE, subdir, f'{csv_prefix}--seed{seed}_table.csv')
         if not os.path.exists(csv_path):
             print(f"  SKIP: {csv_path} not found")
             continue

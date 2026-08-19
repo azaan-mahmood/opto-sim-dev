@@ -280,9 +280,9 @@ PATH_MISMATCH = 0.0        # s, residual after trimming (0 = perfectly trimmed)
 # 38.5 %.  At full power the same point read 5.30 %.  That is what these
 # guards exist to prevent.
 #
-# MIN_SIFTED sits below TARGET_SIFTED_DEFAULT on purpose -- see the same
-# note in val_system_scenarios.py.  Equal values make the run a knife-edge
-# where any undershoot discards the whole sweep at the final write.
+# MIN_SIFTED sits below TARGET_SIFTED_DEFAULT on purpose.  Equal values
+# make the run a knife-edge where any undershoot discards the whole sweep
+# at the final write.
 MIN_SIFTED = 500
 TARGET_SIFTED_DEFAULT = 3000      # sigma ~ 0.5 pp at QBER ~8 %
 

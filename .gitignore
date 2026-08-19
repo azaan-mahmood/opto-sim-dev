@@ -311,3 +311,9 @@ analysis/*.pdf
 *--quick.csv
 *--quick.md
 *--quick.tex
+
+# Retired proof-of-concept scripts still run and still draw. Their
+# output is not evidence about anything, so it stays out of the tree.
+# The val_system/ subdirectory is exempt: those three artifacts were
+# committed before the retirement and moved with their script.
+analysis/examples/*.png

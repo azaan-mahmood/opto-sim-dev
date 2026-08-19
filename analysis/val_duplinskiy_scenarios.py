@@ -1,9 +1,8 @@
 """Impairment scenarios for the polarisation-encoded (Duplinskiy) chain.
 
-The counterpart to `val_system_scenarios.py`, which does this for the
-time-bin chain.  Every row is an explicit, self-contained configuration run
-at a recorded seed and pulse count, and the script refuses to emit a table
-whose rows cannot support their conclusions.
+Every row is an explicit, self-contained configuration run at a recorded
+seed and pulse count, and the script refuses to emit a table whose rows
+cannot support their conclusions.
 
 No new physics.  Every number here has already been measured by one of the
 six validators; this puts them in one place, at one seed, with one
@@ -183,9 +182,10 @@ def run_to_target(config, target_sifted, ceiling, pilot_bits=PILOT_BITS,
                   max_retries=3):
     """Grow the pulse count until `target_sifted` sifted bits are collected.
 
-    Same contract as `val_system_scenarios.run_to_target`: pilot, scale,
-    re-run from the same seed, and retry on undershoot, because a one-shot
-    extrapolation from a noisy pilot lands short about half the time.
+    Pilot, scale, re-run from the same seed, and retry on undershoot,
+    because a one-shot extrapolation from a noisy pilot lands short about
+    half the time.  `validate_gobby.run_to_target` does the same thing for
+    the time-bin chain.
     """
     n = int(min(pilot_bits, ceiling))
     r = simulate_bb84_duplinskiy(n, **config)
@@ -265,9 +265,8 @@ def _write_csv(rows, seed, distance, target, commit, stem):
 def _write_markdown(rows, seed, distance, target, commit, stem):
     """A markdown table, not LaTeX.
 
-    `val_system_scenarios.py` emits .tex for the manuscript.  This one does
-    not: it feeds the working record, and a manuscript table is the
-    author's to place.
+    This feeds the working record rather than a manuscript, and a
+    manuscript table is the author's to place.
     """
     path = os.path.join(OUT, stem + '.md')
     # Explicit utf-8: the default codec on this platform is cp1252 and

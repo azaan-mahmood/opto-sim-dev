@@ -171,15 +171,13 @@ Open-source, validated physical-layer fiber-optic simulator where the complex-en
 - `analysis/val_biref/val_biref--seed42.png`: Birefringence L_B vs R (Yuan Fig 1) [old model]
 - `analysis/val_birefringence/val_birefringence--seed42.png`: Random-axis birefringence validation (6 panels)
 - `analysis/val_gobby/val_gobby--seed42.png` + `val_gobby_table.tex`: Gobby nine-point sweep, `--seed 42 --target-sifted 3000` (GOBBY-1..7e)
-- `val_system/val_system--seed42.png`: System-level time-bin BB84 demo (ARCH-1 rebuild): QBER vs distance/pulse width/visibility/μ/DCR, SPAD path
-- `val_system/val_system_scenarios--seed42.{csv,tex}`: BLOCK-2 impairment table, `--seed 42 --target-sifted 3000` per scenario (OPEN-3 closed; time-bin immunity demonstrated, §26.6)
+- `analysis/val_gobby/val_gobby_impairments.{csv,png}`: fibre impairments in the Gobby chain -- balanced null, polmux swing, drift at two rates
+- `analysis/examples/val_system/val_system--seed42.{csv,png}`: RETIRED proof-of-concept chain, kept for reference; superseded by the protocol validators
 
 - `analysis/qber_vs_distance.png`: 0% QBER 10-190 km
 - `analysis/qber_vs_bitrate.png`: 0% at 215 MHz → 35% at 10 GHz
-- `analysis/qber_vs_distance_dispersion.png`: QBER climb 0→42% at 10→200 km with dispersion (5 ps pulse)
-- `analysis/laser_characterization.png`: 8-panel CWLaser dashboard
-- `analysis/poincare_sphere.png`: Poincaré sphere from Stokes parameters
-- `analysis/eye_diagrams.png`: NRZ-OOK eye diagrams at 5/10/25 Gbaud
+- Eye diagrams now live in `src/visualization/eye.py`, drawn as panels of `val_cwlaser--seed42.png` and `val_dfb_drive.png`
+- The dispersion sweep, the CWLaser dashboard and the standalone eye/Poincaré figures retired with their scripts to `analysis/examples/` (their output is gitignored)
 
 ## Test Suite (Tier 0)
 
@@ -239,13 +237,15 @@ opto-sim-dev/
 │   ├── val_mzm/               # MZM validation outputs
 │   ├── val_apd/  val_attenuation/  val_cwlaser/   # component outputs
 │   ├── val_gobby/             # Gobby sweep (GOBBY-1..7e): validate_gobby.py + CSV/PNG/TeX, --seed 42 --target-sifted 3000
-│   ├── val_system.py          # System-level time-bin BB84 demo (SPAD path)
-│   ├── val_system_scenarios.py  # Impairment-table generator (BLOCK-2, CSV+TeX)
-│   ├── laser_characterization.py   # Active: CWLaser dashboard (Agg, headless)
-│   ├── qber_vs_distance_dispersion.py  # Dispersion QBER sweep
+│   ├── examples/               # RETIRED proof-of-concept scripts; nothing
+│   │                           # in src/ or run_all.py imports from here
+│   │   ├── val_system.py            # superseded by the protocol chains
+│   │   ├── val_system_scenarios.py  # its impairment-table generator
+│   │   ├── laser_characterization.py  # eye ported to src/visualization/
+│   │   └── qber_vs_distance_dispersion.py
 │   ├── *.png
 │   └── *.tex / *.pdf
-├── tests/                     # pytest suite (332 tests)
+├── tests/                     # pytest suite (361 tests)
 │   ├── conftest.py            # --seed CLI, auto-seed at session start
 │   ├── test_apd.py
 │   ├── test_cwlaser.py
@@ -295,7 +295,6 @@ opto-sim-dev/
 │   │       └── bb84_high_bitrate.py# Legacy bitrate-sweep variant
 │   └── common/                # README images only
 ├── paper/                     # Source-paper PDFs (untracked): Duplinskiy 2017, etc.
-├── val_system/                # System demo + scenario outputs (PNG+CSV+TeX, seed-tagged)
 ├── research_roadmap.md
 ├── opto-sim-issues-and-fixes.md   # authoritative issue/status log (§§18-29 current passes; NOT committed)
 ├── AGENTS.md

@@ -1,4 +1,29 @@
 """
+RETIRED to analysis/examples/. Kept because it runs and because the
+reasoning in it is worth reading, not because anything depends on it.
+Nothing in src/ or run_all.py imports from this directory.
+
+What it was: a proof-of-concept chain, built to show that the
+independently validated components compose into a working time-bin
+BB84 link. It did that, and it was never literature-validated -- the
+numbers it produced could not be checked against a published
+experiment, only against themselves.
+
+What replaced it: the protocol chains. Gobby (analysis/val_gobby/) and
+Duplinskiy (analysis/validation/validate_duplinskiy_*.py) replicate
+apparatus that exists in the literature, so their outputs can disagree
+with something.
+
+The specific claim this file used to carry -- that a time-bin chain is
+blind to birefringence -- is now measured by
+analysis/validation/validate_gobby_impairments.py, and measured on the
+right topology. This chain builds a BALANCED interferometer, where both
+time bins ride one polarisation and a rotation genuinely does cancel.
+The Gobby replication runs the POLARISATION-MULTIPLEXED apparatus the
+paper describes, where it does not. Reading the null off this file and
+applying it there is exactly the error a parallel implementation
+invites, and did.
+
 System-Level Time-Bin BB84 QKD Demonstration
 =============================================
 Demonstrates that the independently validated components compose correctly
@@ -77,7 +102,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.lasers.cwlaser import CWLaser
 from src.channel import FiberRealization
 from src.channel.interferometer import AsymmetricMZI
@@ -309,7 +334,7 @@ def main():
     SEED = args.seed
     NUM_BITS = args.bits
 
-    OUT = os.path.join(os.path.dirname(__file__), '..', 'val_system')
+    OUT = os.path.join(os.path.dirname(__file__), 'val_system')
     os.makedirs(OUT, exist_ok=True)
 
     print(f"System-level time-bin BB84 demo — {NUM_BITS} pulses/point, "

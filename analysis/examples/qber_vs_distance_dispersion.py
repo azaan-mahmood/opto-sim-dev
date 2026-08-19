@@ -1,10 +1,22 @@
+"""RETIRED to analysis/examples/. Kept because it runs and because the
+reasoning in it is worth reading, not because anything depends on it.
+Nothing in src/ or run_all.py imports from this directory.
+
+What it was: a QBER-versus-distance sweep with dispersion on, through
+bb84_test_dispersion.
+
+What replaced it: analysis/validation/validate_duplinskiy_dispersion.py,
+which asks the same question of a chain that replicates a real
+experiment. Judged not worth rewiring on its own terms -- the sweep is
+a special case of what the protocol validators already cover.
+"""
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import os, sys, time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.protocols.bb84_test_dispersion import simulate_bb84_dispersion
 
 OUT = os.path.join(os.path.dirname(__file__))
