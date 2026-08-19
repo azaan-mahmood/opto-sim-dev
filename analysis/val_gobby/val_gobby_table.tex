@@ -2,39 +2,20 @@
 % QBER error bars are binomial sqrt(q(1-q)/n_sifted).
 %
 % Gobby et al. (2004) link budget -- from the paper, not fitted:
-%   alpha = 0.2 dB/km   mu = 0.1 photons/clock   eta_Bob = 0.045 (incl. Bob's 5 dB)
-%   gate = 3.5 ns   clock = 2 MHz   pulse = 80 ps
-%   P_e = 8.50e-07/clock/detector -- Gobby's measured total error
-%         probability (dark count 3.2e-7 + 1.3 um clock-laser stray
-%         light 5.3e-7, deliberately lumped: their sum is what was
-%         measured, and splitting them adds an unconstrained knob).
+%   alpha   0.2 dB/km       mu     0.1 photons/clock
+%   eta_Bob 0.045         (includes Bob's 5 dB apparatus loss)
+%   gate    3.5 ns         clock  2 MHz       pulse  80 ps
+%   P_e     8.50e-07/clock/detector -- measured total error
+%           probability: dark count 3.2e-7 + clock-laser stray
+%           light 5.3e-7, lumped because the sum is what was measured
 %
-% Detector parameters NOT from Gobby (the only free inputs here):
-%   afterpulse_prob = 0.0   dead_time = 13 us   [ID230 datasheet]
-%   Afterpulsing is the candidate for the paper's acknowledged
-%   third error source (section 18.4 residual: 2.9-4.2 pp, roughly
-%   distance-independent; measured here in isolation at 2.26 %).
-%   It is used at its datasheet value and MUST NOT be fitted --
-%   doing so would make the 122 km point a fit rather than a
-%   prediction, which is the whole point of this parameterisation.
+% Not from Gobby, both at datasheet value and NOT to be fitted --
+% fitting either would make the 122 km point a fit, not a prediction:
+%   afterpulse_prob 0.0   dead_time 13 us   [ID230]
 %
-% Visibility is an OUTPUT, V = S/(S + 2*P_e), not an input; the
-% decoder is ideal (V = 1.0).  Injecting a measured
-% visibility as well would apply the same physics twice -- see
-% section 18.4.  The V column below is that prediction; the paper
-% states > 0.99 at 65 km and 0.884 at 122 km.
-%
-% Structural difference worth recording: Gobby's 1.6:1 reference-
-% to-encoded intensity ratio puts 0.04 photons in the encoded
-% pulse, whereas this encoder AMZI splits 50:50.  That is a
-% difference in the chain, not a parameter, and may account for
-% part of any residual.
-%
-% The Gobby column is a MEASUREMENT only on rows marked (m).
-% The paper published four points -- 4.4, 65, 101, 122 km
-% -- and rows marked (i) are np.interp between them, or below
-% 4.4 km the endpoint value repeated.  Compare against the (m)
-% rows; the (i) rows cannot disagree with anything.
+% Visibility is an output of this budget, V = S/(S + 2*P_e), and the
+% decoder is ideal at V = 1.0.  The V column is that prediction;
+% the paper states > 0.99 at 65 km and 0.884 at 122 km.
 %
 \begin{tabular}{rcccccc}
   Distance & Pulses & Sifted & QBER & Predicted & This work & Gobby et al. \\
