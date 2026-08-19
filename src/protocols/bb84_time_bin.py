@@ -81,6 +81,7 @@ from src.channel.interferometer import AsymmetricMZI
 from src.channel.phase_modulator import PhaseModulator
 from src.channel.optics import pbs, pbc, voa
 from src.channel.fiber import FiberRealization
+from src.channel.piezo_stretcher import PiezoFibreStretcher
 from src.detectors.spad import spad
 
 
@@ -132,6 +133,7 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
                             pmd_coeff_ps_sqrt_km=0.1, compensate=True,
                             drift_temperature_rate_C_s=0.0, drift_blocks=100,
                             phase_servo_interval_s=None,
+                            phase_servo_stretcher=None,
                             seed=None, verbose=False):
     """BB84 time-bin phase-encoding simulation.
 
@@ -325,6 +327,38 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         between two arms, so a phase-only correction has nothing to
         correct.  That chain answers drift with the full recalibration
         `calibration_temperature` already models.
+    phase_servo_stretcher : PiezoFibreStretcher or None — the device Bob
+        actually turns.  None (default) builds a Thorlabs FVP155P with its
+        insertion loss SUPPRESSED, which is correct for this chain and
+        wrong in general -- see below.
+
+        Routing the correction through a real part is what stops it being
+        an unbounded number.  `voltage_for` wraps into one fringe first, so
+        the demand never exceeds 2*v_pi (40 V on the default part) however
+        far the fibre has drifted, comfortably inside the 150 V limit.  A
+        demand the device cannot meet raises rather than clipping.
+
+        **The suppressed loss is a link-budget decision, not a device
+        one.**  `ETA_BOB = 0.045` in `validate_gobby.py` already folds in
+        "5 dB of loss in Bob's apparatus", and the stretcher sits inside
+        that apparatus, so charging its 0.1 dB again would double-count
+        against a number taken from the paper.  A chain whose budget does
+        not already contain Bob's optics should pass a stretcher with the
+        loss left on, which is the component's own default.
+
+        The loss lands on Bob's long arm, so it unbalances the interfering
+        pair and moves visibility as well as rate.  Exaggerated to 3 dB it
+        costs 23 % of the sifted rate and lifts the QBER to 4.7 %; at the
+        datasheet's 0.1 dB neither is resolvable.
+
+        NOTE ON REPRODUCIBILITY.  Turning the servo on is *statistically*
+        identical with and without the device, but not bit-identical: the
+        round trip through `v_pi` changes the delivered phase in its last
+        bit, and this chain's RNG desynchronises on any such change,
+        because a single flipped detection alters how many draws follow.
+        Measured, a deliberate 1e-15 relative nudge moves the sifted count
+        by about 13 % with no systematic trend -- a reshuffled sample of
+        the same distribution, not a different answer.
     seed : int or None — RNG seed.
     verbose : bool — print progress.
 
@@ -570,6 +604,18 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
             arm_enc = np.column_stack([v, np.zeros_like(v)])
             # Equalise with a real attenuator before interfering.
             arm_ref = voa(arm_ref, balance_dB)
+            # Bob's stretcher sits in his LONG arm, which is `arm_enc`, and
+            # it is a real part with a real insertion loss.  Only the loss
+            # goes here: it does not depend on drive voltage, so it is a
+            # constant on one arm and needs no feedback.  The phase the
+            # servo commands is voltage-dependent and per-block, and enters
+            # `delta` further down with the other one-arm phases.
+            #
+            # Being on ONE arm, the loss unbalances the pair and so touches
+            # visibility as well as total power -- which is why it belongs
+            # in the field chain rather than as a scalar on the result.
+            if _stretcher is not None and _stretcher.apply_insertion_loss:
+                arm_enc = voa(arm_enc, _stretcher.insertion_loss_db)
             # Bob's modulator sits in his short arm, which carries
             # Alice's reference.  phi_A rides the encoded path and phi_B
             # the reference path, so the interfering pair differ by
@@ -779,6 +825,21 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     # reports would vanish with it.
     _servo_on = (phase_servo_interval_s is not None
                  and phase_servo_interval_s >= 0.0 and _fibre_drifts)
+
+    # The device behind the correction.  Default is the Thorlabs FVP155P,
+    # whose insertion loss is SUPPRESSED here and nowhere else: ETA_BOB in
+    # the Gobby replication already folds in "5 dB of loss in Bob's
+    # apparatus", and the stretcher sits inside that apparatus, so applying
+    # its 0.1 dB again would double-count against a number from the paper.
+    # A chain whose budget does not already contain Bob's optics should
+    # pass a stretcher with the loss left on.
+    #
+    # Its resonance, 80 kHz, is the floor on a useful re-lock interval.
+    # Ours are of order a second, five orders of magnitude slower, so the
+    # device's bandwidth never binds here.
+    _stretcher = phase_servo_stretcher
+    if _servo_on and _stretcher is None:
+        _stretcher = PiezoFibreStretcher(apply_insertion_loss=False)
     _servo_held = 0.0        # the correction Bob is currently holding
     _servo_locked_at = None  # drift-clock time of the last lock
 
@@ -787,7 +848,12 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
         nonlocal _servo_held, _servo_locked_at
         if (_servo_locked_at is None
                 or t_mid - _servo_locked_at >= phase_servo_interval_s):
-            _servo_held = cmath.phase(S) - _servo_ref
+            theta = cmath.phase(S) - _servo_ref
+            # Through the device and back: what Bob can actually deliver,
+            # not what he would like to.  `voltage_for` wraps into one
+            # fringe first, which is why a 7*pi stroke is enough for a
+            # correction that would otherwise grow without bound.
+            _servo_held = _stretcher.phase_for(_stretcher.voltage_for(theta))
             _servo_locked_at = t_mid
 
     _blk = 0

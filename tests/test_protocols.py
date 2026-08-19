@@ -378,3 +378,35 @@ class TestTimeBinPhaseServo:
         slow = self._run(phase_servo_interval_s=60.0, **self.DRIFT)
         unserved = self._run(**self.DRIFT)
         assert fast['qber'] < slow['qber'] < unserved['qber']
+
+    def test_the_stretcher_is_a_real_part_with_a_reachable_demand(self):
+        """The correction has to be something a device can deliver.
+
+        Wrapping means the demand never exceeds a full fringe, so the
+        default FVP155P needs at most 2*v_pi = 40 V against its 150 V
+        limit however far the fibre has drifted. A run that raised here
+        would mean the servo was asking for the impossible.
+        """
+        from src.channel import PiezoFibreStretcher
+        st = PiezoFibreStretcher(apply_insertion_loss=False)
+        r = self._run(phase_servo_interval_s=1.2, phase_servo_stretcher=st,
+                      **self.DRIFT)
+        assert r['n_sifted'] > 50
+        assert 2 * st.v_pi <= st.v_max
+
+    def test_stretcher_insertion_loss_reaches_the_chain(self):
+        """The toggle has to bite, or it is a skipped code path.
+
+        Exaggerated to 3 dB so the effect clears the counting noise. It
+        lands on Bob's long arm, so it unbalances the interfering pair and
+        moves visibility as well as rate -- both are checked, because a
+        loss applied as a scalar on the result would move only the rate.
+        """
+        from src.channel import PiezoFibreStretcher
+        common = dict(phase_servo_interval_s=1.2, **self.DRIFT)
+        off = self._run(phase_servo_stretcher=PiezoFibreStretcher(
+            apply_insertion_loss=False), **common)
+        on = self._run(phase_servo_stretcher=PiezoFibreStretcher(
+            insertion_loss_db=3.0), **common)
+        assert on['n_sifted'] < 0.9 * off['n_sifted']
+        assert on['qber'] > off['qber'] + 0.01
