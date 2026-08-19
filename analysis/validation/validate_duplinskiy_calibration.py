@@ -70,6 +70,17 @@ def _stem(reduced):
 SEED = 42
 DISTANCE = 50
 
+# SEED reaches `FiberRealization`, which seeds its own stream, but the
+# detectors draw from the GLOBAL numpy state: `spad.detect` calls
+# `np.random.random` for the dark count, the click and the afterpulse, and
+# `np.random.exponential` for the afterpulse delay.  Without this line the
+# click histogram -- which is the entire figure -- came out different on
+# every run, so the committed artifact could not be reproduced and every
+# harness pass left the repository dirty for no reason.
+#
+# Same fix and same placement as `validate_cwlaser.py`.
+np.random.seed(SEED)
+
 # The paper's Table 1, verbatim.  Pulse numbers 1-8, with C = circular and
 # L = linear in its notation; this chain calls the linear basis X.
 TABLE_1 = [
