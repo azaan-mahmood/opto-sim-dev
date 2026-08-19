@@ -92,6 +92,7 @@ from scipy import signal
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.lasers import CWLaser, DFBLaser, DriveParams, LaserDriver
+from src.visualization import eye_diagram
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), '..', 'val_dfb')
 
@@ -666,7 +667,7 @@ def _figure(t, P, f, S, peaks, rg, stg, rt, cw_current, quick=False):
         print("  matplotlib missing, skipping the figure")
         return
 
-    fig, ax = plt.subplots(2, 2, figsize=(12, 8))
+    fig, ax = plt.subplots(2, 3, figsize=(17, 8))
 
     ax[0, 0].plot(t * 1e9, P * 1e3, lw=0.6, color='tab:blue')
     ax[0, 0].set_xlabel('time after settle (ns)')
@@ -716,6 +717,29 @@ def _figure(t, P, f, S, peaks, rg, stg, rt, cw_current, quick=False):
     h1, l1 = ax[1, 1].get_legend_handles_labels()
     h2, l2 = ax3.get_legend_handles_labels()
     ax[1, 1].legend(h1 + h2, l1 + l2, fontsize=8, loc='upper right')
+
+    # The eye: what a receiver sees, rather than what a spectrum analyser
+    # does.  It belongs beside the CW panels because it is driven from the
+    # same settled CW bias, and it is the one panel here in the units a
+    # link budget is written in.
+    #
+    # Built here rather than passed in because it needs its own device: the
+    # eye wants a CW source carved by an external modulator, which is a
+    # different drive from the gaussian and trapezoidal runs below.
+    # `seed=SEED` on both the driver and the bit pattern, so the panel
+    # reproduces.
+    eye_drv = LaserDriver(DFBLaser(n_sections=N_SECTIONS, seed=SEED),
+                          DriveParams(mode='cw', i_bias=cw_current),
+                          seed=SEED)
+    eye_diagram(eye_drv, bitrate=2e9, n_bits=64 if quick else 128, spb=64,
+                ax=ax[0, 2], seed=SEED,
+                title='NRZ-OOK eye at 2 Gbaud\n'
+                      'this DFB through an external MZM')
+    ax[0, 2].grid(True, alpha=0.3)
+
+    # Five panels in a 2x3; the sixth cell is left empty rather than filled
+    # with something that does not belong.
+    ax[1, 2].axis('off')
 
     fig.tight_layout()
     png = os.path.join(OUT_DIR, _stem('val_dfb_drive', quick) + '.png')

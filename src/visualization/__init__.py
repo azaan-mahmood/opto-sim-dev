@@ -1,3 +1,4 @@
+from .eye import eye_diagram
 from .fields import plot_field
 from .stokes import compute_stokes_parameters, poincare, cos_sim
 

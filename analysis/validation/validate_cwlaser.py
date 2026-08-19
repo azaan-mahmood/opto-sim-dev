@@ -7,6 +7,7 @@ import os, sys, argparse
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.lasers.cwlaser import CWLaser
+from src.visualization import eye_diagram
 
 OUT = os.path.join(os.path.dirname(__file__), '..', 'val_cwlaser')
 os.makedirs(OUT, exist_ok=True)
@@ -155,6 +156,27 @@ ax5.set(xlabel='Azimuth $\\psi$ (rad)', ylabel='Magnitude',
         title='E: Polarization Jones vector\n(Yariv [3] Ch. 6)')
 ax5.legend(fontsize=7)
 ax5.grid(True, alpha=0.25)
+
+# --- Panel F: NRZ-OOK eye through a real MZM ---
+# The grid was always 2x3 and the last cell was empty.  A source is only
+# half-characterised by its spectra: the eye is what a receiver actually
+# sees, and it puts the phase noise and RIN of the panels above into the
+# units a link budget is written in.
+#
+# `rin_density` is set well above the -200 dB/Hz used for the calibration
+# panels, which is deliberately negligible: at that level the rails are
+# flat and the eye shows nothing.  -130 dB/Hz is an ordinary DFB and makes
+# the amplitude noise visible as rail thickness.
+#
+# Seeded twice over, and it needs both: `np.random.seed(SEED)` at the top
+# of this file pins the laser's own noise, and `seed=SEED` pins the bit
+# pattern, which is drawn from a separate generator.
+ax6 = fig.add_subplot(gs[1, 2])
+las_eye = CWLaser(WAVELENGTH, power_dbm=0, linewidth=1e6, rin_density=-130,
+                  polarization_azimuth=np.pi / 4)
+eye_diagram(las_eye, bitrate=10e9, n_bits=128, spb=64, ax=ax6, seed=SEED,
+            title='F: NRZ-OOK eye, 10 Gbaud\nMZM at switching voltage')
+ax6.grid(True, alpha=0.25)
 
 fig.suptitle('CW Laser Validation — Henry [1], Coldren [2], Yariv [3]',
              fontsize=13, fontweight='bold', y=0.97)
