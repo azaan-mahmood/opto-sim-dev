@@ -122,8 +122,19 @@ YIELD = {('polarisation_multiplexed', 10): 1.04e-3,
 #
 # The crossover is the finding.  A single rate would land on one side of
 # it and read as a verdict on the paper rather than on the regime.
+#
+# LOUD is 3e-3 rather than 1e-3 so that BOTH halves of the paper's sentence
+# are visible.  At 1e-3 the amplitude loss is a couple of per cent, inside
+# the counting noise, so the rate row could not distinguish a servo that
+# corrects phase only from one that corrects everything.  At 3e-3 the mean
+# rate factor is 0.57 at 10 km and 0.78 at 50 km, which is unmistakable.
 DRIFT_QUIET_C_S = 1e-4
-DRIFT_LOUD_C_S = 1e-3
+DRIFT_LOUD_C_S = 3e-3
+
+# How often Bob re-locks his phase in the served row.  1.2 s is the default
+# drift-block length across the paper's 120 s transfer, so the servo tracks
+# at the resolution the model itself resolves.
+SERVO_INTERVAL_S = 1.2
 
 BUDGET = dict(alpha_dB=ALPHA_dB, mu=MU, wavelength=LAM,
               repetition_rate=REP_RATE, pulse_width=PULSE_WIDTH,
@@ -136,8 +147,9 @@ REFERENCE = 'no fibre (reference)'
 UNCOMP = 'birefringence, uncompensated'
 QUIET = 'aligned, drifting (quiet)'
 LOUD = 'aligned, drifting (loud)'
+SERVO = 'drifting (loud) + phase servo'
 ORDER = (REFERENCE, 'birefringence, no align', 'birefringence, aligned',
-         UNCOMP, QUIET, LOUD)
+         UNCOMP, QUIET, LOUD, SERVO)
 
 
 def budget(km, topo, quick, target=None):
@@ -296,11 +308,17 @@ def run(quick=False):
                     birefringence=True, compensate=True,
                     drift_temperature_rate_C_s=DRIFT_LOUD_C_S,
                     drift_blocks=100)
+        servo = _run(km, 'polarisation_multiplexed', npm,
+                     birefringence=True, compensate=True,
+                     drift_temperature_rate_C_s=DRIFT_LOUD_C_S,
+                     drift_blocks=100,
+                     phase_servo_interval_s=SERVO_INTERVAL_S)
         cells += [('polmux', REFERENCE, ref_p, ref_p),
                   ('polmux', 'birefringence, aligned', aligned, ref_p),
                   ('polmux', UNCOMP, uncomp, ref_p),
                   ('polmux', QUIET, quiet, ref_p),
-                  ('polmux', LOUD, loud, ref_p)]
+                  ('polmux', LOUD, loud, ref_p),
+                  ('polmux', SERVO, servo, ref_p)]
 
         if not _same(aligned, ref_p):
             failures.append(
@@ -331,23 +349,50 @@ def run(quick=False):
                 f"(1-cos 2argU11)/2 = {100 * q_pred:.2f} %, a "
                 f"{abs(uncomp['qber'] - q_pred) / s:.1f} sigma miss")
 
-        # The paper's proviso, both sides of it.  Same impairment, same
-        # alignment, two rates: quiet keeps the accumulated phase well under
-        # a radian and the QBER holds, loud pushes it past one and the QBER
-        # goes with it.  The rate survives in BOTH, which is the asymmetry
-        # worth pinning -- a near-identity residual costs O(eps^2) in
-        # amplitude against O(eps) in phase, so QBER is always what breaks
-        # first.
-        for lab, r, rate in ((QUIET, quiet, DRIFT_QUIET_C_S),
-                             (LOUD, loud, DRIFT_LOUD_C_S)):
-            amp_r, _ = drift_pred[(km, rate)]
-            got = r['n_sifted'] / max(ref_p['n_sifted'], 1)
-            if got < 0.7:
-                failures.append(
-                    f"{km} km polmux {lab}: the rate fell to {got:.3f} of "
-                    f"reference against a predicted {amp_r:.3f}.  A residual "
-                    f"this close to the identity cannot cost that much "
-                    f"amplitude")
+        # Three drift rows, and together they are the paper's sentence and
+        # its proviso.
+        #
+        #   quiet  the residual stays small, so nothing moves: the regime
+        #          where "reduces the bit rate, but does not degrade the
+        #          QBER" holds on its own.
+        #   loud   the residual grows past a radian.  BOTH halves go: the
+        #          rate falls with the amplitude and the QBER follows the
+        #          phase.  This is the model without Bob's stretcher, and
+        #          it contradicts the paper.
+        #   servo  the same drift with Bob holding his operating point.
+        #          The QBER comes back and the rate does NOT, which is the
+        #          paper's ordering restored.
+        #
+        # The last comparison is the one that carries weight, and it only
+        # carries it because loud is harsh enough for the rate loss to sit
+        # outside the counting noise.
+        q_rate = quiet['n_sifted'] / max(ref_p['n_sifted'], 1)
+        l_rate = loud['n_sifted'] / max(ref_p['n_sifted'], 1)
+        s_rate = servo['n_sifted'] / max(ref_p['n_sifted'], 1)
+        if q_rate < 0.85:
+            failures.append(
+                f"{km} km polmux {QUIET}: the rate fell to {q_rate:.3f} of "
+                f"reference.  A residual this close to the identity costs "
+                f"O(eps^2) in amplitude and cannot cost that much")
+        if l_rate > 0.85:
+            failures.append(
+                f"{km} km polmux {LOUD}: the rate only fell to {l_rate:.3f}, "
+                f"against a predicted {drift_pred[(km, DRIFT_LOUD_C_S)][0]:.3f}. "
+                f"Without a clear rate loss here the servo row below cannot "
+                f"show that the servo leaves it alone")
+        # The servo turns a phase, so it cannot return photons.  If the
+        # rate recovers, it is correcting amplitude and is the wrong model.
+        if s_rate > l_rate + 0.10:
+            failures.append(
+                f"{km} km polmux {SERVO}: the rate recovered from "
+                f"{l_rate:.3f} to {s_rate:.3f}.  A phase correction cannot "
+                f"do that -- the servo is touching the amplitude")
+        if servo['qber'] > ref_p['qber'] + 0.03:
+            failures.append(
+                f"{km} km polmux {SERVO}: QBER stayed at "
+                f"{100 * servo['qber']:.2f} % against a "
+                f"{100 * ref_p['qber']:.2f} % reference.  Bob is re-locking "
+                f"every {SERVO_INTERVAL_S:g} s, which should hold the fringe")
         if quiet['qber'] > ref_p['qber'] + 0.03:
             failures.append(
                 f"{km} km polmux {QUIET}: QBER moved to "
@@ -399,9 +444,11 @@ def run(quick=False):
     print("[PASS] polmux alignment returns the exact arithmetic null")
     print("[PASS] uncompensated matches |U00|^2 in rate and "
           "(1-cos 2argU11)/2 in QBER")
-    print("[PASS] drift spares the rate at both rates, and degrades QBER")
-    print("       only once the accumulated phase passes a radian -- the")
-    print("       proviso in Gobby's own sentence, measured not assumed")
+    print("[PASS] quiet drift moves neither rate nor QBER")
+    print("[PASS] loud drift costs both, which is the model WITHOUT Bob's")
+    print("       stretcher and is not what the paper reports")
+    print("[PASS] the phase servo returns the QBER and leaves the rate lost")
+    print("       -- 'reduces the bit rate, but does not degrade the QBER'")
     return 0
 
 
@@ -419,6 +466,7 @@ def _write_csv(rows, preds, quick=False):
         fh.write(f"# seed={SEED} target_sifted={TARGET_SIFTED} "
                  f"drift_quiet_C_s={DRIFT_QUIET_C_S:g} "
                  f"drift_loud_C_s={DRIFT_LOUD_C_S:g} "
+                 f"servo_interval_s={SERVO_INTERVAL_S:g} "
                  f"run_duration_s={KEY_TRANSFER_S:g}\n")
         fh.write("# Link budget imported from val_gobby/validate_gobby.py.\n")
         fh.write("# predicted_rate = |U00|^2 and predicted_qber = "
@@ -456,7 +504,8 @@ def _figure(rows, preds, quick=False):
               'birefringence, aligned': 'tab:blue',
               UNCOMP: 'tab:red',
               QUIET: 'tab:olive',
-              LOUD: 'tab:orange'}
+              LOUD: 'tab:orange',
+              SERVO: 'tab:purple'}
     kms = sorted({r[0] for r in rows})
     fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.2))
 
@@ -479,7 +528,7 @@ def _figure(rows, preds, quick=False):
                 else:
                     vals.append(r['n_sifted'] / max(ref['n_sifted'], 1))
                     errs.append(0.0)
-            ax.bar(x + (i - 2.5) * w, vals, w, yerr=errs, capsize=3,
+            ax.bar(x + (i - 3.0) * w, vals, w, yerr=errs, capsize=3,
                    color=colour[lab], edgecolor='0.25', linewidth=0.6,
                    label=lab if ax is axes[0] else None)
         # The closed forms, drawn as targets rather than as fitted lines.
@@ -489,7 +538,7 @@ def _figure(rows, preds, quick=False):
             # Centred on the UNCOMPENSATED bar, which is index 3 of six
             # drawn at x + (i - 2.5)*w, i.e. x + 0.5*w.  The prediction
             # applies to that cell alone, so it has to sit over it.
-            ax.plot([x[j], x[j] + w], [target, target],
+            ax.plot([x[j] - w * 0.5, x[j] + w * 0.5], [target, target],
                     color='k', lw=2.2, zorder=5,
                     label=('predicted from the Jones matrix'
                            if (ax is axes[0] and j == 0) else None))
@@ -513,7 +562,7 @@ def _figure(rows, preds, quick=False):
                frameon=False, bbox_to_anchor=(0.5, -0.01))
     fig.suptitle(f'Fibre impairments in the Gobby chain (seed {SEED}, '
                  f'drift {DRIFT_QUIET_C_S:g} and {DRIFT_LOUD_C_S:g} C/s over '
-                 f'{KEY_TRANSFER_S:g} s)'
+                 f'{KEY_TRANSFER_S:g} s, servo every {SERVO_INTERVAL_S:g} s)'
                  + ('   [QUICK -- not quotable]' if quick else ''),
                  fontsize=11)
     fig.tight_layout(rect=(0, 0.09, 1, 1))

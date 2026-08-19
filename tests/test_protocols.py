@@ -285,3 +285,96 @@ class TestTimeBinFibreDrift:
             simulate_bb84_time_bin(birefringence=False, cd=True,
                                    drift_temperature_rate_C_s=1e-3,
                                    **self.BASE)
+
+
+class TestTimeBinPhaseServo:
+    """Bob's phase servo: the piezo stretcher that holds the operating point.
+
+    Without it the model contradicts the paper it replicates. A residual
+    rotation is SU(2), so it costs O(eps^2) in amplitude against O(eps) in
+    phase, and QBER therefore moves before the rate does -- the reverse of
+    "polarisation drift reduces the bit rate, but does not degrade the
+    QBER". The servo is what makes the ordering come out right.
+    """
+
+    BASE = dict(num_bits=200_000, fiber_length=10, alpha_dB=0.2, mu=0.1,
+                repetition_rate=2e6, pulse_width=80e-12, spad_eta=0.045,
+                dark_count_rate=8.5e-7 / 3.5e-9, afterpulse_prob=0.0,
+                dead_time=13e-6, gate_width=3.5e-9, split_ratio=1.6,
+                interferometer='polarisation_multiplexed',
+                run_duration=120.0, seed=42)
+    # 3e-3 C/s, not the 1e-3 used elsewhere: at the lower rate the amplitude
+    # loss is inside the counting noise, so a test there could not tell
+    # "corrects phase only" from "corrects everything".
+    DRIFT = dict(birefringence=True, compensate=True,
+                 drift_temperature_rate_C_s=3e-3, drift_blocks=100)
+
+    @staticmethod
+    def _key(r):
+        return r['qber'], r['n_sifted'], r['n_errors']
+
+    def _run(self, **over):
+        from src.protocols.bb84_time_bin import simulate_bb84_time_bin
+        return simulate_bb84_time_bin(**{**self.BASE, **over})
+
+    def test_servo_off_is_inert(self):
+        """None must mean exactly what leaving it out means."""
+        assert self._key(self._run(**self.DRIFT)) == self._key(
+            self._run(phase_servo_interval_s=None, **self.DRIFT))
+
+    def test_servo_without_drift_does_nothing(self):
+        """Nothing to track, so nothing to correct."""
+        a = self._run(birefringence=True, compensate=True)
+        b = self._run(birefringence=True, compensate=True,
+                      phase_servo_interval_s=1.0)
+        assert self._key(a) == self._key(b)
+
+    def test_the_servo_signal_is_the_residual_phase(self):
+        """The claim the whole thing rests on.
+
+        `arg(S)` shifts by exactly the phase the fibre puts between the
+        interfering arms, so the servo reads its error signal off an
+        extraction that already happens. With one block the fibre is frozen
+        at the run midpoint, so the correction is a single known number and
+        the servo must be indistinguishable from cancelling it by hand.
+        """
+        from src.channel.fiber import FiberRealization
+        fibre = FiberRealization(L_m=10_000.0, seed=42, attenuation=False,
+                                 drift_temperature_rate_C_s=3e-3)
+        R = (fibre.birefringence_matrix().conj().T
+             @ fibre.at(60.0).birefringence_matrix())
+        theta = 2.0 * np.angle(R[1, 1])
+        frozen = dict(self.DRIFT, drift_blocks=1)
+        servo = self._run(phase_servo_interval_s=0.0, **frozen)
+        by_hand = self._run(phase_error_rad=-theta, **frozen)
+        assert self._key(servo) == self._key(by_hand)
+
+    def test_restores_qber_without_restoring_rate(self):
+        """Gobby's sentence, as a test.
+
+        The rate loss must survive the servo. If it does not, the servo is
+        correcting amplitude as well and is the wrong model of a device
+        that only turns a phase.
+        """
+        ref = self._run()
+        unserved = self._run(**self.DRIFT)
+        served = self._run(phase_servo_interval_s=1.2, **self.DRIFT)
+
+        # QBER: wrecked without, back to baseline with
+        assert unserved['qber'] > 0.20
+        assert served['qber'] < ref['qber'] + 0.02
+
+        # Rate: lost in both, and lost by the same amount
+        r_un = unserved['n_sifted'] / ref['n_sifted']
+        r_sv = served['n_sifted'] / ref['n_sifted']
+        assert r_un < 0.8 and r_sv < 0.8
+        assert abs(r_sv - r_un) < 0.10
+
+    def test_a_slower_servo_tracks_worse(self):
+        """Finite bandwidth is the point of the interval. A servo that
+        re-locks rarely lets the residual grow between locks, so the QBER
+        climbs back towards the unserved value."""
+        fast = self._run(phase_servo_interval_s=1.2, **self.DRIFT)
+        slow = self._run(phase_servo_interval_s=60.0, **self.DRIFT)
+        unserved = self._run(**self.DRIFT)
+        assert fast['qber'] < slow['qber'] < unserved['qber']
