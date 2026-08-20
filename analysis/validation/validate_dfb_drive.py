@@ -652,6 +652,12 @@ def _write_csv(f, S, current, window, P, quick=False):
                  f"settle={SETTLE:.3e} s window={window:.3e} s\n")
         fh.write(f"# mean power {P.mean():.6e} W, RIN {db:.2f} dB/Hz over "
                  f"{F_LO:.3e}-{F_HI:.3e} Hz, integrated variance {var:.6e}\n")
+        fh.write("# The three summary figures above are byte-identical "
+                 "between runs at this seed. The per-row\n")
+        fh.write("# spectrum is not: rin_per_hz can differ in its last "
+                 "digit, which is FFT-level floating-point\n")
+        fh.write("# nondeterminism and not a result change. Diff the "
+                 "header, not the rows.\n")
         fh.write("frequency_hz,rin_per_hz\n")
         for k in range(len(f)):
             fh.write(f"{f[k]:.6e},{S[k]:.6e}\n")

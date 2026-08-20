@@ -277,6 +277,14 @@ def simulate_bb84_duplinskiy(num_bits, fiber_length=50, alpha_dB=0.2,
         returned, and consumes no RNG either way, so a frozen baseline
         is bit-identical with the parameter present.
 
+        A trailing partial block is DROPPED: blocks close on
+        `(pulse_idx + 1) % block_size == 0`, so when `num_bits` is not a
+        multiple of `block_size` the final short run of pulses appears in
+        the aggregate but not in `blocks`.  Deliberate -- the series exists
+        to carry a block-to-block variance, and a block holding a fraction
+        of the pulses would contribute a wider point that is narrower
+        statistics rather than a real excursion.
+
         This exists for the paper's Fig. 7, a QBER-versus-time trace.  One
         call with blocking is ONE CONTINUOUS LINK: SPAD dead time and
         pending afterpulses carry across block boundaries, which is what a

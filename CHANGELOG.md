@@ -4,6 +4,63 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-20 — a study closed rather than deferred again, and three small items
+
+### Session: the sensitivity study is retired; grid duplication, partial blocks, FFT churn
+
+| Change | Files | Rationale |
+|---|---|---|
+| `field_grid()` deduplicated | `src/protocols/bb84_time_bin.py` | Two copies of one derivation, and the shape check compares a caller's field against one of them. |
+| Partial-block behaviour documented | `src/protocols/bb84_duplinskiy.py` | A trailing short block is dropped. Deliberate, and nothing said so. |
+| FFT nondeterminism documented in the artifact | `analysis/validation/validate_dfb_drive.py`, `val_dfb_drive--cw_rin.csv` | The explanation lived in a local file nobody diffing the CSV would ever see. |
+| Sensitivity study retired | — | Decided, not deferred a third time. See below. |
+
+**The sensitivity study is closed.** It was carried across sessions as
+pending work, deferred twice. It has no git history, no spec, and — as it
+turns out — no entry in the working note either: it existed only as a
+name. Rather than defer it again, it is now a decided entry alongside the
+phenomenological birefringence model.
+
+Its content is already covered four ways: `validate_gobby.py` for QBER vs
+distance, `validate_gobby_impairments.py` for impairment-by-topology with
+the servo, `validate_duplinskiy_drift.py` for drift before recalibration,
+and `val_duplinskiy_scenarios.py` for the ladder. More decisively, the
+physics argues against a broad sweep and that argument was already
+written down in the drift validator: past the calibration tolerance the
+residual is a fixed unitary rotation, measured at 79.9 % QBER for
+R = 1 m against 44.8 % for R = 0.1 m — a tighter bend not monotonically
+worse — so "the particular value is an accident of the realisation." A
+wide sweep would largely plot realization noise on a smooth-looking axis.
+
+One carve-out is kept and located rather than lost: drift rate against
+*rate loss* with the servo on is genuinely unmeasured, and belongs as a
+short list of rates in `validate_gobby_impairments.py`, where the servo
+and both drift constants already are — not as a new 34-minute validator.
+
+**The grid deduplication had to be bit-identical, and that was tested
+rather than argued.** `field_grid()` returns `(dt, n_samples,
+pulse_center)`; `simulate_bb84_time_bin` recomputed all three with the
+same expressions, and the shape check for a caller-supplied source field
+compared against its own copy. The second site now calls the first. The
+reasoning that identical expressions in identical order give identical
+floats is sound and is still not evidence, so it was checked by running:
+five configurations — both topologies, a birefringent fibre at 10 km, a
+non-default `pulse_width`/`delay` grid, and the supplied-source shape
+path — all identical to the last digit of QBER.
+
+**The FFT churn is now documented where it is met.** Regenerating
+`val_dfb_drive--cw_rin.csv` moved 1108 of 8193 rows, max relative change
+9.98e-7 — one unit in the last of the seven figures `%.6e` prints — while
+the summary line, the frequency axis and `val_dfb_drive.png` came back
+byte-identical. Three header lines now say so in the file itself, so the
+next person to diff two runs reads the explanation instead of
+rediscovering it. The nondeterminism itself is not chased; documenting it
+is the whole fix.
+
+Suite unchanged at 378 passed, 1 skipped.
+
+---
+
 ## 2026-08-20 — the last unchecked artifact, and a threshold that was a fitted number
 
 ### Session: `val_duplinskiy_scenarios` becomes a checked validator

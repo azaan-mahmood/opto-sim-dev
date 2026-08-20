@@ -377,16 +377,15 @@ def simulate_bb84_time_bin(num_bits, fiber_length=0, alpha_dB=0.182,
     # Gaussian sigma from FWHM
     sigma = pulse_width / (2.0 * np.sqrt(2.0 * np.log(2.0)))
 
-    # Sampling: must resolve pulse_width (dt <= pulse_width / 10)
-    dt = min(pulse_width / 10.0, delay / 20.0)
-
-    # Samples needed: cover original pulse + encoder + decoder + margin
-    n_samples = int(np.ceil((2.0 * delay + 5.0 * pulse_width) / dt))
+    # The grid, from the one place that defines it.  `field_grid` is what a
+    # caller supplying its own source field is told to build against, and
+    # the shape check below compares against this `n_samples` -- so the two
+    # must be the same derivation rather than two copies of it.
+    dt, n_samples, pulse_center = field_grid(pulse_width, delay)
     t = np.arange(n_samples, dtype=float) * dt
 
-    # Build a single Gaussian pulse centred at t = delay/2 so that the
-    # interference (at t = delay/2 + delay) falls within the window.
-    pulse_center = delay / 2.0
+    # The pulse sits at t = delay/2 so the interference, at
+    # t = delay/2 + delay, falls within the window.
     energy_per_pulse = mu * photon_energy
     # Peak field amplitude: energy = A² ∫exp(-t²/σ²) dt = A² · σ·√π (continuous)
     # In discrete: Σ|A·g|²·dt = A²·σ·√π  →  A² = energy / (σ·√π)
