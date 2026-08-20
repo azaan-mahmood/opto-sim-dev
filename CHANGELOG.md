@@ -4,6 +4,68 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-20 — the drift curve, and two amplitudes that are easy to confuse
+
+### Session: drift rate against rate loss, servo on
+
+| Change | Files | Rationale |
+|---|---|---|
+| Drift-rate sweep, servo on | `analysis/validation/validate_gobby_impairments.py` | The two drift rows show the paper's sentence at two points. This shows it as a curve, which is the one thing a table cannot. |
+| `mean_residual_amp()` | same | The rate ratio is a time average, so its prediction has to be one too. |
+| `residual()` / `_aligned()` | same | One definition of Bob's alignment convention, for the operator table and the sweep both. |
+| Third figure panel | same | Rate falling while QBER does not, in one axes. |
+
+This is the carve-out kept when the sensitivity study was retired: drift
+rate against **rate loss** rather than against QBER, which nothing
+measured. It lands where the servo and both drift constants already live,
+as `DRIFT_SWEEP_C_S`, rather than as a new validator.
+
+**The operator chose the range, and it is checked rather than trusted.**
+`|R00|^2` falls with drift rate only while the residual rotation stays
+inside about one turn. At 10 km, 3e-3 C/s gives 0.095 and 1e-2 gives
+0.963, with the accumulated phase going +4.41 rad to -5.92 — the rotation
+wraps and the amplitude comes back. A sweep through that would draw a
+curve that rises again, and the rise would report where the rotation
+happened to land, not what drift costs. That is the trap
+`validate_duplinskiy_drift.py` already records for bend radius, where 1 m
+is worse than 0.1 m. So the sweep stops at 3e-3, and monotonicity over
+exactly the swept range is now a check, at all three operator distances.
+
+**The endpoint amplitude is not the prediction, and using it failed
+loudly.** The first draft predicted the rate ratio from `|R00|^2` at
+t = 120 s and missed at 3e-3 by a factor of six — 0.5644 measured against
+0.0953. Bob aligns at t=0, so the residual *starts* at the identity and
+walks away from it while pulses are collected the whole time; what a rate
+ratio can equal is the time average, not the final instant.
+`mean_residual_amp()` now samples at the model's own 100 block midpoints
+rather than as a continuous integral, so prediction and model agree about
+what "during the run" means instead of nearly agreeing. It returns 0.572
+at 10 km and 3e-3 C/s, against 0.603 +/- 0.027 measured — 1.1 sigma.
+
+That number also reproduces a comment already sitting in the file, which
+said the mean rate factor at 3e-3 is 0.57 at 10 km. Agreement with a
+number written before the function existed is worth more than agreement
+with one written after.
+
+Both amplitudes are printed side by side for exactly that reason: they
+differ sixfold and only one of them is a prediction.
+
+**What is asserted.** Per point, the rate ratio against the mean
+`|R00|^2` — a servo turns a phase, so the amplitude a unitary took is
+precisely what the rate should keep. Per point, that the QBER does *not*
+follow. Across the range, that the rate falls end to end. Adjacent steps
+are reported with the measurement, not asserted: the first few predicted
+separations are ~1e-4 in ratio against counting noise of order 1e-2.
+
+`DRIFT_BLOCKS` is now a named constant passed to both the simulation and
+the prediction, so the two cannot silently diverge on how often the fibre
+is re-evaluated.
+
+Full budget 12 min 53 s, all checks passing. Suite unchanged at 378
+passed, 1 skipped.
+
+---
+
 ## 2026-08-20 — a study closed rather than deferred again, and three small items
 
 ### Session: the sensitivity study is retired; grid duplication, partial blocks, FFT churn

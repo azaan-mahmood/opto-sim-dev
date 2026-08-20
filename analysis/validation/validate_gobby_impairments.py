@@ -52,6 +52,27 @@ Two nulls, and they are not the same kind of thing
 Only drift makes alignment interesting, because then Bob inverts the fibre
 as it was while light travels through it as it is.
 
+The drift sweep, and the two amplitudes it is easy to confuse
+-------------------------------------------------------------
+Two drift rows show the paper's sentence at two points; the sweep shows it
+as a curve.  With Bob's servo holding the phase, what drift costs is bit
+rate, and the cost grows with the rate while the QBER does not follow.
+
+The prediction for a rate measured across the whole transfer is the
+**time-averaged** `|R00|^2`, not its endpoint.  Bob aligns at t=0, so the
+residual starts at the identity and walks away from it while pulses are
+collected the entire time: at 10 km and 3e-3 C/s the endpoint amplitude is
+0.095 and the mean over the run is 0.572, against a measured rate ratio of
+0.603 +/- 0.027.  Both amplitudes are printed, because only one of them is
+a prediction and they differ by a factor of six.
+
+The swept range stops where the residual rotation completes about one
+turn.  Past that `|R00|^2` wraps and rises again, and a curve drawn
+through it would report where the rotation happened to land rather than
+what drift costs -- the same trap `validate_duplinskiy_drift.py` records
+for bend radius.  That the operator is monotone over exactly the swept
+range is checked, not assumed.
+
 References
 ----------
 [1] Gobby, C., Yuan, Z. L., & Shields, A. J. (2004). Quantum key
@@ -62,6 +83,7 @@ import argparse
 import math
 import os
 import sys
+from collections import namedtuple
 
 import numpy as np
 
@@ -136,6 +158,39 @@ DRIFT_LOUD_C_S = 3e-3
 # at the resolution the model itself resolves.
 SERVO_INTERVAL_S = 1.2
 
+# The drift sweep: rate loss as a function of drift rate, servo on.
+#
+# The two rows above show the paper's sentence at two points.  This shows
+# it as a curve -- with the phase held, what drift costs is BIT RATE, and
+# the cost grows with the rate.
+#
+# The range stops at DRIFT_LOUD_C_S, and the reason is measurable rather
+# than aesthetic.  |R00|^2 falls monotonically only while the residual
+# rotation stays inside about one full turn.  Past that it wraps and comes
+# back: at 10 km, 3e-3 C/s gives 0.095 and 1e-2 gives 0.963, with the
+# accumulated phase going +4.41 rad to -5.92.  A sweep through that region
+# would draw a curve that rises again, and the rise would be an accident of
+# where the rotation happened to land -- the same trap
+# `validate_duplinskiy_drift.py` records for bend radius, where 1 m is
+# worse than 0.1 m.
+#
+# So the sweep covers the regime where the question is well posed, and the
+# monotonicity of the operator over exactly this range is CHECKED below
+# rather than assumed.  Both existing rates fall inside it, so the sweep
+# extends the two rows rather than replacing them.
+DRIFT_SWEEP_C_S = (0.0, 1e-5, 3e-5, 1e-4, 3e-4, 1e-3, DRIFT_LOUD_C_S)
+
+# How many times the fibre is re-evaluated across the run.  Named because
+# the sweep's prediction has to sample at the same points the model does.
+DRIFT_BLOCKS = 100
+
+# One distance for the Monte Carlo half of the sweep.  10 km yields about
+# six times what 50 km does per pulse, so the same statistics cost a sixth
+# of the runtime, and the claim -- rate falls with drift rate, QBER does
+# not -- is not a statement about distance.  The operator half runs at
+# every OP_DISTANCE anyway, because it is free.
+SWEEP_KM = 10
+
 BUDGET = dict(alpha_dB=ALPHA_dB, mu=MU, wavelength=LAM,
               repetition_rate=REP_RATE, pulse_width=PULSE_WIDTH,
               spad_eta=ETA_BOB, dark_count_rate=P_E / GATE_WIDTH,
@@ -176,6 +231,59 @@ def _fibre(km, rate=0.0):
     return FiberRealization(L_m=km * 1000.0, wavelength=LAM, temperature=25.0,
                             attenuation_factor=ALPHA_dB, attenuation=False,
                             seed=SEED, drift_temperature_rate_C_s=rate)
+
+
+def _aligned(km, rate):
+    """The drifting fibre, and Bob's inverse of it as it stood at t=0.
+
+    One definition of the alignment convention.  Both callers below need
+    it, and `mean_residual_amp` needs it hoisted out of a hundred-block
+    loop, which is how it would otherwise become two definitions.
+    """
+    f = _fibre(km, rate=rate)
+    return f, f.birefringence_matrix().conj().T
+
+
+def residual(km, rate, t=KEY_TRANSFER_S):
+    """`R = U_comp @ J(t)`: what Bob's t=0 alignment leaves after drift.
+
+    Returns `(|R00|^2, 2*arg(R11))` -- the amplitude the rate follows and
+    the phase the QBER follows, which is the whole SU(2) split.  One
+    definition, used by both the operator table and the drift sweep, so
+    the curve and the predictions it is checked against cannot drift out
+    of step with each other.
+    """
+    f, U = _aligned(km, rate)
+    R = U @ f.at(t).birefringence_matrix()
+    return abs(R[0, 0]) ** 2, 2.0 * float(np.angle(R[1, 1]))
+
+
+def mean_residual_amp(km, rate, num_bits, blocks=DRIFT_BLOCKS):
+    """Time-averaged `|R00|^2` across the run, sampled as the model does.
+
+    The ENDPOINT is not the prediction for a rate measured over the whole
+    transfer, and getting that wrong is easy: Bob aligns at t=0, so the
+    residual starts at the identity and walks away from it while pulses
+    are collected the entire time.  At 10 km and 3e-3 C/s the endpoint
+    amplitude is 0.095 while the mean over the run is 0.57 -- a factor of
+    six, and the second one is what a rate ratio can possibly equal.
+
+    Sampled at the same block midpoints `simulate_bb84_time_bin` uses,
+    rather than as a continuous integral, so the prediction and the model
+    agree about what "during the run" means rather than nearly agreeing.
+    """
+    if rate == 0.0:
+        return 1.0
+    f, U = _aligned(km, rate)
+    scale = KEY_TRANSFER_S / (num_bits - 1)
+    total = 0.0
+    for i in range(blocks):
+        lo = (i * num_bits) // blocks
+        hi = ((i + 1) * num_bits) // blocks
+        t_mid = 0.5 * (lo + max(hi - 1, lo)) * scale
+        R = U @ f.at(t_mid).birefringence_matrix()
+        total += abs(R[0, 0]) ** 2
+    return total / blocks
 
 
 def field_perturbation(km):
@@ -239,12 +347,9 @@ def operator_section(failures):
     drift_pred = {}
     for km in OP_DISTANCES:
         for rate in (DRIFT_QUIET_C_S, DRIFT_LOUD_C_S):
-            f = _fibre(km, rate=rate)
-            U = f.birefringence_matrix().conj().T
-            R = U @ f.at(KEY_TRANSFER_S).birefringence_matrix()
-            phi = 2.0 * np.angle(R[1, 1])
-            drift_pred[(km, rate)] = (abs(R[0, 0]) ** 2, phi)
-            print(f"  {km:5d} {rate:12.0e} {abs(R[0, 0]) ** 2:9.5f} "
+            amp, phi = residual(km, rate)
+            drift_pred[(km, rate)] = (amp, phi)
+            print(f"  {km:5d} {rate:12.0e} {amp:9.5f} "
                   f"{phi:+9.4f} {100 * (1 - math.cos(phi)) / 2:9.3f} "
                   f"{phi / KEY_TRANSFER_S:17.3e}")
     print("    Gobby's measured ARM-length drift, for scale: 0.05 deg/s =")
@@ -258,6 +363,115 @@ def operator_section(failures):
     print("    full to modulator bias plus arm drift, and a third term would")
     print("    count one measurement twice.")
     return preds, drift_pred
+
+
+# One point on the drift curve.  A plain tuple had grown to six
+# fields, three of which are amplitudes, which is how a figure ends
+# up plotting the wrong one.
+SweepRow = namedtuple('SweepRow',
+                      'rate result ratio mean_amp end_amp sd')
+
+
+def drift_sweep(ref_p, quick, failures):
+    """Rate loss against drift rate, with Bob's servo holding the phase.
+
+    The two drift rows show the paper's sentence at two points; this shows
+    it as a curve.  With the phase held, what drift costs is bit rate, and
+    the cost grows with the rate while the QBER does not follow it.
+
+    Structured the way the rest of this file is: the operator gives the
+    prediction, free, and the Monte Carlo is checked against it.  So the
+    curve is not merely drawn, it is drawn twice by independent routes.
+
+    Returns the rows, for the CSV and the figure.
+    """
+    print(f"\n  Drift sweep at {SWEEP_KM} km, servo re-locking every "
+          f"{SERVO_INTERVAL_S:g} s")
+    print("  " + "-" * 74)
+
+    # The premise first.  The sweep only means anything while |R00|^2 falls
+    # with the rate, so that is checked -- at every operator distance,
+    # because it costs nothing -- rather than assumed from having looked
+    # once.
+    for km in OP_DISTANCES:
+        amps = [residual(km, r)[0] for r in DRIFT_SWEEP_C_S]
+        for (r0, a0), (r1, a1) in zip(zip(DRIFT_SWEEP_C_S, amps),
+                                      list(zip(DRIFT_SWEEP_C_S, amps))[1:]):
+            if a1 > a0 + 1e-12:
+                failures.append(
+                    f"{km} km: |R00|^2 rises from {a0:.6f} to {a1:.6f} "
+                    f"between {r0:g} and {r1:g} C/s, so the swept range "
+                    f"has run past where the residual rotation stays "
+                    f"inside one turn.  A curve through a wrapped rotation "
+                    f"reports where it happened to land, not what drift "
+                    f"costs -- shorten DRIFT_SWEEP_C_S")
+
+    n = budget(SWEEP_KM, 'polarisation_multiplexed', quick)
+    print(f"  {'rate C/s':>10} {'sifted':>8} {'rate/ref':>9} "
+          f"{'mean|R00|^2':>12} {'end|R00|^2':>11} {'QBER %':>17}")
+    rows = []
+    for rate in DRIFT_SWEEP_C_S:
+        amp = mean_residual_amp(SWEEP_KM, rate, n)
+        end_amp, _ = residual(SWEEP_KM, rate)
+        if rate == 0.0:
+            # Zero drift IS the reference: same budget, same seed, same
+            # arithmetic.  Re-running it would spend a cell to recompute a
+            # number already in hand.
+            r = ref_p
+        else:
+            r = _run(SWEEP_KM, 'polarisation_multiplexed', n,
+                     birefringence=True, compensate=True,
+                     drift_temperature_rate_C_s=rate,
+                     drift_blocks=DRIFT_BLOCKS,
+                     phase_servo_interval_s=SERVO_INTERVAL_S)
+        got = r['n_sifted'] / max(ref_p['n_sifted'], 1)
+        sig = _sigma(r['qber'], r['n_sifted'])
+        print(f"  {rate:10.0e} {r['n_sifted']:8d} {got:9.4f} {amp:12.5f} "
+              f"{end_amp:11.5f} {100 * r['qber']:11.3f} +/-{100 * sig:5.3f}")
+
+        # The rate must track the MEAN |R00|^2, which is the servo's whole
+        # point: it turns a phase, so the amplitude loss is left exactly
+        # where a unitary put it.  Same tolerance shape as the
+        # uncompensated cell -- the 15 % floor is systematic, because a
+        # cell with little signal has background as a larger share of its
+        # sifted count.
+        sd = got * math.sqrt(1.0 / max(r['n_sifted'], 1)
+                             + 1.0 / max(ref_p['n_sifted'], 1))
+        rows.append(SweepRow(rate, r, got, amp, end_amp, sd))
+        if abs(got - amp) > max(4.0 * sd, 0.15 * amp):
+            failures.append(
+                f"{SWEEP_KM} km drift sweep at {rate:g} C/s: rate ratio "
+                f"{got:.4f} +/- {sd:.4f} against a mean |R00|^2 of "
+                f"{amp:.4f} (endpoint {end_amp:.4f}).  The servo corrects "
+                f"phase only, so the amplitude the rotation took is "
+                f"exactly what the rate should keep")
+
+        # And the QBER must NOT follow.  This is the half of the paper's
+        # sentence the servo exists to reproduce.
+        if r['qber'] > ref_p['qber'] + 0.03:
+            failures.append(
+                f"{SWEEP_KM} km drift sweep at {rate:g} C/s: QBER rose to "
+                f"{100 * r['qber']:.2f} % against a "
+                f"{100 * ref_p['qber']:.2f} % reference.  Bob re-locks "
+                f"every {SERVO_INTERVAL_S:g} s, so the fringe should hold "
+                f"whatever the amplitude does")
+
+    # Endpoints, not adjacent steps.  The first few predicted separations
+    # are ~1e-4 in ratio against counting noise of order 1e-2, so adjacent
+    # monotonicity is not resolvable and asserting it would fail at random.
+    # The per-point checks above already pin the shape; this pins that
+    # there IS a fall.
+    lo, hi = rows[0].ratio, rows[-1].ratio
+    if hi >= lo - 0.10:
+        failures.append(
+            f"{SWEEP_KM} km drift sweep: the rate did not fall across the "
+            f"range -- {lo:.4f} at 0 C/s against {hi:.4f} at "
+            f"{DRIFT_SWEEP_C_S[-1]:g} C/s.  With the phase held, bit rate "
+            f"is the thing drift is supposed to cost")
+
+    print("    Adjacent steps are reported, not asserted: the first few are")
+    print("    ~1e-4 in ratio against counting noise of order 1e-2.")
+    return rows
 
 
 def run(quick=False):
@@ -276,6 +490,7 @@ def run(quick=False):
     print(f"  {'km':>4} {'topology':<10} {'configuration':<28} {'sifted':>7} "
           f"{'rate/ref':>9} {'QBER %':>18}")
     rows = []
+    sweep_ref = None
     for km in MC_DISTANCES:
         amp_pred, _, q_pred = preds[km]
         cells = []
@@ -296,6 +511,8 @@ def run(quick=False):
         # --- polarisation-multiplexed --------------------------------
         npm = budget(km, 'polarisation_multiplexed', quick)
         ref_p = _run(km, 'polarisation_multiplexed', npm)
+        if km == SWEEP_KM:
+            sweep_ref = ref_p
         aligned = _run(km, 'polarisation_multiplexed', npm,
                        birefringence=True, compensate=True)
         uncomp = _run(km, 'polarisation_multiplexed', npm,
@@ -303,15 +520,15 @@ def run(quick=False):
         quiet = _run(km, 'polarisation_multiplexed', npm,
                      birefringence=True, compensate=True,
                      drift_temperature_rate_C_s=DRIFT_QUIET_C_S,
-                     drift_blocks=100)
+                     drift_blocks=DRIFT_BLOCKS)
         loud = _run(km, 'polarisation_multiplexed', npm,
                     birefringence=True, compensate=True,
                     drift_temperature_rate_C_s=DRIFT_LOUD_C_S,
-                    drift_blocks=100)
+                    drift_blocks=DRIFT_BLOCKS)
         servo = _run(km, 'polarisation_multiplexed', npm,
                      birefringence=True, compensate=True,
                      drift_temperature_rate_C_s=DRIFT_LOUD_C_S,
-                     drift_blocks=100,
+                     drift_blocks=DRIFT_BLOCKS,
                      phase_servo_interval_s=SERVO_INTERVAL_S)
         cells += [('polmux', REFERENCE, ref_p, ref_p),
                   ('polmux', 'birefringence, aligned', aligned, ref_p),
@@ -431,8 +648,10 @@ def run(quick=False):
         print(f"  {'':4} {'':10} {'predicted, uncompensated':<28} {'':>7} "
               f"{amp_pred:>9.4f} {100 * q_pred:>11.3f}")
 
-    _write_csv(rows, preds, quick)
-    _figure(rows, preds, quick)
+    sweep = drift_sweep(sweep_ref, quick, failures)
+
+    _write_csv(rows, preds, sweep, quick)
+    _figure(rows, preds, sweep, quick)
 
     print()
     if failures:
@@ -449,6 +668,13 @@ def run(quick=False):
     print("       stretcher and is not what the paper reports")
     print("[PASS] the phase servo returns the QBER and leaves the rate lost")
     print("       -- 'reduces the bit rate, but does not degrade the QBER'")
+    print("[PASS] |R00|^2 falls monotonically across the swept range at "
+          "every")
+    print("       distance, so the sweep stays inside one turn of the "
+          "residual")
+    print(f"[PASS] swept {len(DRIFT_SWEEP_C_S)} drift rates with the servo "
+          f"on: the rate tracks")
+    print("       |R00|^2 at every one, and the QBER tracks none of them")
     return 0
 
 
@@ -458,7 +684,7 @@ def _stem(quick):
     return 'val_gobby_impairments--quick' if quick else 'val_gobby_impairments'
 
 
-def _write_csv(rows, preds, quick=False):
+def _write_csv(rows, preds, sweep, quick=False):
     path = os.path.join(OUT_DIR, _stem(quick) + '.csv')
     with open(path, 'w') as fh:
         fh.write("# validate_gobby_impairments.py"
@@ -473,6 +699,19 @@ def _write_csv(rows, preds, quick=False):
                  "(1-cos(2*arg(U11)))/2, both derived from the fibre's own\n"
                  "# Jones matrix, which is SU(2).  They apply to the "
                  "uncompensated cell only.\n")
+        fh.write(f"# 'servo sweep' rows are the drift-rate curve at "
+                 f"{SWEEP_KM} km, servo on.  predicted_rate there is "
+                 f"|R00|^2 for\n"
+                 f"# R = U_comp @ J(t) AVERAGED over the run at the "
+                 f"model's {DRIFT_BLOCKS} block midpoints -- not its "
+                 f"endpoint, which is\n"
+                 f"# smaller by a factor of six at the loudest rate "
+                 f"because Bob aligns at t=0 and the residual grows from\n"
+                 f"# the identity while pulses are collected throughout.  "
+                 f"predicted_qber is EMPTY on purpose: the servo holds\n"
+                 f"# the fringe, so the unserved phase term is not the "
+                 f"prediction for those rows.  Swept rates: "
+                 + ' '.join(f'{r:g}' for r in DRIFT_SWEEP_C_S) + "\n")
         fh.write("distance_km,topology,configuration,pulses,sifted,errors,"
                  "qber,sigma,rate_vs_reference,predicted_rate,"
                  "predicted_qber,field_perturbation\n")
@@ -487,10 +726,81 @@ def _write_csv(rows, preds, quick=False):
                      f"{_sigma(r['qber'], r['n_sifted']):.6f},"
                      f"{r['n_sifted'] / max(ref['n_sifted'], 1):.6f},"
                      f"{pr},{pq},{field_perturbation(km):.6f}\n")
+        # The drift sweep, same columns.  `predicted_rate` is |R00|^2 at
+        # that rate; `predicted_qber` is left empty on purpose -- the
+        # servo holds the fringe, so the unserved (1-cos(2argR11))/2 is
+        # NOT the prediction for these rows and printing it would invite
+        # exactly the wrong comparison.
+        for row in sweep:
+            rate, r = row.rate, row.result
+            lab = f"servo sweep, drift {rate:g} C/s"
+            fh.write(f"{SWEEP_KM},polarisation_multiplexed,\"{lab}\","
+                     f"{r['n_total']},{r['n_sifted']},{r['n_errors']},"
+                     f"{r['qber']:.6f},"
+                     f"{_sigma(r['qber'], r['n_sifted']):.6f},"
+                     f"{row.ratio:.6f},{row.mean_amp:.6f},,"
+                     f"{field_perturbation(SWEEP_KM):.6f}\n")
     print(f"\n  CSV: {path}")
 
 
-def _figure(rows, preds, quick=False):
+def _sweep_panel(ax, sweep):
+    """The drift-rate curve: what the servo saves and what it cannot.
+
+    Both halves of the paper's sentence in one axes.  Rate falls with the
+    drift rate and follows the mean |R00|^2 the operator predicts; QBER,
+    on the right axis, does not follow -- which is the servo working.
+
+    The prediction is drawn at the swept rates and nowhere between them.
+    A smooth interpolating curve through a finer grid would look better
+    and would promise values that nothing here checked.
+
+    Zero goes on a log axis at the left edge, labelled, because the
+    alternative is either dropping the reference point or drawing the
+    whole curve linearly and losing four decades.
+    """
+    nz = [r for r in DRIFT_SWEEP_C_S if r > 0]
+    floor = min(nz) / 3.0
+    x = [floor if w.rate == 0.0 else w.rate for w in sweep]
+
+    # The prediction is drawn at the swept rates and nowhere else.  A
+    # smooth interpolating curve would promise values between them that
+    # nothing here checked.
+    ax.plot(x, [w.mean_amp for w in sweep],
+            '-', lw=1.6, alpha=0.6, color='tab:purple', zorder=1,
+            label=r'mean $|R_{00}|^2$, from the operator')
+    ax.errorbar(x, [w.ratio for w in sweep], yerr=[w.sd for w in sweep],
+                fmt='o', ms=6, capsize=3, lw=1.0, color='tab:purple',
+                markeredgecolor='0.25', zorder=3,
+                label='sifted rate / reference')
+    ax.set_xscale('log')
+    ax.set_xlim(floor / 1.6, max(nz) * 1.6)
+    ax.set_ylim(0, 1.15)
+    ax.set_xlabel('fibre drift rate (C/s)')
+    ax.set_ylabel('sifted rate / reference')
+    ax.grid(True, alpha=0.3)
+    # Name the fake zero rather than letting it read as 3e-6.
+    ticks = [floor] + nz
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(['0'] + [f'{r:g}' for r in nz], fontsize=7)
+
+    q = ax.twinx()
+    qs = [100 * w.result['qber'] for w in sweep]
+    errs = [100 * _sigma(w.result['qber'], w.result['n_sifted'])
+            for w in sweep]
+    q.errorbar(x, qs, yerr=errs, fmt='s--', ms=4, lw=1.0, capsize=2,
+               color='tab:olive', label='QBER, servo holding')
+    q.set_ylabel('QBER (%)', color='tab:olive')
+    q.tick_params(axis='y', labelcolor='tab:olive')
+    q.set_ylim(0, max(6.0, 1.6 * max(qs + [1.0])))
+
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = q.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, fontsize=7, loc='lower left', framealpha=0.9)
+    ax.set_title(f'Drift rate vs rate loss at {SWEEP_KM} km, servo on',
+                 fontsize=10)
+
+
+def _figure(rows, preds, sweep, quick=False):
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -507,7 +817,7 @@ def _figure(rows, preds, quick=False):
               LOUD: 'tab:orange',
               SERVO: 'tab:purple'}
     kms = sorted({r[0] for r in rows})
-    fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.2))
+    fig, axes = plt.subplots(1, 3, figsize=(17.0, 5.2))
 
     for ax, metric, ylab in ((axes[0], 'qber', 'QBER (%)'),
                              (axes[1], 'rate', 'sifted rate / reference')):
@@ -554,6 +864,7 @@ def _figure(rows, preds, quick=False):
                       fontsize=10)
     axes[1].set_title('Sifted rate: what a rotation actually costs',
                       fontsize=10)
+    _sweep_panel(axes[2], sweep)
     # Figure-level legend below both panels.  Inside the axes it sat on top
     # of the tallest bar and its prediction marker, which are the two things
     # the reader most needs to see.
@@ -561,8 +872,11 @@ def _figure(rows, preds, quick=False):
     fig.legend(handles, labels, fontsize=8, ncol=4, loc='lower center',
                frameon=False, bbox_to_anchor=(0.5, -0.01))
     fig.suptitle(f'Fibre impairments in the Gobby chain (seed {SEED}, '
-                 f'drift {DRIFT_QUIET_C_S:g} and {DRIFT_LOUD_C_S:g} C/s over '
-                 f'{KEY_TRANSFER_S:g} s, servo every {SERVO_INTERVAL_S:g} s)'
+                 f'{KEY_TRANSFER_S:g} s transfer, servo every '
+                 f'{SERVO_INTERVAL_S:g} s; bars at drift '
+                 f'{DRIFT_QUIET_C_S:g} and {DRIFT_LOUD_C_S:g} C/s, '
+                 f'sweep over {len(DRIFT_SWEEP_C_S)} rates to '
+                 f'{max(DRIFT_SWEEP_C_S):g})'
                  + ('   [QUICK -- not quotable]' if quick else ''),
                  fontsize=11)
     fig.tight_layout(rect=(0, 0.09, 1, 1))
