@@ -21,10 +21,11 @@ do is how this harness fell behind in the first place.  Three differences
 matter, and each is recorded per entry rather than assumed:
 
 ``seeded``
-    Only the eight original channel validators take ``--seed``.  The DFB
-    and Duplinskiy ones do not, and passing it to them is an argparse
-    error and an exit code of 2 -- a harness failure indistinguishable, in
-    the summary, from a physics failure.
+    The eight original channel validators take ``--seed``, and so does
+    ``DUPL-scenarios``.  The DFB ones and the rest of the Duplinskiy ones
+    do not, and passing it to them is an argparse error and an exit code
+    of 2 -- a harness failure indistinguishable, in the summary, from a
+    physics failure.
 
 ``quick``
     ``'safe'``   -- takes ``--quick`` and writes smoke output to its own
@@ -143,6 +144,12 @@ VALIDATORS = [
        quick='safe'),
     _v('DUPL-urban', 'analysis/validation/validate_duplinskiy_urban.py',
        'analysis/val_duplinskiy/val_duplinskiy_urban{q}.csv', quick='safe'),
+    # The summary table across the six above. Seeded and quick-safe, so its
+    # stem carries both markers: --seed42 for the quotable run, and
+    # --seed42--quick for a smoke one.
+    _v('DUPL-scenarios', 'analysis/val_duplinskiy_scenarios.py',
+       'analysis/val_duplinskiy/val_duplinskiy_scenarios--seed{seed}{q}.csv',
+       seeded=True, quick='safe'),
 ]
 
 parser = argparse.ArgumentParser(

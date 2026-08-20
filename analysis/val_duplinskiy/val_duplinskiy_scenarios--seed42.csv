@@ -1,5 +1,5 @@
 # Impairment scenarios, polarisation-encoded (Duplinskiy) chain
-# script: analysis/val_duplinskiy_scenarios.py  seed: 42  distance: 50 km  target sifted: 3000  commit: 2360ad0
+# script: analysis/val_duplinskiy_scenarios.py  seed: 42  distance: 50 km  target sifted: 3000  commit: 7e65d31
 # chain: source -> PM1 -> FiberRealization -> compensation -> VOA -> PM2 -> circular analyser -> 2x SPAD
 # qber_err: binomial sqrt(q(1-q)/n_sifted)
 scenario,distance_km,qber,qber_err,n_sifted,n_errors,pulses,source,note,config

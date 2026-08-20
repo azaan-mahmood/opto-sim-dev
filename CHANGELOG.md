@@ -4,6 +4,86 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-20 — the last unchecked artifact, and a threshold that was a fitted number
+
+### Session: `val_duplinskiy_scenarios` becomes a checked validator
+
+| Change | Files | Rationale |
+|---|---|---|
+| `DUPL-scenarios` joins the harness | `run_all.py` | It was the only script producing committed artifacts that no regression check covered. Since the four proof-of-concept scripts retired, that was a one-item list rather than a survey. |
+| Ten checks added | `analysis/val_duplinskiy_scenarios.py` | A roster line alone would have bought a validator that could only fail by crashing. |
+| `_stem` adopted | `analysis/val_duplinskiy_scenarios.py` | A live defect, not a fit issue. See below. |
+| Cross-reference read, not copied | `analysis/val_duplinskiy_scenarios.py` | A hand-copied number from another validator can rot quietly while still looking authoritative. |
+| Roster count and `seeded` note corrected | `run_all.py` | Nine validators take `--seed` now, not eight. 20 validators, not 19. |
+
+**`--allow-underpowered` was overwriting the quotable table.** The stem
+was driven by `--quick` while the power guard was waived by a different
+flag, so the one flag that declares a run unquotable was the one the
+filename ignored. Running it printed "Do NOT cite it as a result" and then
+wrote straight over `val_duplinskiy_scenarios--seed42.csv`. This is
+exactly the failure `validate_gobby._stem` was written to prevent, and its
+docstring describes this scenario; scenarios had simply never adopted the
+helper. It now does, with `reduced = quick or allow_underpowered`.
+
+**A threshold tuned on one seed is a fitted number.** The first draft of
+the checks asserted magnitudes — that a 0.05 C calibration mismatch costs
+more than 15 % QBER, that the uncompensated control exceeds 25 %. Running
+the checks at three seeds broke it: **0.05 C of mismatch costs 35.9 % at
+seed 42 and 4.0 % at seed 7**, and neither run is wrong. How far the Jones
+matrix turns per degree is a property of the fibre draw, not of the model.
+
+Those four checks now assert error counts — an exact inverse is exactly
+inert, so a mismatch must produce a non-zero count, and that holds for
+every draw — and the magnitudes are printed under "reported, not
+asserted". The tell for the general case is that the threshold could only
+be chosen by looking at one run's output.
+
+**What the ten checks are.** Four exact: the compensated rows carry zero
+errors; the DFB source swap is inert without dispersion; CD is a
+structural null; and the paper's lab row is bit-identical to the
+dark-count row it deliberately repeats. That last one is the sharpest —
+the lab row spells out `mu=0.1`, `gate_width=20e-9`, `rep_rate=10e6` where
+the dark-count row relies on those being `simulate_bb84_duplinskiy`'s
+defaults, so the check silently guards the three defaults. Confirmed by
+moving `mu` and watching it fail with a readable message.
+
+Four assert a row is not inert. Two are orderings — the impairment ladder
+end to end (5.9 sigma) and urban above lab (3.1 sigma) — and both are
+skipped on a reduced run, because one sigma at the smoke budget is about
+1.2 pp against steps of 0.4 pp. The gate is the budget and never the
+observed gap: a ladder that had genuinely stopped climbing would show a
+gap near zero, hence no resolution, hence a skip, and the check would
+never fire on the one case it exists for.
+
+**The ladder's adjacent rungs are reported and not asserted.** Their steps
+are +0.39, +0.56 and +1.36 pp at 1.2, 1.6 and 3.3 sigma, so two of the
+three are not resolvable even at full budget. Asserting adjacency would
+have been a check that fails at random; the end-to-end climb is asserted
+instead, and each step is printed with its significance.
+
+**The urban row's offset is not this script's to resolve.** It reads
+3.28 +/- 0.25 % against the paper's 5.5 %. `validate_duplinskiy_urban.py`
+measures 3.38 +/- 0.31 % for the same configuration and already carries
+the gap; the two agree with each other, which is the cross-script
+consistency this table exists to show. So the ordering is asserted and the
+offset is printed — and the comparison number is read out of the urban
+validator's committed CSV rather than copied into a constant here.
+
+**Costs, measured.** Quick 4.6-6.0 min across three seeds, 26.0M pulses.
+Full 41 min 35 s, 308.6M pulses, 124k pulses/s. The working note recorded
+this script at "~9 min", wrong by about 4.6x. An extrapolation from the
+quick run mid-session gave 77 min, wrong the other way, because the quick
+run carries proportionally more pilot and DFB-build overhead — the
+arithmetic from the chain's known throughput was right and the
+extrapolation from a smaller run was not.
+
+**The regenerated table is byte-identical to the committed one** apart
+from the commit hash in its header. Nothing here touched physics, and the
+artifact says so. Suite unchanged at 378 passed, 1 skipped;
+`run_all.py --list` now shows 20 validators.
+
+---
+
 ## 2026-08-19 — the servo Gobby's receiver actually has, and a clear-out
 
 ### Session: phase servo and piezo stretcher, four scripts retired, two false statements cut
