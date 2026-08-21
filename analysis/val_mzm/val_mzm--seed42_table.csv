@@ -1,10 +1,10 @@
 Parameter,Value
-Transfer function,cos^2(pi*V/(2*V_pi)) verified
-Peak (V=0),P_out = 1.0
-Quadrature (V=V_pi/2),P_out = 0.5
-Null (V=V_pi),P_out = 0
-Chirp (push-pull),Zero (ideal)
-Chirp (single-drive),phi = pi*V/(2*V_pi) verified
+Transfer function,"cos^2(pi*V/(2*V_pi)), max err 4.44e-16"
+Peak (V=0),P_out = 1.00000000
+Quadrature (V=V_pi/2),P_out = 0.50000000
+Null (V=V_pi),P_out = 2.586e-32
+Chirp (push-pull),max |phi| = 0.00e+00 rad
+Chirp (single-drive),"phi = pi*V/(2*V_pi), max err 8.88e-16 rad"
 ER degradation,10 dB ER: null depth = 0.100
-Insertion loss,Scales as 10^(-IL/10)
-Crystal cut,X-cut modulates Ey; Y-cut modulates Ex
+Insertion loss,"10^(-IL/10), max err 4.44e-16"
+Crystal cut,X-cut leaves Ex flat to 0.00e+00; Y-cut leaves Ey flat to 0.00e+00

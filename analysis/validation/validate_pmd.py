@@ -21,6 +21,15 @@ np.random.seed(SEED)
 
 L_KM = 100
 PMD_COEFF = 0.1  # ps/sqrt(km) — Corning SMF-28 Ultra spec <= 0.1 ps/sqrt(km)
+
+# Gates for the verdict at the bottom of this file.  Stated here so the
+# "Expected" column of the committed table and the checks are the same
+# numbers rather than two opinions about them.
+KS_P_FLOOR = 1e-3        # Maxwell shape; permissive, a true sample rarely
+                         # falls below even at 10k draws
+COEFF_TOL_FRAC = 0.02    # fitted vs nominal ps/sqrt(km), 2000 draws per
+                         # point across seven lengths
+MIN_R2 = 0.999           # RMS DGD linear in sqrt(L)
 DT = 0.5e-12
 N_SAMPLES = 4096
 T = np.arange(N_SAMPLES) * DT
@@ -190,9 +199,85 @@ with open(table_csv, 'w', newline='') as f:
     writer.writerow(['Mean DGD (ps)', f'{mean_dgd:.3f}', f'{expected_mean:.3f}'])
     writer.writerow(['RMS DGD (ps)', f'{rms_dgd:.3f}', f'{expected_rms:.3f}'])
     writer.writerow(['KS D-stat', f'{ks.statistic:.5f}', '< 0.05 typical'])
-    writer.writerow(['KS p-value', f'{ks.pvalue:.4f}', '> 0.05 (not rejected)'])
+    writer.writerow(['KS p-value', f'{ks.pvalue:.4f}',
+                     f'> {KS_P_FLOOR:g} (not rejected)'])
     writer.writerow(['PMD coeff (ps/sqrt(km))', f'{slope_ps_per_sqrtkm:.4f}',
                      f'{nominal_ps_per_sqrtkm:.4f}'])
-    writer.writerow(['DGD sqrt(L) R2', f'{r2_pmd:.6f}', '~ 1.0'])
+    # r_value, squared.  `linregress` returns r as its third value; this
+    # row has been labelled R2 while carrying r.  Both sit near 1 here, so
+    # the mislabel never showed.
+    writer.writerow(['DGD sqrt(L) R2', f'{r2_pmd ** 2:.6f}', '~ 1.0'])
 print(f"Saved: val_pmd--seed{SEED}_table.csv")
 plt.close(fig)
+
+# ============================================================
+# Verdict
+# ============================================================
+#
+# This one is a Monte Carlo, not a closed form, so the tolerances are
+# derived from the sampling distribution rather than chosen.  Maxwell with
+# scale `a` has
+#
+#     mean = 2a*sqrt(2/pi),  var = a^2*(3pi-8)/pi,  m2 = 3a^2,  m4 = 15a^4
+#
+# so the standard error of the sample mean is sd/sqrt(N), and the relative
+# standard error of the sample RMS is sqrt((m4/m2^2 - 1)/(4N)) = 1/sqrt(6N).
+# Both therefore tighten with `--n-realizations` instead of being fixed at
+# whatever one run happened to produce.
+SIGMA_GATE = 5.0
+
+sd_maxwell = maxwell_scale * np.sqrt((3 * np.pi - 8) / np.pi) * 1e12
+se_mean = sd_maxwell / np.sqrt(N_REAL)
+se_rms_rel = 1.0 / np.sqrt(6.0 * N_REAL)
+
+failures = []
+
+dev_mean = abs(mean_dgd - expected_mean)
+if dev_mean > SIGMA_GATE * se_mean:
+    failures.append(
+        f"mean DGD {mean_dgd:.4f} ps against an expected "
+        f"{expected_mean:.4f} ps -- {dev_mean / se_mean:.1f} sigma on a "
+        f"standard error of {se_mean:.4f} ps from {N_REAL} realizations")
+
+dev_rms_rel = abs(rms_dgd - expected_rms) / expected_rms
+if dev_rms_rel > SIGMA_GATE * se_rms_rel:
+    failures.append(
+        f"RMS DGD {rms_dgd:.4f} ps against an expected {expected_rms:.4f} "
+        f"ps -- {dev_rms_rel / se_rms_rel:.1f} sigma. RMS DGD is what the "
+        f"PMD coefficient is defined by, so this is the number the spec "
+        f"names")
+
+if ks.pvalue < KS_P_FLOOR:
+    failures.append(
+        f"the DGD sample is not Maxwellian: KS D = {ks.statistic:.5f}, "
+        f"p = {ks.pvalue:.2e} against a {KS_P_FLOOR:g} floor. A random "
+        f"birefringence walk gives a Maxwell DGD; another shape means the "
+        f"walk is not random")
+
+coeff_dev = abs(slope_ps_per_sqrtkm - nominal_ps_per_sqrtkm) \
+    / nominal_ps_per_sqrtkm
+if coeff_dev > COEFF_TOL_FRAC:
+    failures.append(
+        f"the fitted PMD coefficient is {slope_ps_per_sqrtkm:.5f} "
+        f"ps/sqrt(km) against the {nominal_ps_per_sqrtkm:.5f} asked for, "
+        f"a relative error of {coeff_dev:.3%}. The sweep runs over the "
+        f"same model, so it has to return its own input")
+
+if r2_pmd ** 2 < MIN_R2:
+    failures.append(
+        f"RMS DGD is not linear in sqrt(L) (R^2 = {r2_pmd ** 2:.6f}). "
+        f"PMD accumulates as a random walk, which is what makes the "
+        f"coefficient a per-sqrt(km) number at all")
+
+print()
+if failures:
+    print("[FAIL]")
+    for f_ in failures:
+        print(f"  - {f_}")
+    sys.exit(1)
+print(f"[PASS] mean and RMS DGD sit within {SIGMA_GATE:g} sigma of Maxwell "
+      f"over {N_REAL} realizations")
+print(f"[PASS] the DGD sample is Maxwellian (KS p = {ks.pvalue:.3f})")
+print(f"[PASS] RMS DGD grows as sqrt(L) (R^2 = {r2_pmd ** 2:.6f}) and the "
+      f"fit returns {slope_ps_per_sqrtkm:.5f} ps/sqrt(km)")
+sys.exit(0)

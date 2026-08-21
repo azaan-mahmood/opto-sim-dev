@@ -138,3 +138,61 @@ with open(table_csv, 'w', newline='') as f:
                          f'{errors_pct[idx]:.6e}'])
 print(f"Saved: val_attenuation--seed{SEED}_table.csv")
 plt.close(fig)
+
+# ============================================================
+# Verdict
+# ============================================================
+#
+# Both criteria were already computed and printed; neither was asserted,
+# so this script could not fail.  Nothing new is being decided here.
+#
+# Beer-Lambert is a closed form and `apply_attenuation` is a scaling, so
+# the residual is numerical and sits at machine precision (~3e-14 %). The
+# gates below are far looser than that on purpose: a threshold tightened
+# to what one run produced is a fitted number, and the failure modes here
+# are gross -- attenuation not applied, applied in amplitude instead of
+# power, alpha read in the wrong units.
+MAX_ERROR_PCT = 1e-3        # Beer-Lambert agreement
+ALPHA_TOL_FRAC = 1e-6       # fitted slope against the nominal alpha
+MIN_R2 = 1.0 - 1e-9         # linearity of loss in dB against distance
+
+failures = []
+
+if not np.isfinite(errors_pct).all():
+    failures.append(
+        f"{int((~np.isfinite(errors_pct)).sum())} non-finite values in the "
+        f"Beer-Lambert comparison")
+
+if errors_pct.max() >= MAX_ERROR_PCT:
+    worst = int(np.argmax(errors_pct))
+    failures.append(
+        f"measured power departs from Beer-Lambert by "
+        f"{errors_pct.max():.3e} % at {distances_km[worst]:.1f} km "
+        f"({P_out_meas[worst]:.8e} against a predicted "
+        f"{P_out_theory[worst]:.8e}), past a {MAX_ERROR_PCT:g} % limit")
+
+alpha_err = abs(alpha_fitted - ALPHA_NOMINAL) / ALPHA_NOMINAL
+if alpha_err >= ALPHA_TOL_FRAC:
+    failures.append(
+        f"the loss slope fitted back to {alpha_fitted:.8f} dB/km against "
+        f"the {ALPHA_NOMINAL} dB/km asked for, a relative error of "
+        f"{alpha_err:.2e}. The fit runs over the same dB losses the model "
+        f"produced, so it has to return the input")
+
+if r2 < MIN_R2:
+    failures.append(
+        f"loss in dB is not linear in distance (R^2 = {r2:.12f}). "
+        f"Beer-Lambert makes it exactly linear, so curvature means the "
+        f"attenuation is not exponential in the field power")
+
+print()
+if failures:
+    print("[FAIL]")
+    for f_ in failures:
+        print(f"  - {f_}")
+    sys.exit(1)
+print(f"[PASS] power follows Beer-Lambert to {errors_pct.max():.2e} % "
+      f"over 0-{distances_km.max():.0f} km")
+print(f"[PASS] the fitted slope returns alpha = {alpha_fitted:.6f} dB/km "
+      f"against {ALPHA_NOMINAL} asked for (R^2 = {r2:.10f})")
+sys.exit(0)

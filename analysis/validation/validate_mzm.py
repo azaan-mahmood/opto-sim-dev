@@ -206,19 +206,143 @@ np.savetxt(os.path.join(OUT, f'val_mzm--seed{SEED}.csv'),
            comments='')
 print(f"Saved: val_mzm--seed{SEED}.csv")
 
+# ----------------------------------------------------------------
+# The claims the table has always made, as numbers
+# ----------------------------------------------------------------
+# Every one of these was drawn against its analytic curve and then
+# declared "verified" or given a bare ideal value, with nothing comparing
+# them.  A modulator that had lost its cos^2 would have printed the same
+# table.
+err_transfer = float(np.max(np.abs(P_pp - theory_pp)))
+
+
+# The peak, quadrature and null are evaluated AT their voltages rather
+# than at the nearest sweep point.  V_scan is 200 points across
+# [0, 2*V_pi], so it contains neither V_pi/2 nor V_pi: the nearest samples
+# sit at 0.5025*V_pi and 0.9950*V_pi, where cos^2 is 0.49605 and 6.2e-5.
+# The table reported those as "P_out = 0.5" and "P_out = 0", which were
+# claims about points the sweep never visited.
+def _power_at(volts):
+    return float(np.sum(np.abs(mzm_pp.modulate(field_ey, volts)) ** 2))
+
+
+P_peak = _power_at(0.0)
+P_quad = _power_at(V_pi / 2.0)
+P_null = _power_at(V_pi)
+
+# Push-pull is chirp-free by construction: both arms move oppositely, so
+# the transfer is real and the phase can only be 0 or pi.  Measured on the
+# same sign-corrected, null-masked phase the single-drive panel uses.
+phi_pp_raw = np.angle(E_pp_ph[:, 1])
+_cos_val = np.cos(np.pi * V_scan / (2 * V_pi))
+_cos_sign = np.where(_cos_val < 0, np.pi, 0.0)
+phi_pp_chirp = np.unwrap(phi_pp_raw - _cos_sign)
+amp_pp = np.abs(E_pp_ph[:, 1])
+mask_pp = amp_pp > threshold * np.max(amp_pp)
+chirp_pp_max = float(np.max(np.abs(phi_pp_chirp[mask_pp])))
+
+err_chirp = float(np.max(np.abs(phi_sd_chirp[mask_sd]
+                                - theory_sd_phase[mask_sd])))
+err_il = float(np.max(np.abs(np.array(P_il_meas)
+                             - np.array(P_il_theory))))
+
+# Crystal cut: the unmodulated component must stay flat across the sweep.
+# Peak-to-peak relative to its own mean, so "flat" is scale-free.
+def _flatness(p):
+    p = np.asarray(p, float)
+    return float((p.max() - p.min()) / max(p.mean(), 1e-300))
+
+
+leak_x = _flatness(Px_x)     # X-cut must leave Ex alone
+leak_y = _flatness(Py_y)     # Y-cut must leave Ey alone
+
 import csv
 table_csv = os.path.join(OUT, f'val_mzm--seed{SEED}_table.csv')
 with open(table_csv, 'w', newline='') as f:
     writer = csv.writer(f)
     writer.writerow(['Parameter', 'Value'])
-    writer.writerow(['Transfer function', 'cos^2(pi*V/(2*V_pi)) verified'])
-    writer.writerow(['Peak (V=0)', 'P_out = 1.0'])
-    writer.writerow(['Quadrature (V=V_pi/2)', 'P_out = 0.5'])
-    writer.writerow(['Null (V=V_pi)', 'P_out = 0'])
-    writer.writerow(['Chirp (push-pull)', 'Zero (ideal)'])
-    writer.writerow(['Chirp (single-drive)', 'phi = pi*V/(2*V_pi) verified'])
+    writer.writerow(['Transfer function',
+                     f'cos^2(pi*V/(2*V_pi)), max err {err_transfer:.2e}'])
+    writer.writerow(['Peak (V=0)', f'P_out = {P_peak:.8f}'])
+    writer.writerow(['Quadrature (V=V_pi/2)', f'P_out = {P_quad:.8f}'])
+    writer.writerow(['Null (V=V_pi)', f'P_out = {P_null:.3e}'])
+    writer.writerow(['Chirp (push-pull)',
+                     f'max |phi| = {chirp_pp_max:.2e} rad'])
+    writer.writerow(['Chirp (single-drive)',
+                     f'phi = pi*V/(2*V_pi), max err {err_chirp:.2e} rad'])
     writer.writerow(['ER degradation', f'10 dB ER: null depth = {er_null[2]:.3f}'])
-    writer.writerow(['Insertion loss', 'Scales as 10^(-IL/10)'])
-    writer.writerow(['Crystal cut', 'X-cut modulates Ey; Y-cut modulates Ex'])
+    writer.writerow(['Insertion loss',
+                     f'10^(-IL/10), max err {err_il:.2e}'])
+    writer.writerow(['Crystal cut',
+                     f'X-cut leaves Ex flat to {leak_x:.2e}; '
+                     f'Y-cut leaves Ey flat to {leak_y:.2e}'])
 print(f"Saved: val_mzm--seed{SEED}_table.csv")
 plt.close(fig)
+
+# ============================================================
+# Verdict
+# ============================================================
+#
+# All closed form against closed form, so the gates sit far above the
+# numerical residual and catch the gross failures instead: a transfer that
+# has stopped being cos^2, a push-pull arm that has acquired chirp, an
+# insertion loss applied in amplitude rather than power, a crystal cut
+# modulating the wrong component.
+TOL_POWER = 1e-9        # absolute, on a transfer normalised to 1
+TOL_CHIRP_RAD = 1e-9    # absolute, radians
+TOL_FLAT = 1e-9         # fractional peak-to-peak on the untouched axis
+
+failures = []
+
+if err_transfer >= TOL_POWER:
+    failures.append(
+        f"push-pull transfer departs from cos^2(pi*V/2V_pi) by "
+        f"{err_transfer:.3e}, past {TOL_POWER:g}")
+
+for label, got, want in (('peak (V=0)', P_peak, 1.0),
+                         ('quadrature (V=V_pi/2)', P_quad, 0.5),
+                         ('null (V=V_pi)', P_null, 0.0)):
+    if abs(got - want) >= 1e-6:
+        failures.append(
+            f"{label}: P_out = {got:.8f} against {want}, which is where "
+            f"cos^2 puts it")
+
+if chirp_pp_max >= TOL_CHIRP_RAD:
+    failures.append(
+        f"push-pull is not chirp-free: max |phi| = {chirp_pp_max:.3e} rad. "
+        f"Both arms move oppositely, so the transfer is real and the phase "
+        f"can only be 0 or pi")
+
+if err_chirp >= TOL_CHIRP_RAD:
+    failures.append(
+        f"single-drive chirp departs from pi*V/(2*V_pi) by "
+        f"{err_chirp:.3e} rad, past {TOL_CHIRP_RAD:g}")
+
+if err_il >= TOL_POWER:
+    failures.append(
+        f"insertion loss departs from 10^(-IL/10) by {err_il:.3e}. Applied "
+        f"in amplitude instead of power it would be out by a square")
+
+if leak_x >= TOL_FLAT:
+    failures.append(
+        f"an X-cut modulator disturbed Ex by {leak_x:.3e} peak-to-peak; "
+        f"X-cut drives Ey and must leave Ex alone")
+if leak_y >= TOL_FLAT:
+    failures.append(
+        f"a Y-cut modulator disturbed Ey by {leak_y:.3e} peak-to-peak; "
+        f"Y-cut drives Ex and must leave Ey alone")
+
+print()
+if failures:
+    print("[FAIL]")
+    for f_ in failures:
+        print(f"  - {f_}")
+    sys.exit(1)
+print(f"[PASS] push-pull transfer is cos^2(pi*V/2V_pi) to "
+      f"{err_transfer:.2e}, with peak/quadrature/null on their exact values")
+print(f"[PASS] push-pull carries no chirp ({chirp_pp_max:.2e} rad) while "
+      f"single-drive follows pi*V/2V_pi to {err_chirp:.2e} rad")
+print(f"[PASS] insertion loss scales as 10^(-IL/10) to {err_il:.2e}")
+print(f"[PASS] each crystal cut leaves the other axis flat "
+      f"({max(leak_x, leak_y):.2e} peak-to-peak)")
+sys.exit(0)

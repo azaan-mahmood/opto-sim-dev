@@ -100,6 +100,15 @@ Ex_mag = np.array(Ex_mag)
 Ey_mag = np.array(Ey_mag)
 norm_check = np.sqrt(Ex_mag**2 + Ey_mag**2)
 
+# The two claims the table has always made about polarisation, as
+# numbers.  A linear state at azimuth psi is (cos psi, sin psi), and
+# the Jones vector carries direction only -- power is set separately,
+# so a non-unit norm would double-count one of them.
+norm_dev = float(np.max(np.abs(norm_check - 1.0)))
+azimuth_dev = float(max(
+    np.max(np.abs(Ex_mag - np.abs(np.cos(psi_vals)))),
+    np.max(np.abs(Ey_mag - np.abs(np.sin(psi_vals))))))
+
 # ================================================================
 # 6-panel figure
 # ================================================================
@@ -198,6 +207,92 @@ with open(table_csv, 'w', newline='') as f:
     writer.writerow(['Phase diffusion coeff', f'D_phi = {D_phi:.2e} rad^2/s'])
     writer.writerow(['Phase increments', f'Gaussian, std = {inc_theory_std:.2e} rad'])
     writer.writerow(['RIN resonance', 'f_RO = 5 GHz, damping = 1.88e10 rad/s'])
-    writer.writerow(['Polarization', 'Unit norm, linear/circular verified'])
+    writer.writerow(['Polarization',
+                     f'unit norm to {norm_dev:.2e}; azimuth follows '
+                     f'(cos psi, sin psi) to {azimuth_dev:.2e}'])
 print(f"Saved: val_cwlaser--seed{SEED}_table.csv")
 plt.close(fig)
+
+# ============================================================
+# Verdict
+# ============================================================
+#
+# Three of these are deterministic and get tight gates.  The two that are
+# DRAWS -- phase diffusion and the increment width -- get statistical
+# bands, because a Wiener process is only required to land near its
+# variance, not on it.
+#
+# Phase variance is the loose one on purpose.  var(phi) over a single
+# realization of a Wiener process is itself a random variable with a
+# spread comparable to its mean, so the check is an order-of-magnitude
+# band: it catches diffusion switched off, or running at the wrong D_phi,
+# and does not pretend to more.
+# Power is NOT a closed form here: the mean is taken over 2000 samples of
+# a laser carrying RIN, so it scatters.  At -200 dB/Hz over a 5e11 Hz
+# Nyquist band the per-sample relative RMS is sqrt(1e-20*5e11) = 7.1e-5,
+# so the standard error of a 2000-sample mean is 1.6e-6, or 1.6e-4 %.
+# 1e-2 % sits ~60x above that and far below any calibration error.
+POWER_TOL_PCT = 1e-2
+POL_TOL = 1e-9            # Jones vector algebra, deterministic
+INC_STD_TOL_FRAC = 0.05   # sample std of ~20k Gaussian increments
+# Quadratic variation of N increments has relative SD sqrt(2/N); at
+# N = 50000 that is 0.63 %, so 5 % is ~8 sigma.
+QV_TOL_FRAC = 0.05
+
+failures = []
+
+if p_err.max() >= POWER_TOL_PCT:
+    worst = int(np.argmax(p_err))
+    failures.append(
+        f"optical power departs from 10^(dBm/10) mW by {p_err.max():.3e} % "
+        f"at {p_dbm_vals[worst]:.1f} dBm ({P_meas[worst]:.6e} W against "
+        f"{P_theory[worst]:.6e} W)")
+
+if norm_dev >= POL_TOL:
+    failures.append(
+        f"the polarisation Jones vector is not unit norm (worst deviation "
+        f"{norm_dev:.3e}); it carries direction, and power is set "
+        f"separately, so a non-unit norm double-counts one of them")
+
+# A linear state at azimuth psi is (cos psi, sin psi).  The table claimed
+# "linear/circular verified" without this ever being compared.
+if azimuth_dev >= POL_TOL:
+    failures.append(
+        f"a linear state at azimuth psi is (cos psi, sin psi); the scan "
+        f"departs from it by {azimuth_dev:.3e}")
+
+inc_std_dev = abs(inc.std() - inc_theory_std) / inc_theory_std
+if inc_std_dev >= INC_STD_TOL_FRAC:
+    failures.append(
+        f"phase increments have std {inc.std():.4e} rad against "
+        f"sqrt(D_phi*dt) = {inc_theory_std:.4e} ({inc_std_dev:.2%} out). "
+        f"A Wiener process puts the linewidth entirely in this width")
+
+# The quantity that equals D_phi*t is the QUADRATIC VARIATION -- the sum
+# of squared increments -- which is exactly what panel B plots.  var(phi)
+# across the trace is a different statistic entirely (a Brownian path
+# scattered about its own time-average), and comparing it to D_phi*t is a
+# category error rather than a loose check.
+qv = float(np.sum(np.diff(phi, prepend=0.0) ** 2))
+qv_dev = abs(qv - theory_var) / theory_var if theory_var else float('inf')
+if qv_dev >= QV_TOL_FRAC:
+    failures.append(
+        f"phase diffusion is off: the quadratic variation is {qv:.4f} "
+        f"rad^2 against D_phi*t = {theory_var:.4f} ({qv_dev:.2%} out). "
+        f"A Wiener process accumulates variance linearly at D_phi = "
+        f"2*pi*linewidth")
+
+print()
+if failures:
+    print("[FAIL]")
+    for f_ in failures:
+        print(f"  - {f_}")
+    sys.exit(1)
+print(f"[PASS] optical power tracks 10^(dBm/10) mW to {p_err.max():.2e} % "
+      f"over {p_dbm_vals.min():.0f} to {p_dbm_vals.max():.0f} dBm")
+print(f"[PASS] the polarisation vector is unit norm to {norm_dev:.2e} and "
+      f"follows (cos psi, sin psi) to {azimuth_dev:.2e}")
+print(f"[PASS] phase increments are Gaussian with std sqrt(D_phi*dt) "
+      f"({inc_std_dev:.2%} out), and the quadratic variation returns "
+      f"D_phi*t to {qv_dev:.2%}")
+sys.exit(0)

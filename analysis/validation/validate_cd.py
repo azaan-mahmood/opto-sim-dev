@@ -23,6 +23,11 @@ D_total = D_TOTAL
 D_SI = D_total * 1e-6
 beta2 = -D_SI * WAVELENGTH**2 / (2 * np.pi * LIGHTSPEED)
 
+# The tolerance the committed table has always claimed for the broadening
+# comparison.  One constant, so the sentence in the artifact and the check
+# at the bottom of this file cannot disagree with each other.
+MAX_ERROR_PCT = 1e-3
+
 T0 = 30e-12
 LD = T0**2 / abs(beta2)
 DT = 1e-12
@@ -202,6 +207,69 @@ with open(table_csv, 'w', newline='') as f:
     writer.writerow(['beta2', f'{beta2:.3e} s^2/m'])
     writer.writerow(['Dispersion length L_D', f'{LD/1e3:.2f} km'])
     writer.writerow(['Max error', f'{errors_pct.max():.6e} %'])
-    writer.writerow(['Gaussian broadening', 'Matches analytic: all < 0.001 %'])
+    writer.writerow(['Gaussian broadening',
+                     f'Matches analytic: all < {MAX_ERROR_PCT:g} % '
+                     f'(max {errors_pct.max():.3e} %)'])
 print(f"Saved: val_cd--seed{SEED}_table.csv")
 plt.close(fig)
+
+# ============================================================
+# Verdict
+# ============================================================
+#
+# The criterion is not new.  The table above has always carried the claim
+# "all < 0.001 %" -- but as a LITERAL, which would have printed unchanged
+# at any error whatever.  `MAX_ERROR_PCT` now feeds both the sentence and
+# the assertion, so the artifact cannot claim something the run did not
+# check.
+#
+# The gate is loose against what is observed, and deliberately so.  This
+# panel is a closed form against a closed form -- a Gaussian under
+# quadratic phase, no randomness anywhere -- so the only error is
+# numerical and it sits at machine precision, of order 1e-14 %.  A
+# threshold tightened to that would be a number fitted to one run.  The
+# failure modes here are gross: a sign error on beta2, dispersion not
+# applied at all, the wrong L_D.  1e-3 % catches every one of them.
+failures = []
+
+if not np.isfinite(errors_pct).all():
+    failures.append(
+        f"{int((~np.isfinite(errors_pct)).sum())} non-finite values in the "
+        f"broadening sweep, so the comparison against the analytic width "
+        f"is meaningless wherever they fall")
+
+if errors_pct.max() >= MAX_ERROR_PCT:
+    worst = int(np.argmax(errors_pct))
+    failures.append(
+        f"broadening departs from the analytic width by "
+        f"{errors_pct.max():.3e} % at z/LD = "
+        f"{z_over_LD_dense[worst]:.3f}, against a limit of "
+        f"{MAX_ERROR_PCT:g} % that this table has always claimed. "
+        f"sigma_sim = {widths_sim[worst] * 1e12:.6f} ps against an "
+        f"analytic {widths_analytic[worst] * 1e12:.6f} ps")
+
+# A null with no perturbation is a skipped code path wearing the costume
+# of physics.  If `apply_cd` returned its input, every width would equal
+# sigma0 and the agreement above would be with a curve that never moved.
+broadening = widths_sim.max() / widths_sim.min()
+if broadening < 2.0:
+    failures.append(
+        f"the pulse barely broadened across the sweep (widest/narrowest = "
+        f"{broadening:.4f}) even though it runs to z/LD = "
+        f"{z_over_LD_dense.max():.1f}, where the analytic ratio is "
+        f"{np.sqrt(1 + z_over_LD_dense.max() ** 2):.2f}. Agreement with "
+        f"the analytic curve means nothing if dispersion never reached "
+        f"the field")
+
+print()
+if failures:
+    print("[FAIL]")
+    for f_ in failures:
+        print(f"  - {f_}")
+    sys.exit(1)
+print(f"[PASS] Gaussian broadening tracks sigma0*sqrt(1+(z/LD)^2) to "
+      f"{errors_pct.max():.2e} %,")
+print(f"       against the {MAX_ERROR_PCT:g} % this table claims")
+print(f"[PASS] dispersion reached the field -- the pulse broadened "
+      f"{broadening:.2f}x across the sweep")
+sys.exit(0)

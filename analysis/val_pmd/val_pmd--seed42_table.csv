@@ -2,6 +2,6 @@ Parameter,Value,Expected
 Mean DGD (ps),0.924,0.921
 RMS DGD (ps),1.003,1.000
 KS D-stat,0.00876,< 0.05 typical
-KS p-value,0.4249,> 0.05 (not rejected)
+KS p-value,0.4249,> 0.001 (not rejected)
 PMD coeff (ps/sqrt(km)),0.0998,0.1000
-DGD sqrt(L) R2,0.999987,~ 1.0
+DGD sqrt(L) R2,0.999974,~ 1.0

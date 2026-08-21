@@ -5,4 +5,4 @@ D_waveguide,-5.0 ps/(nm*km)
 beta2,-2.168e-26 s^2/m
 Dispersion length L_D,41.51 km
 Max error,3.012676e-14 %
-Gaussian broadening,Matches analytic: all < 0.001 %
+Gaussian broadening,Matches analytic: all < 0.001 % (max 3.013e-14 %)

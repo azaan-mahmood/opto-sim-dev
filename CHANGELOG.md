@@ -4,6 +4,91 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-20 — six validators that could not fail, and a theory curve that was wrong
+
+### Session: an audit, and the first finding from it
+
+An audit of the repository turned up five findings. This lands the first
+two, which turned out to be one thing.
+
+| Change | Files | Rationale |
+|---|---|---|
+| Real pass/fail criteria | `validate_{apd,attenuation,cd,cwlaser,mzm,pmd}.py` | Six roster validators had no `[PASS]`, no `[FAIL]`, no non-zero exit. They computed, wrote a table, and exited 0 unconditionally. |
+| Hardcoded verdicts replaced by measurements | the five committed component tables | Seven claims across four artifacts asserted agreement that nothing had checked. |
+| APD theory curves corrected | `validate_apd.py` | The curves the model was being compared against were themselves wrong, in two ways. |
+| Harness warning restored to one line | `run_all.py` | It was firing six times a run, which is how it went unnoticed. |
+
+**Six validators reported PASS for running.** `validate_apd`,
+`validate_attenuation`, `validate_cd`, `validate_cwlaser`,
+`validate_mzm` and `validate_pmd` contained no verdict of any kind. The
+harness reported PASS because the script had not crashed and its output
+file existed. Every one of them already computed a comparison against an
+analytic prediction and simply never asserted it, so none of the criteria
+below is invented — each is a comparison the script was already drawing.
+
+They now emit 2, 2, 2, 3, 3 and 4 `[PASS]` lines (CD, Attenuation, APD,
+PMD, CWLaser, MZM) and exit non-zero on failure. Every one of the six had
+its failure path exercised: four fired on their own during development,
+and the remaining two were broken deliberately — alpha moved 0.182 to 0.2
+under a theory curve left at 0.182 (56 % departure, caught), and the PMD
+coefficient moved 0.10 to 0.12 under an expectation left at 0.10 (48
+sigma on the mean, 50 on the RMS, and the Maxwell KS test collapsing to
+p = 5e-260).
+
+**The warning that should have caught this was itself the casualty.**
+`run_all.py` exempted PMD by name from its "no `[PASS]` markers" warning.
+By the time anyone looked, six validators were tripping it every run, so
+the one signal that could have surfaced the problem had become noise. The
+exemption is gone; the warning now fires exactly once, for
+`validate_gobby`, which is genuinely the last roster entry with no
+verdict — it can fail on the statistical-power guard but not on physics.
+That is left firing on purpose rather than silenced.
+
+**The APD validator was comparing the model against the wrong curves.**
+Tightening its gates surfaced two defects, and in both the model was
+right:
+
+* Its "theory" responsivity used the exact speed of light while the
+  detector uses `self.c = 3e8`. That 0.0692 % difference was *exactly*
+  the disagreement observed.
+* Its noise theory omitted the dark-current shot term that
+  `calculate_noise` includes — a 4.8e-3 % gap, small enough to look like
+  rounding on a log plot and to survive being called "verified".
+
+Formed from the detector's own constants and with the dark term restored,
+all five comparisons agree to **1.75e-14 %**. A comparison curve built
+with different constants tests the constants, silently, and reports the
+answer as if it had tested the formula.
+
+Whether `c = 3e8` is good enough is a separate question and is now
+*reported* rather than gated: the validator prints c +0.0692 %,
+kB +0.0470 %, e +0.0110 % and h +0.0011 % against CODATA 2018. Changing
+them moves every APD number in the project, so it is a decision, not a
+check.
+
+**Two more claims that were never true as stated.** `validate_mzm`
+reported `P_out = 0.5` at quadrature and `0` at the null; `V_scan` is 200
+points across `[0, 2*V_pi]` and contains neither voltage — the nearest
+samples sit at 0.5025 and 0.9950 of `V_pi`, where cos^2 gives 0.49605 and
+6.2e-5. The three points are now evaluated at the voltages being claimed,
+and come back 1.00000000, 0.50000000 and 2.6e-32. `validate_pmd` wrote
+`linregress`'s `r` under a heading reading `R2`; both sit near 1, so it
+never showed.
+
+**What the criteria are.** Where the comparison is closed form against
+closed form the gates sit far above the numerical residual and catch
+gross failures — a transfer that has stopped being cos^2, an insertion
+loss applied in amplitude rather than power, a crystal cut modulating the
+wrong component. Where it is a draw, the tolerance comes from the
+sampling distribution rather than from a chosen number: PMD's mean and
+RMS DGD are gated at five standard errors derived from the Maxwell
+moments, so they tighten with `--n-realizations` instead of being fixed
+at whatever one run produced.
+
+Suite unchanged at 378 passed, 1 skipped.
+
+---
+
 ## 2026-08-20 — the drift curve, and two amplitudes that are easy to confuse
 
 ### Session: drift rate against rate loss, servo on

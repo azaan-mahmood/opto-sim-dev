@@ -255,9 +255,18 @@ for v in VALIDATORS:
             print(ret.stderr[-2000:])
     if not out_ok:
         print(f"[{v.name}] FAILED (missing output {out_file})")
-    # PMD reports through its table CSV rather than [PASS] lines.
-    if n_pass == 0 and v.name != 'PMD':
-        print(f"[{v.name}] WARNING: no [PASS] markers on stdout (rc=0)")
+    # Gobby is the last validator with no verdict of its own: it can fail
+    # on the statistical-power guard but not on physics, so it exits 0
+    # without asserting anything and this warning fires for it.  That is
+    # correct and it is left to fire.
+    #
+    # The exemption that used to live here named PMD, and by the time it
+    # was looked at, SIX validators were tripping the warning every run --
+    # which made the one signal that could have caught them into noise.
+    # They now carry real criteria; the warning is a single line again.
+    if n_pass == 0:
+        print(f"[{v.name}] WARNING: no [PASS] markers on stdout (rc=0), so "
+              f"this entry passed by running rather than by checking")
 
     status = 'PASS' if (rc_ok and out_ok) else 'FAIL'
     results.append((v.name, status, elapsed))

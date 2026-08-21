@@ -27,7 +27,15 @@ det = apd(WAVELENGTH, excess_noise_factor=10, load_resistance=50,
 # ----------------------------------------------------------------
 # Panel A: Responsivity = eta * e * lambda / (h * c)  (Kasap Eq 4.19)
 # ----------------------------------------------------------------
-R_theory = det.qe * ECHARGE * WAVELENGTH / (PLANCK * LIGHTSPEED)
+# The comparison curves below are formed from the DETECTOR'S constants,
+# not from this file's.  The distinction matters: the question a validator
+# can answer is whether the model implements the textbook expression, and
+# restating the expression with different constants tests the constants
+# instead, silently.  `det.c` is 3e8 where `LIGHTSPEED` here is exact,
+# which is a 0.069 % difference and was exactly the responsivity
+# "disagreement" before this line existed.  Whether 3e8 is good enough is
+# a separate question, reported at the bottom and deliberately not gated.
+R_theory = det.qe * det.charge * WAVELENGTH / (det.h * det.c)
 lam_scan = np.linspace(800e-9, 1700e-9, 50)
 R_sim = []
 for lam in lam_scan:
@@ -35,7 +43,7 @@ for lam in lam_scan:
             temperature=300, gain=10, quantum_efficiency=0.9, dark_current=10e-9)
     R_sim.append(d.R)
 R_sim = np.array(R_sim)
-R_analytic = det.qe * ECHARGE * lam_scan / (PLANCK * LIGHTSPEED)
+R_analytic = det.qe * det.charge * lam_scan / (det.h * det.c)
 
 # ----------------------------------------------------------------
 # Panel B: Signal current — I_signal = M * R * P  (Kasap Eq 4.23)
@@ -50,25 +58,37 @@ I_sig_theory = det.gain * det.R * P_sweep
 B_sweep = np.logspace(6, 10, 25)
 I_fixed = 1e-6
 noise_B = np.array([det.calculate_noise(I_fixed, B) for B in B_sweep])
-# Remove signal shot noise contribution to isolate bandwidth scaling
-shot_B = np.sqrt(2 * ECHARGE * I_fixed * B_sweep * det.enf)
+# Kasap Eq 4.45: i_total^2 = F*(i_dark^2 + i_signal^2) + i_thermal^2.
+# The DARK shot term belongs in the total and was missing from it, which
+# is why the curve sat 4.8e-3 % below the model at every bandwidth -- a
+# gap small enough to look like rounding on a log plot and to survive
+# being called "verified" in the table.
+shot_B = np.sqrt(2 * det.charge * I_fixed * B_sweep * det.enf)
+dark_B = np.sqrt(2 * det.charge * det.dark_current * B_sweep * det.enf)
 thermal_B = np.sqrt(4 * det.kB * det.T * B_sweep / det.RL)
-noise_B_theory = np.sqrt(shot_B**2 + thermal_B**2)
+noise_B_theory = np.sqrt(shot_B**2 + dark_B**2 + thermal_B**2)
 
 # Power scaling of noise (fixed bandwidth)
 P_noise = np.logspace(-9, -3, 20)
 I_sig_noise = det.gain * det.R * P_noise
 noise_P = np.array([det.calculate_noise(I, 1e9) for I in I_sig_noise])
-shot_P = np.sqrt(2 * ECHARGE * I_sig_noise * 1e9 * det.enf)
+shot_P = np.sqrt(2 * det.charge * I_sig_noise * 1e9 * det.enf)
+dark_P = np.sqrt(2 * det.charge * det.dark_current * 1e9 * det.enf)
 thermal_const = np.sqrt(4 * det.kB * det.T * 1e9 / det.RL)
-noise_P_theory = np.sqrt(shot_P**2 + thermal_const**2)
+noise_P_theory = np.sqrt(shot_P**2 + dark_P**2 + thermal_const**2)
 
 # ----------------------------------------------------------------
 # Panel D: Thermal noise floor — Johnson-Nyquist (Kasap Eq 4.42)
 # ----------------------------------------------------------------
 B_thermal = np.logspace(6, 10, 30)
 noise_thermal = np.array([det.calculate_noise(0, B) for B in B_thermal])
-thermal_theory = np.sqrt(4 * det.kB * det.T * B_thermal / det.RL)
+# At I_signal = 0 the dark-current shot term does NOT vanish, so this is a
+# thermal-plus-dark floor rather than a pure Johnson-Nyquist one.  Calling
+# it thermal and comparing it to 4kTB/RL alone understates the model by
+# the same 4.8e-3 %.
+thermal_theory = np.sqrt(2 * det.charge * det.dark_current * B_thermal
+                         * det.enf
+                         + 4 * det.kB * det.T * B_thermal / det.RL)
 
 # ----------------------------------------------------------------
 # Panel E: Photon detection — Poisson statistics (Agrawal Eq 4.1.2)
@@ -152,16 +172,117 @@ np.savetxt(os.path.join(OUT, f'val_apd--seed{SEED}.csv'),
            comments='')
 print(f"Saved: val_apd--seed{SEED}.csv")
 
+# ----------------------------------------------------------------
+# The five comparisons this script has always drawn, as numbers
+# ----------------------------------------------------------------
+# Every one of these theory curves was computed above and plotted beside
+# its simulated counterpart.  The table then declared each "verified"
+# without any of them being compared, so a detector that had stopped
+# obeying Kasap Eq 4.19 would have produced the same word.
+
+
+def _max_err_pct(sim, theory):
+    """Largest relative departure, in percent, ignoring zero references."""
+    sim, theory = np.asarray(sim, float), np.asarray(theory, float)
+    nz = np.abs(theory) > 0
+    if not nz.any():
+        return float('nan')
+    return float(np.max(np.abs(sim[nz] - theory[nz]) / np.abs(theory[nz]))
+                 * 100.0)
+
+
+err_R = _max_err_pct(R_sim, R_analytic)
+err_I = _max_err_pct(I_sig_sim, I_sig_theory)
+err_nB = _max_err_pct(noise_B, noise_B_theory)
+err_nP = _max_err_pct(noise_P, noise_P_theory)
+err_th = _max_err_pct(noise_thermal, thermal_theory)
+
 import csv
 table_csv = os.path.join(OUT, f'val_apd--seed{SEED}_table.csv')
 with open(table_csv, 'w', newline='') as f:
     writer = csv.writer(f)
     writer.writerow(['Parameter', 'Value'])
-    writer.writerow(['Responsivity', f'R = {det.R*1e3:.3f} mA/W at 1550 nm'])
-    writer.writerow(['Signal current', 'I = M * R * P linear verified'])
-    writer.writerow(['Shot noise', 'propto sqrt(B) and propto sqrt(P) verified'])
-    writer.writerow(['Thermal noise', 'sqrt(4*k_B*T*B/R_L) verified'])
+    writer.writerow(['Responsivity', f'R = {det.R*1e3:.3f} mA/W at 1550 nm '
+                                     f'(max err {err_R:.2e} %)'])
+    writer.writerow(['Signal current', f'I = M * R * P, max err '
+                                       f'{err_I:.2e} %'])
+    writer.writerow(['Shot noise', f'vs sqrt(B) and sqrt(P), max err '
+                                   f'{max(err_nB, err_nP):.2e} %'])
+    writer.writerow(['Thermal noise', f'sqrt(4*k_B*T*B/R_L), max err '
+                                      f'{err_th:.2e} %'])
     writer.writerow(['Photon detection', f'Poisson process, eta = {det.qe}'])
     writer.writerow(['Excess noise', f'F = {det.enf} applied to shot terms'])
 print(f"Saved: val_apd--seed{SEED}_table.csv")
 plt.close(fig)
+
+# ============================================================
+# Verdict
+# ============================================================
+#
+# Four of these are closed form against closed form -- the detector
+# evaluates the same textbook expressions the theory curves do -- so the
+# residual is numerical and a loose gate catches every way they could
+# genuinely part company: a responsivity that stops scaling with lambda,
+# a gain dropped from the signal current, an excess-noise factor applied
+# to the thermal term.
+MAX_ERROR_PCT = 1e-6
+
+failures = []
+for name, err, ref in (
+        ('responsivity vs eta*e*lambda/(h*c)', err_R, 'Kasap Eq 4.19'),
+        ('signal current vs M*R*P', err_I, 'Kasap Eq 4.23'),
+        ('noise vs sqrt(B)', err_nB, 'shot + Johnson'),
+        ('noise vs sqrt(P)', err_nP, 'shot + Johnson'),
+        ('thermal floor vs sqrt(4*kB*T*B/RL)', err_th, 'Kasap Eq 4.42')):
+    if not np.isfinite(err):
+        failures.append(f"{name}: comparison produced no finite value")
+    elif err >= MAX_ERROR_PCT:
+        failures.append(
+            f"{name} departs by {err:.3e} % against a {MAX_ERROR_PCT:g} % "
+            f"limit; the model no longer reproduces {ref}")
+
+# Poisson detection is a DRAW, not a closed form, so it gets a loose
+# statistical band rather than the numerical gate above.  Mean counts
+# across the sweep must track eta*P*t/(h*nu); at the top of the sweep the
+# expected count is large and the relative spread is small.
+big = n_theory > 100
+if big.any():
+    rel = np.abs(n_photons[big] - n_theory[big]) / n_theory[big]
+    band = 5.0 / np.sqrt(n_theory[big])          # 5 sigma on a Poisson draw
+    if np.any(rel > band):
+        k = int(np.argmax(rel - band))
+        failures.append(
+            f"photon counts leave the Poisson band: {n_photons[big][k]} "
+            f"against an expected {n_theory[big][k]:.1f} "
+            f"({rel[k] / (band[k] / 5.0):.1f} sigma). Detection should be "
+            f"a Poisson draw about eta*P*t/(h*nu)")
+
+# Reported, never gated: the detector's physical constants against CODATA.
+# `self.c = 3e8` is a 0.069 % rounding, which is larger than every
+# tolerance above and would fail any of them -- but changing it moves every
+# APD number in the project, so it is a decision rather than a check.
+print()
+print("  Reported, not asserted -- detector constants against CODATA 2018:")
+for nm, got, ref in (('c ', det.c, 299792458.0),
+                     ('h ', det.h, 6.62607015e-34),
+                     ('e ', det.charge, 1.602176634e-19),
+                     ('kB', det.kB, 1.380649e-23)):
+    print(f"    {nm} = {got:.6e}  vs {ref:.6e}   "
+          f"{abs(got - ref) / ref * 100:+.4f} %")
+print("    The comparison curves above use the detector's own constants, so")
+print("    these deviations do not enter the checks; they set the accuracy")
+print("    of every APD number rather than the consistency of the model.")
+
+print()
+if failures:
+    print("[FAIL]")
+    for f_ in failures:
+        print(f"  - {f_}")
+    sys.exit(1)
+print(f"[PASS] responsivity, signal current, both noise scalings and the "
+      f"thermal floor")
+print(f"       all track their textbook forms to "
+      f"{max(err_R, err_I, err_nB, err_nP, err_th):.2e} %")
+print(f"[PASS] photon detection stays inside a 5-sigma Poisson band about "
+      f"eta*P*t/(h*nu)")
+sys.exit(0)
