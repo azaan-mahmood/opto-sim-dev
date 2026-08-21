@@ -425,7 +425,7 @@ def main():
     csv_path = os.path.join(OUT, f'val_system_scenarios--seed{SEED}.csv')
     with open(csv_path, 'w') as f:
         f.write(f"# Impairment scenarios, time-bin BB84 chain "
-                f"(, replaces hand-written Table 11)\n")
+                f"(RETIRED to analysis/examples/; no regression check)\n")
         f.write(f"# script: analysis/val_system_scenarios.py  seed: {SEED}  "
                 f"{BUDGET}  distance: {DIST} km  commit: {COMMIT}\n")
         f.write(f"# chain: CWLaser -> MZM carve -> encoder AMZI -> "

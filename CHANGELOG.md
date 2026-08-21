@@ -4,6 +4,73 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-20 — closing the audit: broken sentences, a stale fossil, and 27 unchecked artifacts
+
+### Session: audit findings A3, A4 and A5
+
+| Change | Files | Rationale |
+|---|---|---|
+| Ten truncated sentences repaired | `validate_duplinskiy_{birefringence,extinction,dispersion}.py`, `validate_birefringence.py`, `analysis/examples/*.py` | A bulk cleanup had stripped references and left the sentences around them broken, one of them on stdout. |
+| Retired artifacts labelled and regenerated | `analysis/examples/val_system.py` and its outputs, new `analysis/examples/README.md` | They read as live results, and one of them turned out to be stale. |
+| The roster checks every artifact | `run_all.py` | It checked 20 of 47. |
+
+**The audit undercounted four of its own five findings.** A2 said one
+hardcoded verdict, there were seven. A3 said five truncations, there were
+ten. A4 said "unlabelled", and the artifact was also two commits stale
+with a third file orphaned. A5 said two files, it was 27. Only A1 was
+counted correctly. An audit built on grep is a lower bound, and the
+number it returns should be treated as one.
+
+**A3 — the sentences.** `52f3e00` removed references to an untracked
+issue log and left the prose around them dangling. The count came out at
+five because the search matched `". says so"` and missed `"(, ...)"`,
+which was half of them. One sat inside a `print()` and so reached stdout
+and every run log. One was in a CSV **header writer**, which is why the
+committed artifact read `(ARCH-1 rebuild)` while the generator wrote
+`( rebuild)`. And one left a block quote with no attribution at all —
+it read like a paper citation, its source was the untracked log, and it
+could not be re-attributed, so it is now the script's own prose. All ten
+are rewritten to stand alone rather than to re-point at a file nobody
+outside this machine has.
+
+**A4 — the retired artifacts, and the one that was stale.**
+`val_system.py` now writes a four-line RETIRED banner into its CSV, and
+its outputs were regenerated to carry it. The regeneration moved 14 of 46
+rows — largest QBER shift 0.27 pp, largest sifted shift 2.5 %.
+
+That is the actual finding. The artifact's content last changed at
+`4a5d558`; the generator changed after it at `8220c5b`, whose "two O(N)
+memory fixes" touched the simulation loop. The committed artifact had
+been **stale for two commits**, and it was stale precisely because
+nothing checks it. The staleness audit earlier in the day missed it
+because that audit walked the 20 roster validators — the same reason the
+file went unchecked in the first place.
+
+One artifact has **no generator at all**.
+`val_system--seed42_table.csv` came from a table-extraction pass whose
+roster later dropped `val_system`, and nothing in the tree writes it now:
+it cannot be regenerated, checked, or given a provenance header from a
+generator that no longer exists. It is left in place and documented in a
+new `analysis/examples/README.md`, because deleting committed output is
+the repository owner's call.
+
+**A5 — the harness was checking 20 of 47 artifacts.** `output` now takes
+a string or a tuple and every committed artifact is named, so a validator
+that quietly stops writing its figure can no longer pass on the strength
+of its table. Verified by suppressing `validate_cd`'s figure while
+leaving its table intact: `FAILED (missing output ...)`, where the old
+single-path check passed it with 2 `[PASS]` markers.
+
+**Left open deliberately.** The APD model's constants are rounded — c
++0.0692 %, kB +0.0470 % against CODATA. Decided: leave them. The offset
+moves a lever very slightly, and chasing it would be tightening toward
+machine precision as a goal rather than using it as a diagnostic. The
+validator reports the deviations; the numbers stay.
+
+Suite unchanged at 378 passed, 1 skipped.
+
+---
+
 ## 2026-08-20 — six validators that could not fail, and a theory curve that was wrong
 
 ### Session: an audit, and the first finding from it

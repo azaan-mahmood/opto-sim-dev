@@ -1,24 +1,28 @@
-# System-level time-bin BB84 demo (ARCH-1 rebuild), seed 42, 1000000 pulses/point
+# RETIRED. This chain was a proof of concept, never literature-validated, and nothing
+# regression-checks this file: it is not in run_all.py's roster and its numbers can
+# only be compared against themselves. Kept as an example. The replications are
+# analysis/val_gobby/ and analysis/validation/validate_duplinskiy_*.py.
+# System-level time-bin BB84 demo, seed 42, 1000000 pulses/point
 # Chain: CWLaser(1 MHz) -> MZM carve -> encoder AMZI -> FiberRealization -> decoder AMZI -> 2x SPAD
 # Linearity shortcut: channel response computed once per point; detection Monte Carlo per bit.
 # Defaults: V=0.934, mu=0.1, DCR=15 Hz, eta=0.10, gate 1 ns, alpha=0.182 dB/km, delay=5.8 ns, rep=2.5 MHz
 # Floor: visibility 3.3% + phase jitter ~0.8% + afterpulse ~1.5% + double-click ~0.5% (~6.4% at 0 km)
 # Panel E sweeps DCR to 10 kHz (ID230 spec 15 Hz is <0.1% even at 122 km)
 Panel,Parameter,Value,QBER_fraction,Sifted_bits
-A_allimp,distance_km,0,0.054348,2392
-A_allimp,distance_km,4,0.063691,1994
-A_allimp,distance_km,10,0.063562,1589
-A_allimp,distance_km,20,0.084421,1149
-A_allimp,distance_km,40,0.070342,526
+A_allimp,distance_km,0,0.053856,2451
+A_allimp,distance_km,4,0.063179,2026
+A_allimp,distance_km,10,0.063119,1616
+A_allimp,distance_km,20,0.083983,1155
+A_allimp,distance_km,40,0.069943,529
 A_allimp,distance_km,65,0.064039,203
 A_allimp,distance_km,80,0.067797,118
 A_allimp,distance_km,100,0.020833,48
 A_allimp,distance_km,122,0.000000,17
-A_attonly,distance_km,0,0.054348,2392
-A_attonly,distance_km,4,0.063691,1994
-A_attonly,distance_km,10,0.063562,1589
-A_attonly,distance_km,20,0.084421,1149
-A_attonly,distance_km,40,0.070342,526
+A_attonly,distance_km,0,0.053856,2451
+A_attonly,distance_km,4,0.063179,2026
+A_attonly,distance_km,10,0.063119,1616
+A_attonly,distance_km,20,0.083983,1155
+A_attonly,distance_km,40,0.069943,529
 A_attonly,distance_km,65,0.064039,203
 A_attonly,distance_km,80,0.067797,118
 A_attonly,distance_km,100,0.020833,48
@@ -41,10 +45,10 @@ C,visibility,1.0,0.042553,141
 D,mu_photons,0.02,0.000000,24
 D,mu_photons,0.05,0.070423,71
 D,mu_photons,0.1,0.064286,140
-D,mu_photons,0.2,0.065693,274
-D,mu_photons,0.5,0.070840,607
-D,mu_photons,1.0,0.084642,1146
-D,mu_photons,2.0,0.062315,2022
+D,mu_photons,0.2,0.065455,275
+D,mu_photons,0.5,0.070492,610
+D,mu_photons,1.0,0.083983,1155
+D,mu_photons,2.0,0.059622,2063
 E,dcr_hz,0.0,0.000000,17
 E,dcr_hz,100.0,0.000000,17
 E,dcr_hz,300.0,0.000000,18

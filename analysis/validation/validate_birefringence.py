@@ -34,7 +34,7 @@ REALIZATIONS = 50
 # are TestBirefringenceDepolarization (Menyuk & Wai [10] p^N law) and
 # TestUlrichBendLaw (Ulrich [7] Eq. 1) in the same file.
 
-# --- Model note (, 5th pass) ---
+# --- Model note ---
 # The former phenomenological model (single SU(2) rotation with fitted
 # theta = min(pi, sqrt(L/L_char)*pi/2)) was removed: the multi-section
 # model is quasi-static, converges to uniform SU(2) within a few hundred

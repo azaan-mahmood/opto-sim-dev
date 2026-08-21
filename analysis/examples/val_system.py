@@ -158,7 +158,7 @@ def simulate_point(num_bits, seed, fiber_length=75, pulse_sigma=30e-12,
     per-point configuration.  See module docstring for the linearity
     shortcut that makes each point cheap without changing the physics.
 
-    Impairment toggles (used by `val_system_scenarios.py`, ):
+    Impairment toggles (used by `val_system_scenarios.py`):
     `dispersion` is the legacy alias enabling both CD and PMD; `cd` /
     `pmd` override it when not None.  `birefringence` and `attenuation`
     toggle the other two chain impairments.
@@ -384,7 +384,15 @@ def main():
     # ── Save CSV ────────────────────────────────────────────────────
     csv_path = os.path.join(OUT, f'val_system--seed{SEED}.csv')
     with open(csv_path, 'w') as f:
-        f.write(f"# System-level time-bin BB84 demo ( rebuild), "
+        f.write("# RETIRED. This chain was a proof of concept, never "
+                "literature-validated, and nothing\n")
+        f.write("# regression-checks this file: it is not in run_all.py's "
+                "roster and its numbers can\n")
+        f.write("# only be compared against themselves. Kept as an example. "
+                "The replications are\n")
+        f.write("# analysis/val_gobby/ and analysis/validation/"
+                "validate_duplinskiy_*.py.\n")
+        f.write(f"# System-level time-bin BB84 demo, "
                 f"seed {SEED}, {NUM_BITS} pulses/point\n")
         f.write("# Chain: CWLaser(1 MHz) -> MZM carve -> encoder AMZI "
                 "-> FiberRealization -> decoder AMZI -> 2x SPAD\n")

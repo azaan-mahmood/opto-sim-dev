@@ -65,6 +65,12 @@ percent is not buried under 3.3 %.
     ``{q}`` becomes ``--quick`` only when the harness actually passed
     ``--quick``, so a quick run looks for the quick artifact rather than
     passing on a stale full one left behind by an earlier invocation.
+
+    A string or a tuple, and **every committed artifact belongs here**.
+    It used to be one path per validator, which checked 20 of the 47
+    artifacts in the repository: the other 27 were regenerated on every
+    run and never looked at, so a validator could quietly stop writing its
+    figure and still report PASS on the strength of its table.
 """
 
 import argparse
@@ -80,75 +86,108 @@ Validator = namedtuple('Validator', 'name script output seeded quick')
 
 
 def _v(name, rel_script, rel_output, seeded=False, quick=None):
+    outs = (rel_output,) if isinstance(rel_output, str) else tuple(rel_output)
     return Validator(name,
                      os.path.join(BASE, *rel_script.split('/')),
-                     os.path.join(BASE, *rel_output.split('/')),
+                     tuple(os.path.join(BASE, *o.split('/')) for o in outs),
                      seeded, quick)
 
 
 VALIDATORS = [
     # --- channel and component validators (original eight) ---------------
     _v('CD', 'analysis/validation/validate_cd.py',
-       'analysis/val_cd/val_cd--seed{seed}_table.csv', seeded=True),
+       ('analysis/val_cd/val_cd--seed{seed}_table.csv',
+        'analysis/val_cd/val_cd--seed{seed}.csv',
+        'analysis/val_cd/val_cd--seed{seed}.png'), seeded=True),
     _v('PMD', 'analysis/validation/validate_pmd.py',
-       'analysis/val_pmd/val_pmd--seed{seed}_table.csv', seeded=True),
+       ('analysis/val_pmd/val_pmd--seed{seed}_table.csv',
+        'analysis/val_pmd/val_pmd_dgd--seed{seed}.csv',
+        'analysis/val_pmd/val_pmd_dgd--seed{seed}.png'), seeded=True),
     _v('Attenuation', 'analysis/validation/validate_attenuation.py',
-       'analysis/val_attenuation/val_attenuation--seed{seed}_table.csv',
+       ('analysis/val_attenuation/val_attenuation--seed{seed}_table.csv',
+        'analysis/val_attenuation/val_attenuation--seed{seed}.csv',
+        'analysis/val_attenuation/val_attenuation--seed{seed}.png'),
        seeded=True),
     _v('Birefringence', 'analysis/validation/validate_birefringence.py',
-       'analysis/val_birefringence/val_birefringence--seed{seed}_table.csv',
+       ('analysis/val_birefringence/val_birefringence--seed{seed}_table.csv',
+        'analysis/val_birefringence/val_birefringence--seed{seed}.csv',
+        'analysis/val_birefringence/val_birefringence--seed{seed}.png',
+        'analysis/val_birefringence/'
+        'val_birefringence_poincare--seed{seed}.png'),
        seeded=True),
     _v('APD', 'analysis/validation/validate_apd.py',
-       'analysis/val_apd/val_apd--seed{seed}_table.csv', seeded=True),
+       ('analysis/val_apd/val_apd--seed{seed}_table.csv',
+        'analysis/val_apd/val_apd--seed{seed}.csv',
+        'analysis/val_apd/val_apd--seed{seed}.png'), seeded=True),
     _v('CWLaser', 'analysis/validation/validate_cwlaser.py',
-       'analysis/val_cwlaser/val_cwlaser--seed{seed}_table.csv', seeded=True),
+       ('analysis/val_cwlaser/val_cwlaser--seed{seed}_table.csv',
+        'analysis/val_cwlaser/val_cwlaser--seed{seed}.csv',
+        'analysis/val_cwlaser/val_cwlaser--seed{seed}.png'), seeded=True),
     _v('MZM', 'analysis/validation/validate_mzm.py',
-       'analysis/val_mzm/val_mzm--seed{seed}_table.csv', seeded=True),
+       ('analysis/val_mzm/val_mzm--seed{seed}_table.csv',
+        'analysis/val_mzm/val_mzm--seed{seed}.csv',
+        'analysis/val_mzm/val_mzm--seed{seed}.png'), seeded=True),
     _v('Gobby', 'analysis/val_gobby/validate_gobby.py',
-       'analysis/val_gobby/val_gobby_table{q}.tex', seeded=True,
+       ('analysis/val_gobby/val_gobby_table{q}.tex',
+        'analysis/val_gobby/val_gobby--seed{seed}{q}.csv',
+        'analysis/val_gobby/val_gobby--seed{seed}{q}.png'), seeded=True,
        quick='safe'),
     # Not seeded: it pins its own SEED so the Jones matrix the closed-form
     # predictions are derived from is the one the Monte Carlo runs through.
     # A harness-supplied seed would move one without the other.
     _v('Gobby-impairments',
        'analysis/validation/validate_gobby_impairments.py',
-       'analysis/val_gobby/val_gobby_impairments{q}.csv', quick='safe'),
+       ('analysis/val_gobby/val_gobby_impairments{q}.csv',
+        'analysis/val_gobby/val_gobby_impairments{q}.png'), quick='safe'),
 
     # --- DFB device ------------------------------------------------------
     _v('DFB-reflection', 'analysis/validation/validate_dfb_reflection.py',
-       'analysis/val_dfb/val_dfb_reflection--N15.csv'),
+       ('analysis/val_dfb/val_dfb_reflection--N15.csv',
+        'analysis/val_dfb/val_dfb_reflection--N15.png')),
     _v('DFB-drive', 'analysis/validation/validate_dfb_drive.py',
-       'analysis/val_dfb/val_dfb_drive{q}.png', quick='safe'),
+       ('analysis/val_dfb/val_dfb_drive{q}.png',
+        'analysis/val_dfb/val_dfb_drive--cw_rin{q}.csv'), quick='safe'),
     _v('DFB-gobby', 'analysis/validation/validate_dfb_gobby.py',
-       'analysis/val_dfb/val_dfb_gobby{q}.csv', quick='safe'),
+       ('analysis/val_dfb/val_dfb_gobby{q}.csv',
+        'analysis/val_dfb/val_dfb_gobby{q}.png'), quick='safe'),
     _v('DFB-dupl', 'analysis/validation/validate_dfb_duplinskiy.py',
        'analysis/val_dfb/val_dfb_duplinskiy_poincare{q}.png', quick='safe'),
 
     # --- Duplinskiy polarisation chain -----------------------------------
     _v('DUPL-birefringence',
        'analysis/validation/validate_duplinskiy_birefringence.py',
-       'analysis/val_duplinskiy/val_duplinskiy_birefringence{q}.csv',
+       ('analysis/val_duplinskiy/val_duplinskiy_birefringence{q}.csv',
+        'analysis/val_duplinskiy/val_duplinskiy_birefringence{q}.png'),
        quick='safe'),
     _v('DUPL-calibration',
        'analysis/validation/validate_duplinskiy_calibration.py',
        'analysis/val_duplinskiy/val_duplinskiy_calibration.png'),
     _v('DUPL-dispersion',
        'analysis/validation/validate_duplinskiy_dispersion.py',
-       'analysis/val_duplinskiy/val_duplinskiy_dispersion{q}.csv',
+       ('analysis/val_duplinskiy/val_duplinskiy_dispersion{q}.csv',
+        'analysis/val_duplinskiy/val_duplinskiy_dispersion{q}.png'),
        quick='safe'),
     _v('DUPL-drift', 'analysis/validation/validate_duplinskiy_drift.py',
-       'analysis/val_duplinskiy/val_duplinskiy_drift{q}.csv', quick='safe'),
+       ('analysis/val_duplinskiy/val_duplinskiy_drift{q}.csv',
+        'analysis/val_duplinskiy/val_duplinskiy_drift{q}.png'),
+       quick='safe'),
     _v('DUPL-extinction',
        'analysis/validation/validate_duplinskiy_extinction.py',
-       'analysis/val_duplinskiy/val_duplinskiy_extinction{q}.csv',
+       ('analysis/val_duplinskiy/val_duplinskiy_extinction{q}.csv',
+        'analysis/val_duplinskiy/val_duplinskiy_extinction{q}.png'),
        quick='safe'),
     _v('DUPL-urban', 'analysis/validation/validate_duplinskiy_urban.py',
-       'analysis/val_duplinskiy/val_duplinskiy_urban{q}.csv', quick='safe'),
+       ('analysis/val_duplinskiy/val_duplinskiy_urban{q}.csv',
+        'analysis/val_duplinskiy/val_duplinskiy_urban{q}.png'),
+       quick='safe'),
     # The summary table across the six above. Seeded and quick-safe, so its
     # stem carries both markers: --seed42 for the quotable run, and
     # --seed42--quick for a smoke one.
     _v('DUPL-scenarios', 'analysis/val_duplinskiy_scenarios.py',
-       'analysis/val_duplinskiy/val_duplinskiy_scenarios--seed{seed}{q}.csv',
+       ('analysis/val_duplinskiy/'
+        'val_duplinskiy_scenarios--seed{seed}{q}.csv',
+        'analysis/val_duplinskiy/'
+        'val_duplinskiy_scenarios--seed{seed}{q}.md'),
        seeded=True, quick='safe'),
 ]
 
@@ -245,16 +284,17 @@ for v in VALIDATORS:
     n_fail_marker = stdout.count('[FAIL]')
 
     rc_ok = ret.returncode == 0
-    out_file = v.output.format(seed=args.seed,
-                               q='--quick' if used_quick else '')
-    out_ok = os.path.exists(out_file)
+    out_files = [o.format(seed=args.seed, q='--quick' if used_quick else '')
+                 for o in v.output]
+    missing = [o for o in out_files if not os.path.exists(o)]
+    out_ok = not missing
 
     if not rc_ok:
         print(f"[{v.name}] FAILED (rc={ret.returncode})")
         if ret.stderr:
             print(ret.stderr[-2000:])
-    if not out_ok:
-        print(f"[{v.name}] FAILED (missing output {out_file})")
+    for o in missing:
+        print(f"[{v.name}] FAILED (missing output {o})")
     # Gobby is the last validator with no verdict of its own: it can fail
     # on the statistical-power guard but not on physics, so it exits 0
     # without asserting anything and this warning fires for it.  That is
@@ -272,8 +312,11 @@ for v in VALIDATORS:
     results.append((v.name, status, elapsed))
     marks = f"{n_pass} [PASS]" + (f", {n_fail_marker} [FAIL]"
                                   if n_fail_marker else "")
+    shown = ', '.join(os.path.basename(o) for o in out_files[:2])
+    if len(out_files) > 2:
+        shown += f" +{len(out_files) - 2} more"
     print(f"[{v.name}] {status} in {elapsed:.1f}s ({marks}, "
-          f"output: {os.path.basename(out_file)})")
+          f"{len(out_files)} output(s): {shown})")
     print()
 
 total = time.time() - start

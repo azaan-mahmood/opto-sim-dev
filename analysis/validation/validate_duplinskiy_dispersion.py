@@ -112,10 +112,12 @@ def _stem(quick):
 def source(dt=None, n=N_SAMPLES):
     """The DFB field at PM1's input, on the device's own time grid.
 
-    The grid matters here in a way it did not in .  `sample_field`
-    decimates by averaging, which band-limits, and PMD's effect scales with
-    the source bandwidth -- so a coarse grid does not merely add noise, it
-    systematically understates the impairment.  Quantified in `grid_scan`.
+    The grid matters here in a way it does not for the polarisation-only
+    validators, which evaluate a single time sample and so have no
+    bandwidth to lose.  `sample_field` decimates by averaging, which
+    band-limits, and PMD's effect scales with the source bandwidth -- so
+    a coarse grid does not merely add noise, it systematically
+    understates the impairment.  Quantified in `grid_scan`.
     """
     las = DFBLaser(n_sections=N_SECTIONS, seed=LASER_SEED)
     drive = DriveParams(mode='gain_switched', waveform='gaussian',
@@ -287,7 +289,9 @@ def qber_sweep(E, dt, quick, failures):
               f"{100 * d:+6.2f} +/-{100 * ds:5.2f} pp   {d / ds:5.1f} sigma")
         # Quick mode carries ~290 sifted per cell against ~3400, so the
         # same swing lands near 2 sigma there.  A threshold a smoke run
-        # cannot meet is not a smoke run -- the defect fixed in .
+        # cannot meet turns the smoke run into a permanent failure, which
+        # is why the floor scales with the budget rather than sitting at
+        # the quotable value.
         floor = 1.5 if quick else 3.0
         if d < floor * ds:
             failures.append(f"PMD at {km} km moved QBER by only "

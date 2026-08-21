@@ -155,8 +155,8 @@ def controls(quick, failures):
     print("      -> the invariance holds exactly where the algebra applies, and")
     print("         breaks with real dead time: a click on the weak port takes")
     print("         that detector offline for 130 pulses at 10 MHz, so the two")
-    print("         are no longer independent.  states the control")
-    print("         unconditionally; it is conditional on a memoryless detector.")
+    print("         are no longer independent. So the control is CONDITIONAL")
+    print("         on a memoryless detector, not unconditional.")
 
 
 def matrix(quick, failures):

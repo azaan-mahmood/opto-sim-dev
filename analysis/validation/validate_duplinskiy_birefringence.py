@@ -14,27 +14,31 @@ polarisations and a rotation does reach them -- as a common amplitude
 So "the time-bin chain is blind to birefringence" is a statement about a
 topology, not about an encoding.
 
-But a null alone cannot validate an impairment model.  says so
-itself, and names the successor:
+But a null alone cannot validate an impairment model, and it is worth
+being precise about why.  A null says the observable did not move.  It
+cannot distinguish an impairment that was correctly absorbed by the
+topology from one that was never applied, because both produce the same
+unchanged number.  The time-bin observable is constitutionally blind to
+birefringence in the balanced topology, so no amount of it can be
+evidence about the model.
 
-    "It is not a validation of the impairment models at the QBER level.
-     The observable is constitutionally blind to these three... Testing
-     them against an observable requires an encoding they actually
-     degrade: polarisation encoding, where an uncompensated SU(2) rotation
-     maps directly onto the bit.  The Duplinskiy chain is that chain, and
-     it carries a built-in control in its `compensate` flag.  A first
-     probe at low statistics shows the swing is real -- compensated
-     ~0-4.8 %, uncompensated 14-50 % across 10/50/100 km -- but the counts
-     (2-50 sifted) are far too thin to quote."
+Testing the model against an observable requires an encoding the
+impairment actually degrades: polarisation encoding, where an
+uncompensated SU(2) rotation maps directly onto the bit.  The Duplinskiy
+chain is that chain, and it carries its own control in the `compensate`
+flag -- the same fibre, the same rotation, inverted or not.
 
-This runs that probe properly.
+An early low-statistics probe suggested the swing was real, at roughly
+0-4.8 % compensated against 14-50 % uncompensated over 10/50/100 km, on
+counts of 2-50 sifted bits that were far too thin to quote.  This script
+runs it at a budget that can be.
 
 What a Level-3 pair is
 ----------------------
 The **same unchanged impairment model** must produce **opposite required
 outcomes** in two chains:
 
-    birefringence   ->  exact NULL in Gobby      (, done)
+    birefringence   ->  exact NULL in Gobby      (validate_gobby_impairments)
                     ->  large SWING in Duplinskiy (here)
 
 A model that silently no-ops passes the null and fails the swing.  A model
@@ -44,13 +48,19 @@ the sum of its halves.
 
 Scope: birefringence only
 -------------------------
-also lists CD and PMD, and notes they were "hardcoded off"
-in this chain.   exposed both -- but then showed they
-are **inert here for a different reason**: this chain evaluates a single
-time sample, and CD and PMD act on a time-resolved field.  So they cannot
-be tested by this sweep, and claiming otherwise would repeat exactly the
-mistake caught.  Birefringence is the one of the three that a
-single-sample polarisation observable can see.
+CD and PMD were once hardcoded off in this chain, and switching them on
+does not make them testable here.  They are **inert for a different
+reason than birefringence is**: this chain evaluates a single time
+sample, while CD and PMD are frequency-domain operators that act on a
+time-resolved field.  A single sample has no bandwidth for them to act
+through.
+
+So this sweep cannot test them, and reporting an unchanged QBER as
+evidence about CD or PMD would be the same mistake as reading the Gobby
+null as evidence about birefringence -- an observable that cannot see an
+impairment saying nothing, and the nothing being written down as a
+result.  Birefringence is the one of the three a single-sample
+polarisation observable can see, so it is the only one claimed here.
 
 References
 ----------
