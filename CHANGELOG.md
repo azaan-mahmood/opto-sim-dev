@@ -4,6 +4,46 @@ All timestamps are local time (UTC+5).
 
 ---
 
+## 2026-08-20 — what is left, and one commit message rewritten
+
+### Session: bookkeeping
+
+No code changed. Three things:
+
+**The open list was rebuilt by checking the tree rather than by recall.**
+Five items remain, and two of them are the only ones that change what the
+project can claim:
+
+1. `tests/test_dfblaser.py` — the one skipped test. 164 lines against an
+   API that no longer exists; five of its tests target a filter that was
+   deliberately never implemented.
+2. A full `run_all.py --skip Gobby` run, about 50 minutes, never done.
+   Each validator changed today was exercised on its own, which covers
+   the changes but not the interactions.
+3. The Gobby full sweep, 4.5 hours. **The three checks added to
+   `validate_gobby` today have never run inside a real sweep.** They were
+   tested against the committed full-budget CSV and against a
+   deliberately broken copy of it. Until a `--full` run happens they are
+   verified logic, not verified in place — the harness runs Gobby under
+   `--quick` by default, where they are skipped.
+4. `generate_latex_tables.py` — serves 7 of the 20 validators, the rest
+   absent on purpose, and nothing consumes its output. Re-checked today
+   after five of its input tables changed: it still runs and writes all
+   seven files.
+5. DPS-QKD, out of scope by decision.
+
+**One decision is still open.** The two remaining `val_system` artifacts
+are committed, labelled RETIRED, regenerated, and checked by nothing. The
+reasoning that removed the third one applies to them equally.
+
+**One commit message was rewritten.** `51b490c` used "a stale fossil" in
+its subject and "an audit built on grep is a lower bound" in its body.
+Both are now plain. The rewrite changed the message only — the tree at
+the new head is byte-identical to the old one — and required a force
+push, so any clone taken before this needs a fresh fetch.
+
+---
+
 ## 2026-08-20 — Gobby checks its physics, and the wording gets fixed
 
 ### Session: the last validator without a verdict, plus plain English
