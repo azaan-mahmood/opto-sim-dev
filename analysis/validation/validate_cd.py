@@ -248,9 +248,9 @@ if errors_pct.max() >= MAX_ERROR_PCT:
         f"sigma_sim = {widths_sim[worst] * 1e12:.6f} ps against an "
         f"analytic {widths_analytic[worst] * 1e12:.6f} ps")
 
-# A null with no perturbation is a skipped code path wearing the costume
-# of physics.  If `apply_cd` returned its input, every width would equal
-# sigma0 and the agreement above would be with a curve that never moved.
+# Agreement means nothing if the impairment never reached the field.  If
+# `apply_cd` returned its input unchanged, every width would equal sigma0
+# and the check above would be comparing a flat line against itself.
 broadening = widths_sim.max() / widths_sim.min()
 if broadening < 2.0:
     failures.append(

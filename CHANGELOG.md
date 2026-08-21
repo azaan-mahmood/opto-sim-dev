@@ -4,14 +4,67 @@ All timestamps are local time (UTC+5).
 
 ---
 
-## 2026-08-20 — closing the audit: broken sentences, a stale fossil, and 27 unchecked artifacts
+## 2026-08-20 — Gobby checks its physics, and the wording gets fixed
+
+### Session: the last validator without a verdict, plus plain English
+
+| Change | Files | Rationale |
+|---|---|---|
+| `check_results` | `analysis/val_gobby/validate_gobby.py` | It could fail if it ran out of statistics but not if the physics was wrong. |
+| Orphaned artifact deleted | `analysis/examples/val_system/val_system--seed42_table.csv` | No script wrote it, so it could not be regenerated or checked. |
+| Wording rewritten | `CHANGELOG.md`, `analysis/examples/README.md`, `validate_cd.py`, `val_duplinskiy_scenarios.py` | The entries written earlier today used metaphor where a plain statement was needed. |
+
+**Gobby now checks three things**, and none of them is a new criterion:
+the script already computed all three numbers and printed them beside
+each other without ever comparing them.
+
+* The four distances Gobby actually published, within 2.0 pp. The sweep
+  sits 0.05, 0.39, 0.69 and 0.60 pp away, so the gate allows about three
+  times the current disagreement. The other five rows of the sweep are
+  `np.interp` output and are not compared — an interpolated row cannot
+  agree or disagree with an experiment.
+* The two error sources add, and the modulation floor does not depend on
+  distance. `model_qber` is the background term alone, so the simulation
+  minus it should sit at `E_MOD` = 3.3 pp at every distance. It runs 2.96
+  to 4.05 pp, gated at 1.5 pp.
+* QBER climbs at long range: 122 km must exceed 80 km by five sigma. It
+  is 10.7 sigma. This is the shape of the paper's figure — flat at the
+  floor, then rising as the signal falls while the background does not.
+
+Checked by running `check_results` against the committed full-budget CSV,
+which passes, and against a copy with the far end flattened, where all
+three fail.
+
+The checks are **skipped under `--quick`**, which switches the
+statistical-power guard off and collects a few dozen sifted bits per
+point. Every gate above is smaller than the binomial sigma at that
+budget. The harness therefore still prints its "no `[PASS]` markers"
+warning on a default run, and that is deliberate: it correctly reports
+that a quick Gobby run checks nothing. A `--full` run emits three
+`[PASS]` lines and no warning.
+
+**The orphaned artifact is deleted.** `val_system--seed42_table.csv` came
+from a table-extraction pass whose list later dropped `val_system`, and
+nothing in the tree wrote it. `val_system` was the first proof of concept
+and the Gobby and Duplinskiy chains now do what it was for, so the file
+goes with it. It remains in git history, and the reason is recorded in
+`analysis/examples/README.md`.
+
+**Wording.** The entries written earlier today reached for metaphor where
+a plain statement was needed — "a stale fossil", "the warning was the
+casualty", "a number that can rot". Those are rewritten to say what the
+thing is. Technical terms stay; the decoration goes.
+
+---
+
+## 2026-08-20 — closing the audit: broken sentences, a stale artifact, and 27 unchecked files
 
 ### Session: audit findings A3, A4 and A5
 
 | Change | Files | Rationale |
 |---|---|---|
 | Ten truncated sentences repaired | `validate_duplinskiy_{birefringence,extinction,dispersion}.py`, `validate_birefringence.py`, `analysis/examples/*.py` | A bulk cleanup had stripped references and left the sentences around them broken, one of them on stdout. |
-| Retired artifacts labelled and regenerated | `analysis/examples/val_system.py` and its outputs, new `analysis/examples/README.md` | They read as live results, and one of them turned out to be stale. |
+| Retired artifacts labelled and regenerated | `analysis/examples/val_system.py` and its outputs, new `analysis/examples/README.md` | They read as current results, and one of them was out of date. |
 | The roster checks every artifact | `run_all.py` | It checked 20 of 47. |
 
 **The audit undercounted four of its own five findings.** A2 said one
@@ -46,13 +99,11 @@ nothing checks it. The staleness audit earlier in the day missed it
 because that audit walked the 20 roster validators — the same reason the
 file went unchecked in the first place.
 
-One artifact has **no generator at all**.
+One artifact had **no generator at all**.
 `val_system--seed42_table.csv` came from a table-extraction pass whose
-roster later dropped `val_system`, and nothing in the tree writes it now:
-it cannot be regenerated, checked, or given a provenance header from a
-generator that no longer exists. It is left in place and documented in a
-new `analysis/examples/README.md`, because deleting committed output is
-the repository owner's call.
+list later dropped `val_system`, and nothing in the tree wrote it: it
+could not be regenerated or checked. Deleted, and the reason recorded in
+a new `analysis/examples/README.md`. It remains in the git history.
 
 **A5 — the harness was checking 20 of 47 artifacts.** `output` now takes
 a string or a tuple and every committed artifact is named, so a validator
@@ -102,7 +153,7 @@ coefficient moved 0.10 to 0.12 under an expectation left at 0.10 (48
 sigma on the mean, 50 on the RMS, and the Maxwell KS test collapsing to
 p = 5e-260).
 
-**The warning that should have caught this was itself the casualty.**
+**The warning that should have caught this had stopped working.**
 `run_all.py` exempted PMD by name from its "no `[PASS]` markers" warning.
 By the time anyone looked, six validators were tripping it every run, so
 the one signal that could have surfaced the problem had become noise. The
@@ -133,7 +184,7 @@ kB +0.0470 %, e +0.0110 % and h +0.0011 % against CODATA 2018. Changing
 them moves every APD number in the project, so it is a decision, not a
 check.
 
-**Two more claims that were never true as stated.** `validate_mzm`
+**Two more claims that were not true as written.** `validate_mzm`
 reported `P_out = 0.5` at quadrature and `0` at the null; `V_scan` is 200
 points across `[0, 2*V_pi]` and contains neither voltage — the nearest
 samples sit at 0.5025 and 0.9950 of `V_pi`, where cos^2 gives 0.49605 and
@@ -284,7 +335,7 @@ Suite unchanged at 378 passed, 1 skipped.
 | `DUPL-scenarios` joins the harness | `run_all.py` | It was the only script producing committed artifacts that no regression check covered. Since the four proof-of-concept scripts retired, that was a one-item list rather than a survey. |
 | Ten checks added | `analysis/val_duplinskiy_scenarios.py` | A roster line alone would have bought a validator that could only fail by crashing. |
 | `_stem` adopted | `analysis/val_duplinskiy_scenarios.py` | A live defect, not a fit issue. See below. |
-| Cross-reference read, not copied | `analysis/val_duplinskiy_scenarios.py` | A hand-copied number from another validator can rot quietly while still looking authoritative. |
+| Cross-reference read, not copied | `analysis/val_duplinskiy_scenarios.py` | A number copied by hand from another validator goes out of date without anything showing it. |
 | Roster count and `seeded` note corrected | `run_all.py` | Nine validators take `--seed` now, not eight. 20 validators, not 19. |
 
 **`--allow-underpowered` was overwriting the quotable table.** The stem

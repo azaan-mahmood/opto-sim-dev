@@ -722,6 +722,115 @@ def _stem(base, reduced):
     return f'{base}--quick' if reduced else base
 
 
+# Gates for check_results.  Set against the published sweep, which agrees
+# with Gobby's four points to between 0.05 and 0.69 pp and has a binomial
+# sigma of 0.28 to 0.43 pp, so each gate below has roughly three times the
+# margin of the disagreement it is meant to allow.
+PAPER_TOL_PP = 2.0      # simulated vs published, at the four measured points
+FLOOR_TOL_PP = 1.5      # simulated minus analytic background, vs E_MOD
+RISE_SIGMA = 5.0        # 122 km must exceed 80 km by this many sigma
+
+
+def check_results(dist, qber, sifted, p_e, visibility, afterpulse_prob,
+                  allow_underpowered):
+    """Check the sweep against the paper and against the analytic model.
+
+    Returns 0 on pass, 1 on fail.  Three claims, and none of them is new:
+    the script already computed all three quantities and printed them side
+    by side without ever comparing them.
+
+    Skipped entirely on an under-powered run.  `--quick` switches the
+    statistical-power guard off and collects a few dozen sifted bits per
+    point, where the binomial sigma is larger than every gate here, so
+    asserting any of it would fail at random and mean nothing when it
+    passed.
+    """
+    if allow_underpowered:
+        print("\n  Checks skipped: this run opted out of the "
+              "statistical-power guard,")
+        print("  so its counts cannot support them. Use --full for a run "
+              "that checks.")
+        return 0
+
+    failures = []
+    print("\n  Checks")
+    print("  " + "-" * 68)
+
+    # 1. The four points Gobby actually published.  The other five rows of
+    #    the sweep are np.interp output and cannot agree or disagree with
+    #    an experiment, so they are not compared.
+    print(f"  {'km':>5} {'simulated':>12} {'published':>10} {'diff':>8}")
+    n_measured = 0
+    for d, q, s in zip(dist, qber, sifted):
+        near = gobby_nearest_measured(d)
+        if near is None:
+            continue
+        n_measured += 1
+        zg, qg = near
+        diff = q - qg
+        print(f"  {d:5.0f} {q:9.2f} +/-{qber_err_pp(q / 100.0, s):4.2f} "
+              f"{qg:10.1f} {diff:+8.2f} pp")
+        if abs(diff) > PAPER_TOL_PP:
+            failures.append(
+                f"at {d:g} km the simulation gives {q:.2f} % against a "
+                f"published {qg:.1f} % at {zg:g} km, a difference of "
+                f"{diff:+.2f} pp past the {PAPER_TOL_PP:g} pp allowed")
+    if n_measured < len(GOBBY_DIST_KM):
+        failures.append(
+            f"only {n_measured} of the {len(GOBBY_DIST_KM)} published "
+            f"distances were covered by this sweep, so the replication "
+            f"claim is not being tested at full width")
+
+    # 2. The two error sources add, and the modulation floor does not
+    #    depend on distance.  `model_qber` is the background term only, so
+    #    the simulation minus it should sit at E_MOD everywhere.
+    floors = [q - model_qber(d, p_e, visibility, afterpulse_prob)
+              for d, q in zip(dist, qber)]
+    worst = max(range(len(floors)),
+                key=lambda i: abs(floors[i] - 100 * E_MOD))
+    print(f"  simulated minus analytic background: "
+          f"{min(floors):.2f} to {max(floors):.2f} pp "
+          f"against E_MOD = {100 * E_MOD:.1f} pp")
+    if abs(floors[worst] - 100 * E_MOD) > FLOOR_TOL_PP:
+        failures.append(
+            f"at {dist[worst]:g} km the simulation sits {floors[worst]:.2f} "
+            f"pp above the analytic background, against a modulation floor "
+            f"of {100 * E_MOD:.1f} pp. The two sources add and the floor "
+            f"does not depend on distance, so this gap should be flat")
+
+    # 3. Background takes over at long range.  This is the shape of the
+    #    paper's figure: flat at the floor, then rising as the signal falls
+    #    and the background keeps its rate.
+    i_lo = min(range(len(dist)), key=lambda i: abs(dist[i] - 80))
+    i_hi = len(dist) - 1
+    rise = qber[i_hi] - qber[i_lo]
+    s_rise = math.hypot(qber_err_pp(qber[i_hi] / 100.0, sifted[i_hi]),
+                        qber_err_pp(qber[i_lo] / 100.0, sifted[i_lo]))
+    print(f"  rise from {dist[i_lo]:g} to {dist[i_hi]:g} km: "
+          f"{rise:+.2f} pp ({rise / s_rise:.1f} sigma)")
+    if rise < RISE_SIGMA * s_rise:
+        failures.append(
+            f"QBER rose only {rise:+.2f} pp between {dist[i_lo]:g} and "
+            f"{dist[i_hi]:g} km ({rise / s_rise:.1f} sigma). The signal "
+            f"falls with distance while the background does not, so the "
+            f"error rate has to climb at the far end")
+
+    print()
+    if failures:
+        print("[FAIL]")
+        for f_ in failures:
+            print(f"  - {f_}")
+        return 1
+    print(f"[PASS] all {n_measured} published points reproduced within "
+          f"{PAPER_TOL_PP:g} pp")
+    print("[PASS] the modulation floor is flat across the sweep and the "
+          "two error")
+    print("       sources add, as the analytic model assumes")
+    print(f"[PASS] QBER climbs at long range ({rise / s_rise:.1f} sigma), "
+          f"which is the shape of the paper's figure")
+    return 0
+
+
 def run_validation(num_bits=200000, seed=42, distances=None,
                    visibility=VISIBILITY, target_sifted=None,
                    ceiling=CEILING_DEFAULT, allow_underpowered=False,
@@ -963,7 +1072,10 @@ def run_validation(num_bits=200000, seed=42, distances=None,
     except ImportError:
         print("matplotlib not available — skipping figure")
 
+    rc = check_results(sim_dist, sim_qber, sim_sifted, p_e, visibility,
+                       afterpulse_prob, allow_underpowered)
     print("\nDone.")
+    return rc
 
 
 if __name__ == "__main__":
@@ -1039,13 +1151,14 @@ if __name__ == "__main__":
         allow_underpowered = True
 
     try:
-        run_validation(num_bits=num_bits, seed=args.seed,
-                       visibility=args.visibility,
-                       target_sifted=target_sifted,
-                       ceiling=args.ceiling,
-                       min_sifted=args.min_sifted,
-                       allow_underpowered=allow_underpowered,
-                       p_e=args.p_e, afterpulse_prob=args.afterpulse)
+        rc = run_validation(num_bits=num_bits, seed=args.seed,
+                            visibility=args.visibility,
+                            target_sifted=target_sifted,
+                            ceiling=args.ceiling,
+                            min_sifted=args.min_sifted,
+                            allow_underpowered=allow_underpowered,
+                            p_e=args.p_e, afterpulse_prob=args.afterpulse)
     except RuntimeError as exc:
         print(f"\nERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+    sys.exit(rc)

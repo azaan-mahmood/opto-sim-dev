@@ -463,10 +463,10 @@ def urban_validator_reading():
     """What `validate_duplinskiy_urban.py` measured for the same line.
 
     Read out of its committed artifact rather than copied into a constant
-    here.  A hand-copied cross-reference is a number that can rot quietly
-    while still looking authoritative, and the claim being made is
-    precisely that the two scripts agree -- which is worth checking
-    against the other script rather than against a memory of it.
+    here.  A number copied by hand goes out of date when the other script
+    changes, and nothing shows that it has.  The claim being made is
+    precisely that the two scripts agree, so it should be checked against
+    the other script rather than against a copy of what it once said.
 
     Returns `(None, None)` if the artifact is absent, because a missing
     file means there is no comparison to report, not that it failed.
